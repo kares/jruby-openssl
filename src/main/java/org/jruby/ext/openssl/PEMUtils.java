@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2014 Karol Bucek.
+ * Copyright (C) 2014-2016 Karol Bucek LTD.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -65,7 +65,7 @@ import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import static org.jruby.ext.openssl.x509store.PEMInputOutput.getKeyFactory;
 
 /**
- * PEM Utilities, for now mostly to replace {@link PEMHandler}.
+ * PEM Utilities.
  *
  * @author kares
  */

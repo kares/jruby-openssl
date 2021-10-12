@@ -39,6 +39,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1InputStream;
@@ -236,6 +237,8 @@ public class StoreContext {
         } else {
             verifyParameter.flags |= X509Utils.X509_VP_FLAG_DEFAULT | X509Utils.X509_VP_FLAG_ONCE;
         }
+
+        System.out.println("init: " + verifyParameter);
 
         if ( store != null ) {
             verifyCallback = store.getVerifyCallback();
@@ -645,6 +648,207 @@ public class StoreContext {
      * c: X509_verify_cert
      */
     public int verifyCertificate() throws Exception {
+
+        if (Boolean.getBoolean("verify_new")) {
+            return verifyCertificateNEW();
+        }
+
+        X509AuxCertificate x, xtmp = null, chain_ss = null;
+        //X509_NAME xn;
+        int bad_chain = 0, depth, i, num;
+
+        if ( certificate == null ) {
+            X509Error.addError(X509Utils.X509_R_NO_CERT_SET_FOR_US_TO_VERIFY);
+            return -1;
+        }
+
+        // first we make sure the chain we are going to build is
+        // present and that the first entry is in place
+
+        if ( chain == null ) {
+            chain = new ArrayList<X509AuxCertificate>();
+            chain.add(certificate);
+            lastUntrusted = 1;
+        }
+
+        // We use a temporary STACK so we can chop and hack at it
+
+        List<X509AuxCertificate> sktmp = null;
+        if ( untrusted != null ) {
+            sktmp = new ArrayList<X509AuxCertificate>(untrusted);
+            System.out.println("untrusted: " + untrusted.stream().map((c) -> c.getSubjectDN().toString()).collect(java.util.stream.Collectors.joining(",")));
+
+            // XXX replace certs in untrusted with trusted versions if found
+            X509Object[] objTmp = { null };
+            for (ListIterator<X509AuxCertificate> iter = sktmp.listIterator(); iter.hasNext();) {
+                X509AuxCertificate skCert = iter.next();
+                Name principal = new Name(skCert.cert.getSubjectX500Principal());
+                int ok = getBySubject(X509Utils.X509_LU_X509, principal, objTmp);
+                if (ok == X509Utils.X509_LU_X509) {
+                    // replace old with new and clear rest of untrusted
+                    Certificate certificate = (Certificate) objTmp[0];
+                    if (certificate.cert.equals(skCert)) {
+                        iter.set(certificate.cert);
+                        while (iter.hasNext()) {
+                            iter.next();
+                            iter.remove();
+                        }
+                        break;
+                    }
+                }
+            }
+            // XXX
+        } else System.out.println("untrusted: " + null);
+
+        num = chain.size();
+        x = chain.get(num - 1);
+        depth = verifyParameter.depth;
+        for(;;) {
+
+            System.out.println("num: " + num + " x: " + x.getSubjectDN() + " chain: " + chain.stream().map((c) -> c.getSubjectDN().toString()).collect(java.util.stream.Collectors.joining(",")));
+
+            if ( depth < num ) break;
+
+            if ( checkIssued.call(this, x, x) != 0 ) break;
+
+            if ( sktmp != null ) {
+                xtmp = findIssuer(sktmp, x);
+
+                System.out.println(" findIssuer: " + (xtmp != null));
+
+                if ( xtmp != null ) {
+                    chain.add(xtmp);
+                    sktmp.remove(xtmp);
+                    lastUntrusted++;
+                    x = xtmp;
+                    num++;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        // at this point, chain should contain a list of untrusted
+        // certificates.  We now need to add at least one trusted one,
+        // if possible, otherwise we complain.
+
+        // Examine last certificate in chain and see if it is self signed.
+
+        i = chain.size();
+        x = chain.get(i - 1);
+
+        if ( checkIssued.call(this, x, x) != 0 ) {
+            // we have a self signed certificate
+            if ( chain.size() == 1 ) {
+                // We have a single self signed certificate: see if
+                // we can find it in the store. We must have an exact
+                // match to avoid possible impersonation.
+                X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
+                int ok = getIssuer.call(this, p_xtmp, x);
+                xtmp = p_xtmp[0];
+                if ( ok <= 0 || ! x.equals(xtmp) ) {
+                    error = X509Utils.V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT;
+                    currentCertificate = x;
+                    errorDepth = i-1;
+                    bad_chain = 1;
+                    ok = verifyCallback.call(this, ZERO);
+                    if ( ok == 0 ) return ok;
+                } else {
+                    // We have a match: replace certificate with store version
+                    // so we get any trust settings.
+                    x = xtmp;
+                    chain.set(i-1,x);
+                    lastUntrusted = 0;
+                }
+            } else {
+                // extract and save self signed certificate for later use
+                chain_ss = chain.remove(chain.size()-1);
+                lastUntrusted--;
+                num--;
+                x = chain.get(num-1);
+            }
+        }
+        // We now lookup certs from the certificate store
+        for(;;) {
+            // If we have enough, we break
+            if ( depth < num ) break;
+            //xn = new X509_NAME(x.getIssuerX500Principal());
+            // If we are self signed, we break
+            if ( checkIssued.call(this, x, x) != 0 ) break;
+
+            X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
+            int ok = getIssuer.call(this, p_xtmp, x);
+            xtmp = p_xtmp[0];
+
+            if ( ok < 0 ) return ok;
+            if ( ok == 0 ) break;
+
+            x = xtmp;
+            chain.add(x);
+            num++;
+        }
+
+        /* we now have our chain, lets check it... */
+
+        //xn = new X509_NAME(x.getIssuerX500Principal());
+        /* Is last certificate looked up self signed? */
+        if ( checkIssued.call(this, x, x) == 0 ) {
+            if ( chain_ss == null || checkIssued.call(this, x, chain_ss) == 0 ) {
+                if(lastUntrusted >= num) {
+                    error = X509Utils.V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY;
+                } else {
+                    error = X509Utils.V_ERR_UNABLE_TO_GET_ISSUER_CERT;
+                }
+                currentCertificate = x;
+            } else {
+                chain.add(chain_ss);
+                num++;
+                lastUntrusted = num;
+                currentCertificate = chain_ss;
+                error = X509Utils.V_ERR_SELF_SIGNED_CERT_IN_CHAIN;
+            }
+            errorDepth = num - 1;
+            bad_chain = 1;
+            int ok = verifyCallback.call(this, ZERO);
+            if ( ok == 0 ) return ok;
+        }
+
+        // We have the chain complete: now we need to check its purpose
+        int ok = checkChainExtensions();
+        if ( ok == 0 ) return ok;
+
+        /* TODO: Check name constraints (from 1.0.0) */
+
+        // The chain extensions are OK: check trust
+        if ( verifyParameter.trust > 0 ) ok = checkTrust();
+        if ( ok == 0 ) return ok;
+
+        // Check revocation status: we do this after copying parameters
+        // because they may be needed for CRL signature verification.
+        ok = checkRevocation.call(this);
+        if ( ok == 0 ) return ok;
+
+        /* At this point, we have a chain and need to verify it */
+        if ( verify != null && verify != Store.VerifyFunction.EMPTY ) {
+            ok = verify.call(this);
+        } else {
+            ok = internalVerify.call(this);
+        }
+        if ( ok == 0 ) return ok;
+
+        /* TODO: RFC 3779 path validation, now that CRL check has been done (from 1.0.0) */
+
+        /* If we get this far evaluate policies */
+        if ( bad_chain == 0 && (verifyParameter.flags & X509Utils.V_FLAG_POLICY_CHECK) != 0 ) {
+            ok = checkPolicy.call(this);
+        }
+        return ok;
+    }
+
+    /**
+     * c: X509_verify_cert
+     */
+    public int verifyCertificateNEW() throws Exception {
         X509AuxCertificate x, xtmp = null, xtmp2, chain_ss = null;
         boolean bad_chain = false;
         int ok;
@@ -680,12 +884,22 @@ public class StoreContext {
         /* We use a temporary STACK so we can chop and hack at it */
         LinkedList<X509AuxCertificate> sktmp = untrusted != null ?
                 new LinkedList<>(untrusted) : null;
+        ///
+        if (untrusted != null) {
+            System.out.println("untrusted: " + untrusted.stream().map((c) -> c.getSubjectDN().toString()).collect(java.util.stream.Collectors.joining(",")));
+        } else System.out.println("untrusted: " + null);
+        ///
 
         int num = chain.size();
         x = chain.get(num - 1);
         int depth = getParam().depth;
 
+        System.out.println("verify (getParam().flags & V_FLAG_TRUSTED_FIRST): " + (getParam().flags & V_FLAG_TRUSTED_FIRST));
+
         for(;;) {
+
+            System.out.println("num: " + num + " x: " + x.getSubjectDN() + " chain: " + chain.stream().map((c) -> c.getSubjectDN().toString()).collect(java.util.stream.Collectors.joining(",")));
+
             /* If we have enough, we break */
             if ( depth < num ) break;
 
@@ -695,27 +909,30 @@ public class StoreContext {
             /*
              * If asked see if we can find issuer in trusted store first
              */
-            if ((getParam().flags & V_FLAG_TRUSTED_FIRST) != 0) {
-                X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
-                ok = getIssuer.call(this, p_xtmp, x);
-                xtmp = p_xtmp[0];
-                if (ok < 0) {
-                    error = V_ERR_STORE_LOOKUP;
-                    return ok; // goto err;
-                }
-                /*
-                 * If successful for now free up cert so it will be picked up
-                 * again later.
-                 */
-                if (ok > 0) {
-                    xtmp = null;
-                    break;
-                }
-            }
+//            if ((getParam().flags & V_FLAG_TRUSTED_FIRST) != 0) {
+//                X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
+//                ok = getIssuer.call(this, p_xtmp, x);
+//                xtmp = p_xtmp[0];
+//                if (ok < 0) {
+//                    error = V_ERR_STORE_LOOKUP;
+//                    return ok; // goto err;
+//                }
+//                /*
+//                 * If successful for now free up cert so it will be picked up
+//                 * again later.
+//                 */
+//                if (ok > 0) {
+//                    xtmp = null;
+//                    break;
+//                }
+//            }
 
             /* If we were passed a cert chain, use it first */
             if ( sktmp != null ) {
                 xtmp = findIssuer(sktmp, x);
+
+                System.out.println(" findIssuer: " + (xtmp != null));
+
                 if ( xtmp != null ) {
                     chain.add(xtmp);
                     sktmp.remove(xtmp);
@@ -795,7 +1012,7 @@ public class StoreContext {
 
                 if ( ok < 0 ) {
                     error = V_ERR_STORE_LOOKUP;
-                    return ok; // goto err; TODO double check
+                    return ok; // goto err;
                 }
 
                 if ( ok == 0 ) break;
@@ -854,7 +1071,7 @@ public class StoreContext {
                     }
                 }
             }
-        } while(retry);
+        } while (retry);
 
         /*
          * If not explicitly trusted then indicate error unless it's a single
@@ -862,8 +1079,9 @@ public class StoreContext {
          * and set bad_chain == 1
          */
         if (trust != X509_TRUST_TRUSTED && !bad_chain) {
-            if ( chain_ss == null || checkIssued.call(this, x, chain_ss) == 0 ) {
-                if(lastUntrusted >= num) {
+            if (chain_ss == null || checkIssued.call(this, x, chain_ss) == 0) {
+                System.out.println(" lastUntrusted: " + lastUntrusted + " num: " + num);
+                if (lastUntrusted >= num) {
                     error = V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY;
                 } else {
                     error = V_ERR_UNABLE_TO_GET_ISSUER_CERT;
@@ -934,7 +1152,215 @@ public class StoreContext {
         }
         return ok;
     }
+    /*
+0.10.8
+1 ----
+[#<OpenSSL::X509::Certificate
+  subject=#<OpenSSL::X509::Name CN=R3,O=Let's Encrypt,C=US>,
+  issuer=#<OpenSSL::X509::Name CN=DST Root CA X3,O=Digital Signature Trust Co.>,
+  serial=#<OpenSSL::BN 85078157426496920958827089468591623647>,
+  not_before=2020-10-07 19:21:40 UTC,
+  not_after=2021-09-29 19:21:40 UTC>,
+ #<OpenSSL::X509::Certificate
+  subject=#<OpenSSL::X509::Name CN=R3,O=Let's Encrypt,C=US>,
+  issuer=#<OpenSSL::X509::Name CN=ISRG Root X1,O=Internet Security Research Group,C=US>,
+  serial=#<OpenSSL::BN 192961496339968674994309121183282847578>,
+  not_before=2020-09-04 00:00:00 UTC,
+  not_after=2025-09-15 16:00:00 UTC>]
+init: VerifyParameter{name='null', checkTime=null, inheritFlags=1, flags=0, purpose=0, trust=0, depth=-1, policies=null}
+verify (getParam().flags & V_FLAG_TRUSTED_FIRST): 32768
+verify num:1 x:   [0]         Version: 3
+         SerialNumber: 435452651231011312001825766803379554023895
+             IssuerDN: C=US,O=Let's Encrypt,CN=R3
+           Start Date: Wed Aug 11 11:01:37 CEST 2021
+           Final Date: Tue Nov 09 10:01:35 CET 2021
+            SubjectDN: CN=geoip.elastic.dev
+           Public Key: RSA Public Key [4a:0e:2e:27:0e:58:8e:2e:7c:9a:12:0b:74:10:a7:d9:85:f3:8e:da],[56:66:d1:a4]
+        modulus: b5acf177fd85596d4ee5ebc79039cf8b8bdc6490c5c6cf15d2d948da9a5ffce4f29a504731bcc113706c5043fb4a44feea43e7a90a32f394baeb34f87f65f241f49651925e30f31c3839793f449710194abfe125458bebb14a6e73464765320cdfeb9e518e4cdd79a8f5aa3e2397af6a1af83dfd656915a11d12f315d2a2327eebd7fa977fe3f32aa665ccb9e07142ed5690936653a4ec2c2bb00c704d87457b56746f679b2acefddc685a8365770f662d08cbaa2dad463f5b01b05453bf55cf7a15dbe543967dfa774499d4a06de7ecae5c3c8e86f9f500191177c312ae1fe3d8c96ebf8ab6f9fafe025554a2cfe7f6f730d878e73e6da5865857f29a4b6c97
+public exponent: 10001
 
+  Signature Algorithm: SHA256withRSA
+            Signature: 056145ca895b627caa0c0f1c914d0b9bb6ed08ce
+                       fc09e9638cac550864ea8659ed26184734125c44
+                       0af308192b7aced9e32c92889d6f4945cd56f188
+                       4d50a2d9dff32794b1043a13e6ff088c46fdf0a1
+                       ffffdbb725bd427ee1000e19c45178f27f819e22
+                       24c7b5d297dfa8c6c1344edd821ae761ba1ce35b
+                       3a740181cc27f05a5825d223dc2e7ca390315917
+                       155506da085c6319c08b494490b09c738a5b1813
+                       ec55a9cf9de467ed1b7366cba9771edf38ebdde7
+                       53032b6ffae5b100b5eb782d75510dfc614278b5
+                       3e51f146b927829943374a600855f0ffca32ef8a
+                       c5697fbd29574260a753f1d7de8d23bd6c9aef0b
+                       c6b857efc12b4eb4781a90e4c785bebb
+       Extensions:
+                       critical(true) KeyUsage: 0xa0
+                       critical(false) 2.5.29.37 value = Sequence
+    ObjectIdentifier(1.3.6.1.5.5.7.3.1)
+    ObjectIdentifier(1.3.6.1.5.5.7.3.2)
+
+                       critical(true) BasicConstraints: isCa(false)
+                       critical(false) 2.5.29.14 value = DER Octet String[20]
+
+                       critical(false) 2.5.29.35 value = Sequence
+    Tagged [0] IMPLICIT
+        DER Octet String[20]
+
+                       critical(false) 1.3.6.1.5.5.7.1.1 value = Sequence
+    Sequence
+        ObjectIdentifier(1.3.6.1.5.5.7.48.1)
+        Tagged [6] IMPLICIT
+            DER Octet String[21]
+    Sequence
+        ObjectIdentifier(1.3.6.1.5.5.7.48.2)
+        Tagged [6] IMPLICIT
+            DER Octet String[22]
+
+                       critical(false) 2.5.29.17 value = Sequence
+    Tagged [2] IMPLICIT
+        DER Octet String[17]
+
+                       critical(false) 2.5.29.32 value = Sequence
+    Sequence
+        ObjectIdentifier(2.23.140.1.2.1)
+    Sequence
+        ObjectIdentifier(1.3.6.1.4.1.44947.1.1.1)
+        Sequence
+            Sequence
+                ObjectIdentifier(1.3.6.1.5.5.7.2.1)
+                IA5String(http://cps.letsencrypt.org)
+
+                       critical(false) 1.3.6.1.4.1.11129.2.4.2 value = DER Octet String[242]
+
+
+verify num:2 x:   [0]         Version: 3
+         SerialNumber: 85078157426496920958827089468591623647
+             IssuerDN: O=Digital Signature Trust Co.,CN=DST Root CA X3
+           Start Date: Wed Oct 07 21:21:40 CEST 2020
+           Final Date: Wed Sep 29 21:21:40 CEST 2021
+            SubjectDN: C=US,O=Let's Encrypt,CN=R3
+           Public Key: RSA Public Key [32:cd:42:71:87:db:2d:83:4c:25:a8:57:33:d1:97:cf:5e:ce:46:c2],[56:66:d1:a4]
+        modulus: bb021528ccf6a094d30f12ec8d5592c3f882f199a67a4288a75d26aab52bb9c54cb1af8e6bf975c8a3d70f4794145535578c9ea8a23919f5823c42a94e6ef53bc32edb8dc0b05cf35938e7edcf69f05a0b1bbec094242587fa3771b313e71cace19befdbe43b45524596a9c153ce34c852eeb5aeed8fde6070e2a554abb66d0e97a540346b2bd3bc66eb66347cfa6b8b8f572999f830175dba726ffb81c5add286583d17c7e709bbf12bf786dcc1da715dd446e3ccad25c188bc60677566b3f118f7a25ce653ff3a88b647a5ff1318ea9809773f9d53f9cf01e5f5a6701714af63a4ff99b3939ddc53a706fe48851da169ae2575bb13cc5203f5ed51a18bdb15
+public exponent: 10001
+
+  Signature Algorithm: SHA256withRSA
+            Signature: d94ce0c9f584883731dbbb13e2b3fc8b6b62126c
+                       58b7497e3c02b7a81f2861ebcee02e73ef49077a
+                       35841f1dad68f0d8fe56812f6d7f58a66e353610
+                       1c73c3e5bd6d5e01d76e72fb2aa0b8d35764e55b
+                       c269d4d0b2f77c4bc3178e887273dcfdfc6dbde3
+                       c90b8e613a16587d74362b55803dc763be8443c6
+                       39a10e6b579e3f29c180f6b2bd47cbaa306cb732
+                       e159540b1809175e636cfb96673c1c730c938bc6
+                       11762486de400707e47d2d66b525a39658c8ea80
+                       eecf693b96fce68dc033f389f8292d14142d7ef0
+                       6170955df70be5c0fb24faec8ecb61c8ee637128
+                       a82c053b77ef9b5e0364f051d1e485535cb00297
+                       d47ec634d2ce1000e4b1df3ac2ea17be
+       Extensions:
+                       critical(true) BasicConstraints: isCa(true), pathLenConstraint = 0
+                       critical(true) KeyUsage: 0x86
+                       critical(false) 1.3.6.1.5.5.7.1.1 value = Sequence
+    Sequence
+        ObjectIdentifier(1.3.6.1.5.5.7.48.2)
+        Tagged [6] IMPLICIT
+            DER Octet String[47]
+
+                       critical(false) 2.5.29.35 value = Sequence
+    Tagged [0] IMPLICIT
+        DER Octet String[20]
+
+                       critical(false) 2.5.29.32 value = Sequence
+    Sequence
+        ObjectIdentifier(2.23.140.1.2.1)
+    Sequence
+        ObjectIdentifier(1.3.6.1.4.1.44947.1.1.1)
+        Sequence
+            Sequence
+                ObjectIdentifier(1.3.6.1.5.5.7.2.1)
+                IA5String(http://cps.root-x1.letsencrypt.org)
+
+                       critical(false) 2.5.29.31 value = Sequence
+    Sequence
+        Tagged [0]
+            Tagged [0]
+                Tagged [6] IMPLICIT
+                    DER Octet String[43]
+
+                       critical(false) 2.5.29.14 value = DER Octet String[20]
+
+                       critical(false) 2.5.29.37 value = Sequence
+    ObjectIdentifier(1.3.6.1.5.5.7.3.1)
+    ObjectIdentifier(1.3.6.1.5.5.7.3.2)
+
+
+ lastUntrusted: 2 num: 3
+2 ----
+[#<OpenSSL::X509::Certificate
+  subject=#<OpenSSL::X509::Name CN=geoip.elastic.dev>,
+  issuer=#<OpenSSL::X509::Name CN=R3,O=Let's Encrypt,C=US>,
+  serial=#<OpenSSL::BN 435452651231011312001825766803379554023895>,
+  not_before=2021-08-11 09:01:37 UTC,
+  not_after=2021-11-09 09:01:35 UTC>,
+ #<OpenSSL::X509::Certificate
+  subject=#<OpenSSL::X509::Name CN=R3,O=Let's Encrypt,C=US>,
+  issuer=#<OpenSSL::X509::Name CN=DST Root CA X3,O=Digital Signature Trust Co.>,
+  serial=#<OpenSSL::BN 85078157426496920958827089468591623647>,
+  not_before=2020-10-07 19:21:40 UTC,
+  not_after=2021-09-29 19:21:40 UTC>,
+ #<OpenSSL::X509::Certificate
+  subject=#<OpenSSL::X509::Name CN=DST Root CA X3,O=Digital Signature Trust Co.>,
+  issuer=#<OpenSSL::X509::Name CN=DST Root CA X3,O=Digital Signature Trust Co.>,
+  serial=#<OpenSSL::BN 91299735575339953335919266965803778155>,
+  not_before=2000-09-30 21:12:19 UTC,
+  not_after=2021-09-30 14:01:15 UTC>]
+2
+unable to get issuer certificate
+
+     */
+
+    /*
+     * Given a STACK_OF(X509) find the issuer of cert (if any)
+     *
+     * x509_vfy.c: static int build_chain(X509_STORE_CTX *ctx)
+     */
+    private X509AuxCertificate find_issuer(List<X509AuxCertificate> sk, X509AuxCertificate x) throws Exception {
+        X509AuxCertificate rv = null;
+
+        for (X509AuxCertificate issuer : sk) {
+            if (check_issued(x, issuer)) {
+                rv = issuer;
+                if (check_cert_time(rv)) break;
+            }
+        }
+        return rv;
+    }
+
+    /*
+     * Given a possible certificate and issuer check them
+     *
+     * x509_vfy.c: static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
+     */
+    private boolean check_issued(X509AuxCertificate x, X509AuxCertificate issuer) throws Exception {
+        int ret;
+        if (x == issuer) return checkIssued.call(this, x, x) != 0; // cert_self_signed(x)
+        ret = checkIfIssuedBy(issuer, x);
+        if (ret == V_OK) {
+            /* Special case: single self signed certificate */
+            boolean ss = checkIssued.call(this, x, x) != 0; // cert_self_signed(x)
+            if (ss && chain.size() == 1) return true;
+
+            //for (int i = 0; i < chain.size(); i++) {
+            //    X509AuxCertificate ch = chain.get(i);
+            //    if (ch == issuer || ch.equals(issuer)) {
+            //        ret = V_ERR_PATH_LOOP;
+            //        break;
+            //    }
+            //}
+        }
+
+        return (ret == V_OK);
+    }
 
     private final static Set<String> CRITICAL_EXTENSIONS = new HashSet<String>(8);
     static {
@@ -1145,7 +1571,7 @@ public class StoreContext {
     /**
      * c: check_cert_time
      */
-    public int checkCertificateTime(X509AuxCertificate x) throws Exception {
+    boolean check_cert_time(X509AuxCertificate x) throws Exception {
         final Date pTime;
         if ( (verifyParameter.flags & X509Utils.V_FLAG_USE_CHECK_TIME) != 0 ) {
             pTime = this.verifyParameter.checkTime;
@@ -1157,17 +1583,17 @@ public class StoreContext {
             error = X509Utils.V_ERR_CERT_NOT_YET_VALID;
             currentCertificate = x;
             if ( verifyCallback.call(this, ZERO) == 0 ) {
-                return 0;
+                return false;
             }
         }
         if ( ! x.getNotAfter().after(pTime) ) {
             error = X509Utils.V_ERR_CERT_HAS_EXPIRED;
             currentCertificate = x;
             if ( verifyCallback.call(this, ZERO) == 0 ) {
-                return 0;
+                return false;
             }
         }
-        return 1;
+        return true;
     }
 
     //private static final int CRLDP_ALL_REASONS = 0x807f;
@@ -1389,8 +1815,7 @@ public class StoreContext {
                 }
 
                 xs.setValid(true);
-                ok = context.checkCertificateTime(xs);
-                if ( ok == 0 ) return ok;
+                if (context.check_cert_time(xs) == false) return 0; // ok = 0;
 
                 context.currentIssuer = xi;
                 context.currentCertificate = xs;

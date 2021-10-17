@@ -191,8 +191,8 @@ public class StoreContext {
         return ret;
     }
 
-    // NOTE: not based on OpenSSL - self invented (till JOSSL 1.1.1 port)
-    private int getValidIssuers(final X509AuxCertificate x, final List<X509AuxCertificate> _issuers)
+    // NOTE: JOSSL specific - semi alternate chain search (drop once OpenSSL 1.1.1 verify ported)
+    private int getValidIssuersOrFirst(final X509AuxCertificate x, final List<X509AuxCertificate> _issuers)
         throws Exception {
         final Name xn = new Name( x.getIssuerX500Principal() );
         final X509Object[] s_obj = new X509Object[1];
@@ -223,6 +223,10 @@ public class StoreContext {
         int idx = X509Object.indexBySubject(objects, X509Utils.X509_LU_X509, xn);
         if ( idx == -1 ) return ret;
 
+        // Leave last match in issuer so we return nearest match if no certificate time is OK.
+        // NOTE: due store.error reporting compatibility (with plain-old getFirstIssuer)
+        X509AuxCertificate timeCheckFailed = null;
+
         /* Look through all matching certificates for a suitable issuer */
         for ( int i = idx; i < objects.size(); i++ ) {
             final X509Object pobj = objects.get(i);
@@ -238,8 +242,15 @@ public class StoreContext {
                 if (x509_check_cert_time(x509, -1)) {
                     _issuers.add(x509);
                     ret = 1;
+                } else {
+                    if (timeCheckFailed == null) timeCheckFailed = x509;
+                    ret = 1;
                 }
             }
+        }
+
+        if (timeCheckFailed != null && _issuers.isEmpty()) { // TODO empty checl?
+            _issuers.add(timeCheckFailed);
         }
         return ret;
     }
@@ -796,7 +807,7 @@ public class StoreContext {
 
             if (getIssuer == getFirstIssuer) {
                 LinkedList<X509AuxCertificate> xtmps = new LinkedList<>();
-                int ok = getValidIssuers(x, xtmps);
+                int ok = getValidIssuersOrFirst(x, xtmps);
                 if ( ok < 0 ) return ok; // error
                 if ( ok != 0 ) { // at least one issuer for given name
                     while (!xtmps.isEmpty()) {

@@ -28,6 +28,7 @@
 package org.jruby.ext.openssl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -38,9 +39,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.jruby.ext.openssl.impl.ASN1Registry.*;
 import static org.jruby.ext.openssl.SSL.SSL3_VERSION;
 import static org.jruby.ext.openssl.SSL.TLS1_VERSION;
-import static org.jruby.ext.openssl.SSL.TLS1_1_VERSION;
 import static org.jruby.ext.openssl.SSL.TLS1_2_VERSION;
 
 /**
@@ -321,15 +322,16 @@ public class CipherStrings {
     public final static long SSL_SSLV2 = 0x01000000L;
     public final static long SSL_SSLV3 = 0x02000000L;
     public final static long SSL_TLSV1 = SSL_SSLV3;
-    public final static long SSL_EXP_MASK = 0x00000003L;
-    public final static long SSL_NOT_EXP = 0x00000001L;
-    public final static long SSL_EXPORT = 0x00000002L;
-    public final static long SSL_STRONG_MASK = 0x000000fcL;
-    public final static long SSL_STRONG_NONE = 0x00000004L;
-    public final static long SSL_EXP40 = 0x00000008L;
-    public final static long SSL_MICRO = (SSL_EXP40);
-    public final static long SSL_EXP56 = 0x00000010L;
-    public final static long SSL_MINI = (SSL_EXP56);
+    public final static long SSL_EXP_MASK = 0x00000003L; // TODO drop
+    public final static long SSL_NOT_EXP = 0x00000001L; // TODO drop
+    public final static long SSL_EXPORT = 0x00000002L; // TODO drop
+    public final static long SSL_STRONG_MASK = 0x000000fcL; // 0x0000001FU in OSSL 1.1
+    public final static long SSL_DEFAULT_MASK = 0x00000200L; // 0X00000020U in OSSL 1.1 TODO: kares
+    public final static long SSL_STRONG_NONE = 0x00000004L; // 0x00000001U in OSSL 1.1
+    public final static long SSL_EXP40 = 0x00000008L; // TODO drop
+    //public final static long SSL_MICRO = (SSL_EXP40);
+    public final static long SSL_EXP56 = 0x00000010L; // TODO drop
+    //public final static long SSL_MINI = (SSL_EXP56);
 
     // NOTE: can not be adjusted until SSL_NOT_EXP is around!
     public final static long SSL_LOW = 0x00000020L; // 0x00000002U in OSSL 1.1
@@ -471,19 +473,19 @@ public class CipherStrings {
     public final static String TLS1_TXT_ECDHE_RSA_WITH_DES_192_CBC3_SHA = "ECDHE-RSA-DES-CBC3-SHA";
     public final static String TLS1_TXT_ECDH_anon_WITH_NULL_SHA = "AECDH-NULL-SHA";
 
-    static final class Def implements Comparable<Def>, Cloneable {
     // SSL_CIPHER struct ssl_cipher_st
+    static final class Def implements Comparable<Def>, Cloneable { // TODO rename
 
-        final boolean valid; // TODO NOT IMPLEMENTED!
+        final boolean valid;
         final String name;
         private final long id;
 
         final long algorithms;
-        private final long algStrength;
+        private final long algStrength; // algo_strength
         //final long algorithm2;
         final int algStrengthBits; // bits
         final int algBits; // alg_bits
-        private final long mask;
+        private final long mask; // != 0 for legacy constructor(s)
         private final long algStrengthMask;
 
         // OpenSSL 1.1.1
@@ -497,6 +499,7 @@ public class CipherStrings {
         // JOSSL extra
         private volatile String cipherSuite;
 
+        @Deprecated
         Def(int valid, String name, long id, long algorithms, long algo_strength, long algorithm2, int strength_bits, int alg_bits, long mask, long maskStrength) {
             this.valid = valid != 0;
             this.name = name;
@@ -510,6 +513,7 @@ public class CipherStrings {
             this.algStrengthMask = maskStrength;
         }
 
+        @Deprecated
         Def(String name, long algorithms, long algo_strength, int strength_bits, int alg_bits, long mask, long maskStrength) {
             this.valid = true;
             this.name = name;
@@ -555,6 +559,7 @@ public class CipherStrings {
             this.algStrengthMask = 0;
         }
 
+        private boolean isLegacy() { return mask != 0; }
 
         public String getCipherSuite() {
             return cipherSuite;
@@ -609,7 +614,7 @@ public class CipherStrings {
         }
 
         // from ssl_cipher_apply_rule
-        public boolean matches(Def current) {
+        public boolean matches(final Def curr) {
 //            ma = mask & cp->algorithms;
 //            ma_s = mask_strength & cp->algo_strength;
 //
@@ -621,8 +626,8 @@ public class CipherStrings {
 //                ((ma_s & algo_strength) != ma_s))
 //                continue; // does not apply
 //            }
-            final long ma = this.mask & current.algorithms;
-            final long ma_s = this.algStrengthMask & current.algStrength;
+            final long ma = this.mask & curr.algorithms;
+            final long ma_s = this.algStrengthMask & curr.algStrength;
             if ( ( ma == 0 && ma_s == 0 ) ||
                  ( (ma & this.algorithms) != ma ) ||
                  ( (ma_s & this.algStrength) != ma_s) ) {
@@ -630,6 +635,75 @@ public class CipherStrings {
             }
             return true;
         }
+
+        boolean matches(final Def cp, final CipherReq req) {
+            final long cipher_id = this.id;
+            final long alg_mkey = req.alg_mkey;
+            final long alg_auth = req.alg_auth;
+            final long alg_enc = req.alg_enc;
+            final long alg_mac = req.alg_mac;
+            final int min_tls = req.min_tls;
+
+            if (cipher_id != 0 && (cipher_id != cp.id))
+                return false;
+
+            if ( isLegacy() ) return matches(cp);
+
+            if (alg_mkey != 0 && (alg_mkey & cp.algorithm_mkey) == 0)
+                return false;
+            if (alg_auth != 0 && (alg_auth & cp.algorithm_auth) == 0)
+                return false;
+            if (alg_enc != 0 && (alg_enc & cp.algorithm_enc) == 0)
+                return false;
+            if (alg_mac != 0 && (alg_mac & cp.algorithm_mac) == 0)
+                return false;
+            if (min_tls != 0 && (min_tls != cp.min_tls))
+                return false;
+            // TODO
+            //if ((algo_strength & SSL_STRONG_MASK)
+            //        && !(algo_strength & SSL_STRONG_MASK & cp->algo_strength))
+            //    continue;
+            //if ((algo_strength & SSL_DEFAULT_MASK)
+            //        && !(algo_strength & SSL_DEFAULT_MASK & cp->algo_strength))
+            //    continue;
+
+            return true;
+        }
+
+//        /*
+//         * Selection criteria is either the value of strength_bits
+//         * or the algorithms used.
+//         */
+//        if (strength_bits >= 0) {
+//            if (strength_bits != cp->strength_bits)
+//                continue;
+//        } else {
+//#ifdef CIPHER_DEBUG
+//            fprintf(stderr,
+//                    "\nName: %s:\nAlgo = %08x/%08x/%08x/%08x/%08x Algo_strength = %08x\n",
+//                    cp->name, cp->algorithm_mkey, cp->algorithm_auth,
+//                    cp->algorithm_enc, cp->algorithm_mac, cp->min_tls,
+//                    cp->algo_strength);
+//#endif
+//            if (cipher_id != 0 && (cipher_id != cp->id))
+//                continue;
+//            if (alg_mkey && !(alg_mkey & cp->algorithm_mkey))
+//                continue;
+//            if (alg_auth && !(alg_auth & cp->algorithm_auth))
+//                continue;
+//            if (alg_enc && !(alg_enc & cp->algorithm_enc))
+//                continue;
+//            if (alg_mac && !(alg_mac & cp->algorithm_mac))
+//                continue;
+//            if (min_tls && (min_tls != cp->min_tls))
+//                continue;
+//            if ((algo_strength & SSL_STRONG_MASK)
+//                    && !(algo_strength & SSL_STRONG_MASK & cp->algo_strength))
+//                continue;
+//            if ((algo_strength & SSL_DEFAULT_MASK)
+//                    && !(algo_strength & SSL_DEFAULT_MASK & cp->algo_strength))
+//                continue;
+//        }
 
     }
 
@@ -704,6 +778,16 @@ public class CipherStrings {
         CIPHER_DEL, CIPHER_ORD, CIPHER_KILL, CIPHER_SPECIAL, CIPHER_ADD
     }
 
+    private static class CipherReq {
+        long alg_mkey;
+        long alg_auth;
+        long alg_enc;
+        long alg_mac;
+        int  min_tls;
+        long algo_strength;
+        long cipher_id;
+    }
+
     // STACK_OF(SSL_CIPHER) *ssl_create_cipher_list
     static Collection<Def> createCipherList(final String rule_str,
                                             final String[] javaCiphers,
@@ -771,6 +855,7 @@ public class CipherStrings {
         // ~ ssl_cipher_process_rulestr
 
         final ArrayList<Def> tmpFound = new ArrayList<>(4);
+        final CipherReq tmpReq = new CipherReq();
 
         for ( int i = offset; i < parts.length; i++ ) {
             final String part = parts[i];
@@ -809,8 +894,8 @@ public class CipherStrings {
             long alg_mac = 0;
             int  min_tls = 0;
             long algo_strength = 0;
+            long cipher_id = 0;
             boolean found = false; tmpFound.clear();
-            long cipher_id; // TODO
 
             for (;;) { // usually only runs once unless +... has multiple entries
                 int len = 0;
@@ -930,6 +1015,8 @@ public class CipherStrings {
                 }
             }
 
+            System.out.println("part = " + part + " found " + found + " - " + tmpFound);
+
             /*
              * Ok, we have the rule, now apply it
              */
@@ -938,7 +1025,12 @@ public class CipherStrings {
                 // NOTE: "SECLEVEL=" not implemented
             } else if (found) {
 
-                final Collection<Def> matching = ciphersMatchingAnyPattern(tmpFound, javaCiphers, setSuite);
+                tmpReq.alg_auth = alg_auth; tmpReq.alg_enc = alg_enc;
+                tmpReq.alg_mkey = alg_mkey; tmpReq.alg_mac = alg_mac;
+                tmpReq.min_tls = min_tls; tmpReq.algo_strength = algo_strength;
+                tmpReq.cipher_id = cipher_id;
+
+                final Collection<Def> matching = ciphersMatchingAnyPattern(tmpFound, tmpReq, javaCiphers, setSuite);
 
                 // ~ ssl_cipher_apply_rule
                 switch (rule) {
@@ -1004,6 +1096,7 @@ public class CipherStrings {
 //                    }
 //                }
 //                else {
+                      // TODO this is not implemented ?!
 //                    for ( final Def def : matching ) {
 //                        if ( removed == null || ! removed.contains(def) ) {
 //                            if ( ! matchedList.contains(def) ) matchedList.add(def);
@@ -1012,6 +1105,9 @@ public class CipherStrings {
 //                }
 //            }
         }
+
+        // TODO ?
+        /* Add TLSv1.3 ciphers first - we always prefer those if possible */
 
         return matchedList;
     }
@@ -1055,15 +1151,67 @@ public class CipherStrings {
         return matching;
     }
 
-    private static Set<Def> ciphersMatchingAnyPattern(final ArrayList<Def> patterns,
+    private static Set<Def> ciphersMatchingAnyPattern(final ArrayList<Def> patterns, final CipherReq req,
                                                       final String[] javaCiphers, final boolean setSuite) {
         assert ! patterns.isEmpty();
 
-        final Set<Def> matching = (Set<Def>) ciphersMatchingPattern(patterns.get(0), javaCiphers, true, setSuite);
+        final Set<Def> matching = (Set<Def>) ciphersMatchingPattern(patterns.get(0), req, javaCiphers, true, setSuite);
         for (int i = 1; i<patterns.size(); i++) {
-            matching.addAll( ciphersMatchingPattern(patterns.get(i), javaCiphers, false, setSuite) );
+            matching.addAll( ciphersMatchingPattern(patterns.get(i), req, javaCiphers, false, setSuite) );
         }
 
+        return matching;
+    }
+
+    private static Collection<Def> ciphersMatchingPattern(final Def pattern, final CipherReq req,
+                                                          final String[] javaCiphers,
+                                                          final boolean useSet,
+                                                          final boolean setSuite) {
+        final Collection<Def> matching;
+        if ( useSet ) matching = new LinkedHashSet<>();
+        else matching = new ArrayList<>(javaCiphers.length);
+
+        final long cipher_id = req.cipher_id;
+        final long alg_mkey = req.alg_mkey;
+        final long alg_auth = req.alg_auth;
+        final long alg_enc = req.alg_enc;
+        final long alg_mac = req.alg_mac;
+        final int min_tls = req.min_tls;
+
+        for ( final String entry : javaCiphers ) {
+            final String ossl = SuiteToOSSL.get(entry);
+            if ( ossl != null ) {
+                final Def cp = CipherNames.get(ossl);
+                if (cp != null) {
+
+                    // TODO HALTED HERE
+
+                    if (pattern.isLegacy()) {
+                        if (!pattern.matches(cp)) continue;
+                    } else {
+                        if (alg_mkey != 0 && (alg_mkey & cp.algorithm_mkey) == 0)
+                            continue;
+                        if (alg_auth != 0 && (alg_auth & cp.algorithm_auth) == 0)
+                            continue;
+                        if (alg_enc != 0 && (alg_enc & cp.algorithm_enc) == 0)
+                            continue;
+                        if (alg_mac != 0 && (alg_mac & cp.algorithm_mac) == 0)
+                            continue;
+                        if (min_tls != 0 && (min_tls != cp.min_tls))
+                            continue;
+                        // TODO
+                        //if ((algo_strength & SSL_STRONG_MASK)
+                        //        && !(algo_strength & SSL_STRONG_MASK & cp->algo_strength))
+                        //    continue;
+                        //if ((algo_strength & SSL_DEFAULT_MASK)
+                        //        && !(algo_strength & SSL_DEFAULT_MASK & cp->algo_strength))
+                        //    continue;
+                    }
+
+                    matching.add(setSuite ? cp.setCipherSuite(entry) : cp);
+                }
+            }
+        }
         return matching;
     }
 
@@ -1101,6 +1249,32 @@ public class CipherStrings {
     //private static final Map<String, Def> CIPHER_ALIASES; // cipher_aliases
 
     static {
+        /* Table of NIDs for each cipher */
+        Object[] ssl_cipher_table_cipher[] = {
+            {SSL_DES, NID_des_cbc},     /* SSL_ENC_DES_IDX 0 */
+            {SSL_3DES, NID_des_ede3_cbc}, /* SSL_ENC_3DES_IDX 1 */
+            {SSL_RC4, NID_rc4},         /* SSL_ENC_RC4_IDX 2 */
+            {SSL_RC2, NID_rc2_cbc},     /* SSL_ENC_RC2_IDX 3 */
+            {SSL_IDEA, NID_idea_cbc},   /* SSL_ENC_IDEA_IDX 4 */
+            {SSL_eNULL, NID_undef},     /* SSL_ENC_NULL_IDX 5 */
+            {SSL_AES128, NID_aes_128_cbc}, /* SSL_ENC_AES128_IDX 6 */
+            {SSL_AES256, NID_aes_256_cbc}, /* SSL_ENC_AES256_IDX 7 */
+            {SSL_CAMELLIA128, NID_camellia_128_cbc}, /* SSL_ENC_CAMELLIA128_IDX 8 */
+            {SSL_CAMELLIA256, NID_camellia_256_cbc}, /* SSL_ENC_CAMELLIA256_IDX 9 */
+            {SSL_eGOST2814789CNT, /* NID_gost89_cnt */ null}, /* SSL_ENC_GOST89_IDX 10 */
+            {SSL_SEED, NID_seed_cbc},   /* SSL_ENC_SEED_IDX 11 */
+            {SSL_AES128GCM, NID_aes_128_gcm}, /* SSL_ENC_AES128GCM_IDX 12 */
+            {SSL_AES256GCM, NID_aes_256_gcm}, /* SSL_ENC_AES256GCM_IDX 13 */
+            {SSL_AES128CCM, NID_aes_128_ccm}, /* SSL_ENC_AES128CCM_IDX 14 */
+            {SSL_AES256CCM, NID_aes_256_ccm}, /* SSL_ENC_AES256CCM_IDX 15 */
+            {SSL_AES128CCM8, NID_aes_128_ccm}, /* SSL_ENC_AES128CCM8_IDX 16 */
+            {SSL_AES256CCM8, NID_aes_256_ccm}, /* SSL_ENC_AES256CCM8_IDX 17 */
+            {SSL_eGOST2814789CNT12, /* NID_gost89_cnt_12 */ null}, /* SSL_ENC_GOST8912_IDX 18 */
+            {SSL_CHACHA20POLY1305, NID_chacha20_poly1305}, /* SSL_ENC_CHACHA_IDX 19 */
+            {SSL_ARIA128GCM, /* NID_aria_128_gcm */ null}, /* SSL_ENC_ARIA128GCM_IDX 20 */
+            {SSL_ARIA256GCM, /* NID_aria_256_gcm */ null}, /* SSL_ENC_ARIA256GCM_IDX 21 */
+        };
+
         final String NULL = null;
 
         Object[] cipher_aliases[] = { // NOTE: copied from OpenSSL 1.1 (ssl_ciph.c)
@@ -1212,8 +1386,8 @@ public class CipherStrings {
             //{0, SSL_TXT_FIPS, NULL, 0, 0, 0, ~SSL_eNULL, 0, 0, 0, 0, 0, SSL_FIPS},
 
             /* "EDH-" aliases to "DHE-" labels (for backward compatibility) */
-            //{0, SSL3_TXT_EDH_DSS_DES_192_CBC3_SHA, NULL, 0, SSL_kDHE, SSL_aDSS, SSL_3DES, SSL_SHA1, 0, 0, 0, 0, SSL_HIGH | SSL_FIPS},
-            //{0, SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA, NULL, 0, SSL_kDHE, SSL_aRSA, SSL_3DES, SSL_SHA1, 0, 0, 0, 0, SSL_HIGH | SSL_FIPS},
+            {0, SSL3_TXT_EDH_DSS_DES_192_CBC3_SHA, NULL, 0, SSL_kDHE, SSL_aDSS, SSL_3DES, SSL_SHA1, 0, 0, 0, 0, SSL_HIGH | SSL_FIPS},
+            {0, SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA, NULL, 0, SSL_kDHE, SSL_aRSA, SSL_3DES, SSL_SHA1, 0, 0, 0, 0, SSL_HIGH | SSL_FIPS},
         };
 
         Definitions = new HashMap<>(128);
@@ -1478,7 +1652,7 @@ public class CipherStrings {
         /* Cipher 13 */
         Ciphers.add(new Def(
                             1,
-                            SSL3_TXT_EDH_DSS_DES_192_CBC3_SHA,
+                            SSL3_TXT_EDH_DSS_DES_192_CBC3_SHA, // in CIPHER_ALIASES
                             SSL3_CK_EDH_DSS_DES_192_CBC3_SHA,
                             SSL_kEDH|SSL_aDSS|SSL_3DES |SSL_SHA1|SSL_SSLV3,
                             SSL_NOT_EXP|SSL_HIGH,
@@ -1517,7 +1691,7 @@ public class CipherStrings {
         /* Cipher 16 */
         Ciphers.add(new Def(
                             1,
-                            SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA,
+                            SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA, // in CIPHER_ALIASES
                             SSL3_CK_EDH_RSA_DES_192_CBC3_SHA,
                             SSL_kEDH|SSL_aRSA|SSL_3DES |SSL_SHA1|SSL_SSLV3,
                             SSL_NOT_EXP|SSL_HIGH,

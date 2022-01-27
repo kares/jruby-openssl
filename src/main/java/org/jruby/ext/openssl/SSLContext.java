@@ -224,7 +224,7 @@ public class SSLContext extends RubyObject {
          * In order to make this work, verify_mode must be set to VERIFY_PEER and
          * the server hostname must be given by OpenSSL::SSL::SSLSocket#hostname=.
          */
-        SSLContext.addReadWriteAttribute(context, "verify_hostname"); // TODO
+        SSLContext.addReadWriteAttribute(context, "verify_hostname");
         /*
          * An OpenSSL::X509::Store used for certificate verification.
          */
@@ -309,7 +309,7 @@ public class SSLContext extends RubyObject {
     //private int sessionCacheMode; // 2 default on MRI
     private int sessionCacheSize; // 20480
 
-    InternalContext internalContext;
+    private InternalContext internalContext;
 
     @JRubyMethod(required = 0, optional = 1, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(IRubyObject[] args) {
@@ -439,9 +439,6 @@ public class SSLContext extends RubyObject {
             store.setExtraData(ossl_ssl_ex_vcb_idx, null);
         }
 
-        value = getInstanceVariable("@verify_hostname");
-        final boolean verifyHostname = value != null && value.isTrue();
-
         value = getInstanceVariable("@verify_depth");
         if ( value != null && ! value.isNil() ) {
             store.setDepth(RubyNumeric.fix2int(value));
@@ -480,7 +477,7 @@ public class SSLContext extends RubyObject {
         */
 
         try {
-            internalContext = createInternalContext(context, cert, key, store, clientCert, extraChainCert, verifyMode, timeout, verifyHostname);
+            internalContext = createInternalContext(context, cert, key, store, clientCert, extraChainCert, verifyMode, timeout);
         }
         catch (GeneralSecurityException e) {
             throw newSSLError(runtime, e);
@@ -902,9 +899,8 @@ public class SSLContext extends RubyObject {
     private InternalContext createInternalContext(ThreadContext context,
         final X509Cert xCert, final PKey pKey, final Store store,
         final List<X509AuxCertificate> clientCert, final List<X509AuxCertificate> extraChainCert,
-        final int verifyMode, final int timeout, final boolean verifyHostname)
-        throws NoSuchAlgorithmException, KeyManagementException {
-        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCert, extraChainCert, verifyMode, timeout, verifyHostname);
+        final int verifyMode, final int timeout) throws NoSuchAlgorithmException, KeyManagementException {
+        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCert, extraChainCert, verifyMode, timeout);
         internalContext.initSSLContext(context);
         return internalContext;
     }
@@ -912,7 +908,7 @@ public class SSLContext extends RubyObject {
     /**
      * c: SSL_CTX
      */
-    final class InternalContext {
+    private class InternalContext {
 
         InternalContext(
             final X509Cert xCert,
@@ -921,8 +917,7 @@ public class SSLContext extends RubyObject {
             final List<X509AuxCertificate> clientCert,
             final List<X509AuxCertificate> extraChainCert,
             final int verifyMode,
-            final int timeout,
-            final boolean verifyHostname) throws NoSuchAlgorithmException {
+            final int timeout) throws NoSuchAlgorithmException {
 
             if ( pKey != null && xCert != null ) {
                 this.privateKey = pKey.getPrivateKey();
@@ -940,7 +935,6 @@ public class SSLContext extends RubyObject {
             this.extraChainCert = extraChainCert;
             this.verifyMode = verifyMode;
             this.timeout = timeout;
-            this.verifyHostname = verifyHostname;
 
             // initialize SSL context :
 
@@ -982,7 +976,6 @@ public class SSLContext extends RubyObject {
         final PrivateKey privateKey;
 
         final int verifyMode;
-        final boolean verifyHostname;
 
         final List<X509AuxCertificate> clientCert; // assumed always != null
         final List<X509AuxCertificate> extraChainCert; // empty assumed == null
@@ -1000,7 +993,6 @@ public class SSLContext extends RubyObject {
 
             // for verify_cb
             storeContext.setExtraData(ossl_ssl_ex_vcb_idx, store.getExtraData(ossl_ssl_ex_vcb_idx));
-            //storeContext.setExtraData(ossl_ssl_ex_ptr_idx, SSLContext.this);
             if ( purpose != null ) storeContext.setDefault(purpose);
             storeContext.getParam().inherit(store.getParam());
             return storeContext;

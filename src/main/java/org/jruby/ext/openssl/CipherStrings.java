@@ -471,8 +471,8 @@ public class CipherStrings {
     public final static String TLS1_TXT_ECDHE_RSA_WITH_DES_192_CBC3_SHA = "ECDHE-RSA-DES-CBC3-SHA";
     public final static String TLS1_TXT_ECDH_anon_WITH_NULL_SHA = "AECDH-NULL-SHA";
 
+    // struct ssl_cipher_st
     static final class Def implements Comparable<Def>, Cloneable {
-    // SSL_CIPHER struct ssl_cipher_st
 
         final boolean valid; // TODO NOT IMPLEMENTED!
         final String name;
@@ -596,7 +596,7 @@ public class CipherStrings {
             return false;
         }
 
-        @Override // for @STRENGTH
+        @Override
         public int compareTo(final Def that) {
             return this.algStrengthBits - that.algStrengthBits;
         }
@@ -633,384 +633,75 @@ public class CipherStrings {
 
     }
 
-    // static void ssl_cipher_collect_ciphers(const SSL_METHOD *ssl_method, ...)
-    static Collection<Def> collectCiphers(final String cipherString, final String[] all, final boolean setSuite) {
-
-        // NOTE: NOOP for us
-        return new ArrayList(Arrays.asList(all));
-
-
-//        int i, co_list_num;
-//        const SSL_CIPHER *c;
-//
-//        /*
-//         * We have num_of_ciphers descriptions compiled in, depending on the
-//         * method selected (SSLv3, TLSv1 etc).
-//         * These will later be sorted in a linked list with at most num
-//         * entries.
-//         */
-//
-//        /* Get the initial list of ciphers */
-//        co_list_num = 0;            /* actual count of ciphers */
-//        for (i = 0; i < num_of_ciphers; i++) {
-//            c = ssl_method->get_cipher(i);
-//            /* drop those that use any of that is not available */
-//            if (c == NULL || !c->valid)
-//                continue;
-//            if ((c->algorithm_mkey & disabled_mkey) ||
-//                    (c->algorithm_auth & disabled_auth) ||
-//                    (c->algorithm_enc & disabled_enc) ||
-//                    (c->algorithm_mac & disabled_mac))
-//                continue;
-//            if (((ssl_method->ssl3_enc->enc_flags & SSL_ENC_FLAG_DTLS) == 0) &&
-//                    c->min_tls == 0)
-//                continue;
-//            if (((ssl_method->ssl3_enc->enc_flags & SSL_ENC_FLAG_DTLS) != 0) &&
-//                    c->min_dtls == 0)
-//                continue;
-//
-//            co_list[co_list_num].cipher = c;
-//            co_list[co_list_num].next = NULL;
-//            co_list[co_list_num].prev = NULL;
-//            co_list[co_list_num].active = 0;
-//            co_list_num++;
-//        }
-//
-//        /*
-//         * Prepare linked list from list entries
-//         */
-//        if (co_list_num > 0) {
-//            co_list[0].prev = NULL;
-//
-//            if (co_list_num > 1) {
-//                co_list[0].next = &co_list[1];
-//
-//                for (i = 1; i < co_list_num - 1; i++) {
-//                    co_list[i].prev = &co_list[i - 1];
-//                    co_list[i].next = &co_list[i + 1];
-//                }
-//
-//                co_list[co_list_num - 1].prev = &co_list[co_list_num - 2];
-//            }
-//
-//            co_list[co_list_num - 1].next = NULL;
-//
-//        *head_p = &co_list[0];
-//        *tail_p = &co_list[co_list_num - 1];
-//        }
-    }
-
-    private enum CipherRule {
-        CIPHER_DEL, CIPHER_ORD, CIPHER_KILL, CIPHER_SPECIAL, CIPHER_ADD
-    }
-
-    // STACK_OF(SSL_CIPHER) *ssl_create_cipher_list
-    static Collection<Def> createCipherList(final String rule_str,
-                                            final String[] javaCiphers,
-                                            final boolean setSuite) {
-
-        // JOSSL: ssl_cipher_collect_ciphers is NOOP, javaCiphers[] always contains valid (Java) names
-
-        /* Now arrange all ciphers by preference. */
-
-        /*
-         * Everything else being equal, prefer ephemeral ECDH over other key
-         * exchange mechanisms.
-         * For consistency, prefer ECDSA over RSA (though this only matters if the
-         * server has both certificates, and is using the DEFAULT, or a client
-         * preference).
-         */
-        // JOSSL: rely on the Java SSL engine cipher ordering ...
-        /*
-        ssl_cipher_apply_rule(0, SSL_kECDHE, SSL_aECDSA, 0, 0, 0, 0, CIPHER_ADD,
-                -1, &head, &tail);
-        ssl_cipher_apply_rule(0, SSL_kECDHE, 0, 0, 0, 0, 0, CIPHER_ADD, -1, &head,
-                          &tail);
-        ssl_cipher_apply_rule(0, SSL_kECDHE, 0, 0, 0, 0, 0, CIPHER_DEL, -1, &head,
-                          &tail);
-
-        ...
-        */
-
-        /*
-         * Now sort by symmetric encryption strength.
-         * The above ordering remains in force within each class
-         */
-        /*
-        if (!ssl_cipher_strength_sort(&head, &tail)) {
-            OPENSSL_free(co_list);
-            return NULL;
-        }
-         */
-
-        /*
-         * We also need cipher aliases for selecting based on the rule_str.
-         * There might be two types of entries in the rule_str: 1) names
-         * of ciphers themselves 2) aliases for groups of ciphers.
-         * For 1) we need the available ciphers and for 2) the cipher
-         * groups of cipher_aliases added together in one list (otherwise
-         * we would be happy with just the cipher_aliases table).
-         */
-        final Map<String, Def> ca_list = Definitions;
-
-        final List<Def> matchedList = new LinkedList<>();
-        Set<Def> removed = null; // ciphers 'killed' (always exclude) by the ! rule
+    static Collection<Def> matchingCiphers(final String cipherString, final String[] all,
+        final boolean setSuite) {
+        final List<Def> matchedList = new LinkedList<Def>();
+        Set<Def> removed = null;
 
         /*
          * If the rule_string begins with DEFAULT, apply the default rule
          * before using the (possibly available) additional rules.
+         * (Matching OpenSSL behaviour)
          */
         int offset = 0;
-        final String[] parts = rule_str.split("[: ;,]+"); // ITEM_SEP
-
+        final String[] parts = cipherString.split("[:, ]+");
         if ( parts.length >= 1 && "DEFAULT".equals(parts[0]) ) {
-            matchedList.addAll(createCipherList(SSL_DEFAULT_CIPHER_LIST, javaCiphers, setSuite));
+            final Collection<Def> matching = matchingCiphers(SSL_DEFAULT_CIPHER_LIST, all, setSuite);
+            matchedList.addAll(matching);
             offset = offset + 1;
         }
 
-        // ~ ssl_cipher_process_rulestr
-
-        final ArrayList<Def> tmpFound = new ArrayList<>(4);
-
         for ( int i = offset; i < parts.length; i++ ) {
             final String part = parts[i];
-            if (part.length() == 0) continue;
+
+            if ( part.equals("@STRENGTH") ) {
+                Collections.sort(matchedList); continue;
+            }
 
             int index = 0;
-            CipherRule rule;
-            boolean multi = false;
-            switch (part.charAt(0)) {
-                case '+': // CIPHER_ORD
-                    rule = CipherRule.CIPHER_ORD;
-                    multi = true;
-                    index++;
-                    break;
-                case '!': // CIPHER_KILL
-                    rule = CipherRule.CIPHER_KILL;
-                    index++;
-                    break;
-                case '-': // CIPHER_DEL
-                    rule = CipherRule.CIPHER_DEL;
-                    index++;
-                    break;
-                case '@' : // CIPHER_SPECIAL
-                    rule = CipherRule.CIPHER_SPECIAL;
-                    if (part.equals("@STRENGTH")) {
-                        Collections.sort(matchedList);
-                    }
-                    continue;
-                default:
-                    rule = CipherRule.CIPHER_ADD;
-            }
-
-            long alg_mkey = 0;
-            long alg_auth = 0;
-            long alg_enc = 0;
-            long alg_mac = 0;
-            int  min_tls = 0;
-            long algo_strength = 0;
-            boolean found = false; tmpFound.clear();
-            long cipher_id; // TODO
-
-            for (;;) { // usually only runs once unless +... has multiple entries
-                int len = 0;
-                for (int j = index; j < part.length(); j++) {
-                    char ch = part.charAt(j);
-                    if (((ch >= 'A') && (ch <= 'Z')) ||
-                        ((ch >= '0') && (ch <= '9')) ||
-                        ((ch >= 'a') && (ch <= 'z')) ||
-                        (ch == '-') || (ch == '.') || (ch == '=')) len++;
-                    else break;
-                }
-
-                Def ca_entry = ca_list.get(part.substring(index, len)); // cipher names + aliases
-
-                if (ca_entry == null) break; /* ignore this entry */
-                found = true;
-
-                if (ca_entry.algorithm_mkey != 0) {
-                    if (alg_mkey != 0) {
-                        alg_mkey &= ca_entry.algorithm_mkey;
-                        if (alg_mkey == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        alg_mkey = ca_entry.algorithm_mkey;
-                    }
-                }
-
-                if (ca_entry.algorithm_auth != 0) {
-                    if (alg_auth != 0) {
-                        alg_auth &= ca_entry.algorithm_auth;
-                        if (alg_auth == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        alg_auth = ca_entry.algorithm_auth;
-                    }
-                }
-
-                if (ca_entry.algorithm_enc != 0) {
-                    if (alg_enc != 0) {
-                        alg_enc &= ca_entry.algorithm_enc;
-                        if (alg_enc == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        alg_enc = ca_entry.algorithm_enc;
-                    }
-                }
-
-                if (ca_entry.algorithm_mac != 0) {
-                    if (alg_mac != 0) {
-                        alg_mac &= ca_entry.algorithm_mac;
-                        if (alg_mac == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        alg_mac = ca_entry.algorithm_mac;
-                    }
-                }
-
-                if ((ca_entry.algStrength & SSL_STRONG_MASK) != 0) {
-                    if ((algo_strength & SSL_STRONG_MASK) != 0) {
-                        algo_strength &= (ca_entry.algStrength & SSL_STRONG_MASK) | ~SSL_STRONG_MASK;
-                        if ((algo_strength & SSL_STRONG_MASK) == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        algo_strength = ca_entry.algStrength & SSL_STRONG_MASK;
-                    }
-                }
-
-                if ((ca_entry.algStrength & SSL_DEFAULT_MASK) != 0) {
-                    if ((algo_strength & SSL_DEFAULT_MASK) != 0) {
-                        algo_strength &= (ca_entry.algStrength & SSL_DEFAULT_MASK) | ~SSL_DEFAULT_MASK;
-                        if ((algo_strength & SSL_DEFAULT_MASK) == 0) {
-                            found = false;
-                            break;
-                        }
-                    } else {
-                        algo_strength = ca_entry.algStrength & SSL_DEFAULT_MASK;
-                    }
-                }
-
-                if (ca_entry.valid) {
-                    /*
-                     * explicit ciphersuite found; its protocol version does not
-                     * become part of the search pattern!
-                     */
-                    cipher_id = ca_entry.id;
-                } else {
-                    /*
-                     * not an explicit ciphersuite; only in this case, the
-                     * protocol version is considered part of the search pattern
-                     */
-                    if (ca_entry.min_tls != 0) {
-                        if (min_tls != 0 && min_tls != ca_entry.min_tls) {
-                            found = false;
-                            break;
-                        } else {
-                            min_tls = ca_entry.min_tls;
-                        }
-                    }
-                }
-
-                tmpFound.add(ca_entry);
-
-                if (multi) {
-                    index += len;
-                } else {
-                    break;
+            if (part.length() > 0) {
+                switch ( part.charAt(0) ) {
+                    case '!': case '+': case '-': index++; break;
                 }
             }
 
-            /*
-             * Ok, we have the rule, now apply it
-             */
-            if (rule == CipherRule.CIPHER_SPECIAL) { /* special command */
-                // NOTE: "STRENGTH" handled above ...
-                // NOTE: "SECLEVEL=" not implemented
-            } else if (found) {
+            final Collection<Def> matching;
+            final String[] defs = part.substring(index).split("[+]");
+            if ( defs.length == 1 ) {
+                matching = matchingExact(defs[0], all, setSuite);
+            }
+            else {
+                matching = matching(defs, all, setSuite);
+            }
 
-                final Collection<Def> matching = ciphersMatchingAnyPattern(tmpFound, javaCiphers, setSuite);
-
-                // ~ ssl_cipher_apply_rule
-                switch (rule) {
-                    case CIPHER_KILL:
-                        matchedList.removeAll(matching);
-                        if (removed == null) removed = new HashSet<>(8);
-                        removed.addAll(matching);
-                        break;
-                    case CIPHER_ORD: // '+' is for moving entry in the list
-                        for (final Def def : matching) {
-                            if (removed == null || !removed.contains(def)) {
-                                if (matchedList.remove(def)) matchedList.add(def);
+            if ( matching != null ) {
+                if ( index > 0 ) {
+                    switch ( part.charAt(0) ) {
+                        case '!':
+                            matchedList.removeAll(matching);
+                            if ( removed == null ) removed = new HashSet<Def>();
+                            removed.addAll(matching);
+                            break;
+                        case '+': // '+' is for moving entry in the list
+                            for ( final Def def : matching ) {
+                                if ( removed == null || ! removed.contains(def) ) {
+                                    if ( matchedList.remove(def) ) matchedList.add(def);
+                                }
                             }
-                        }
-                        break;
-                    case CIPHER_DEL:
-                        matchedList.removeAll(matching);
-                        break;
-                    case CIPHER_ADD:
-                        for (final Def def : matching) {
-                            if (removed == null || !removed.contains(def)) {
-                                if (!matchedList.contains(def)) matchedList.add(def);
-                            }
-                        }
-                        break;
+                            break;
+                        case '-':
+                            matchedList.removeAll(matching);
+                            break;
+                    }
                 }
-
-//                ssl_cipher_apply_rule(cipher_id,
-//                        alg_mkey, alg_auth, alg_enc, alg_mac,
-//                        min_tls, algo_strength, rule, -1, head_p,
-//                        tail_p);
-
-
+                else {
+                    for ( final Def def : matching ) {
+                        if ( removed == null || ! removed.contains(def) ) {
+                            if ( ! matchedList.contains(def) ) matchedList.add(def);
+                        }
+                    }
+                }
             }
-
-//            final Collection<Def> matching;
-//            final String[] defs = StringHelper.split(part.substring(index), '+');
-//            if ( defs.length == 1 ) {
-//                matching = matchingExact(defs[0], all, setSuite);
-//            }
-//            else {
-//                matching = matching(defs, all, setSuite);
-//            }
-
-//            if ( matching != null ) {
-//                if ( index > 0 ) {
-//                    switch ( part.charAt(0) ) {
-//                        case '!':
-//                            matchedList.removeAll(matching);
-//                            if ( removed == null ) removed = new HashSet<Def>();
-//                            removed.addAll(matching);
-//                            break;
-//                        case '+': // '+' is for moving entry in the list
-//                            for ( final Def def : matching ) {
-//                                if ( removed == null || ! removed.contains(def) ) {
-//                                    if ( matchedList.remove(def) ) matchedList.add(def);
-//                                }
-//                            }
-//                            break;
-//                        case '-':
-//                            matchedList.removeAll(matching);
-//                            break;
-//                    }
-//                }
-//                else {
-//                    for ( final Def def : matching ) {
-//                        if ( removed == null || ! removed.contains(def) ) {
-//                            if ( ! matchedList.contains(def) ) matchedList.add(def);
-//                        }
-//                    }
-//                }
-//            }
         }
 
         return matchedList;
@@ -1020,7 +711,7 @@ public class CipherStrings {
         final boolean setSuite) {
         final Def pattern = Definitions.get(name);
         if (pattern != null) {
-            return ciphersMatchingPattern(pattern, all, true, setSuite);
+            return matchingPattern(pattern, all, true, setSuite);
         }
 
         final Def def = CipherNames.get(name);
@@ -1045,37 +736,24 @@ public class CipherStrings {
             final Def pattern = Definitions.get(name);
             if ( pattern != null ) {
                 if ( matching == null ) {
-                    matching = ciphersMatchingPattern(pattern, all, true, setSuite);
+                    matching = matchingPattern(pattern, all, true, setSuite);
                 }
                 else {
-                    matching.retainAll( ciphersMatchingPattern(pattern, all, false, setSuite) );
+                    matching.retainAll( matchingPattern(pattern, all, false, setSuite) );
                 }
             }
         }
         return matching;
     }
 
-    private static Set<Def> ciphersMatchingAnyPattern(final ArrayList<Def> patterns,
-                                                      final String[] javaCiphers, final boolean setSuite) {
-        assert ! patterns.isEmpty();
-
-        final Set<Def> matching = (Set<Def>) ciphersMatchingPattern(patterns.get(0), javaCiphers, true, setSuite);
-        for (int i = 1; i<patterns.size(); i++) {
-            matching.addAll( ciphersMatchingPattern(patterns.get(i), javaCiphers, false, setSuite) );
-        }
-
-        return matching;
-    }
-
-    private static Collection<Def> ciphersMatchingPattern(final Def pattern,
-                                                          final String[] javaCiphers,
-                                                          final boolean useSet,
-                                                          final boolean setSuite) {
+    private static Collection<Def> matchingPattern(
+        final Def pattern, final String[] all, final boolean useSet,
+        final boolean setSuite) {
         final Collection<Def> matching;
-        if ( useSet ) matching = new LinkedHashSet<>();
-        else matching = new ArrayList<>(javaCiphers.length);
+        if ( useSet ) matching = new LinkedHashSet<Def>();
+        else matching = new ArrayList<Def>(all.length);
 
-        for ( final String entry : javaCiphers ) {
+        for ( final String entry : all ) {
             final String ossl = SuiteToOSSL.get(entry);
             if ( ossl != null ) {
                 final Def def = CipherNames.get(ossl);
@@ -1092,13 +770,10 @@ public class CipherStrings {
         return matching;
     }
 
-    private final static Map<String, Def> Definitions; // ca_list
+    private final static Map<String, Def> Definitions;
     //private final static ArrayList<Def> Ciphers;
     private final static Map<String, Def> CipherNames;
     private final static Map<String, String> SuiteToOSSL;
-
-    // NOTE: not needed - should instead rename Definitions?!?
-    //private static final Map<String, Def> CIPHER_ALIASES; // cipher_aliases
 
     static {
         final String NULL = null;
@@ -1216,12 +891,9 @@ public class CipherStrings {
             //{0, SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA, NULL, 0, SSL_kDHE, SSL_aRSA, SSL_3DES, SSL_SHA1, 0, 0, 0, 0, SSL_HIGH | SSL_FIPS},
         };
 
-        Definitions = new HashMap<>(128);
+        Definitions = new HashMap<String, Def>(128);
 
-        //CIPHER_ALIASES = new HashMap<>(cipher_aliases.length, 1);
-
-        for (int i = 0; i < cipher_aliases.length; i++) {
-            final Object[] a = cipher_aliases[i];
+        for (Object[] a : cipher_aliases) {
             int valid = (Integer) a[0];
             String txt_name = (String) a[1];
             String std_name = (String) a[2];
@@ -1232,9 +904,9 @@ public class CipherStrings {
             long algorithm_mac = a.length > 7 ? ((Number) a[7]).longValue() : 0;
             int min_tls = a.length > 8 ? ((Integer) a[8]) : 0;
             int max_tls = a.length > 9 ? ((Integer) a[9]) : 0;
-            Def alias = new Def(valid, txt_name, std_name, id, algorithm_mkey, algorithm_auth, algorithm_enc, algorithm_mac, min_tls, max_tls);
-            //CIPHER_ALIASES.put(txt_name, alias);
-            Definitions.put(txt_name, alias); // TODO no longer necessary !?!
+            Definitions.put(txt_name,
+                new Def(valid, txt_name, std_name, id, algorithm_mkey, algorithm_auth, algorithm_enc, algorithm_mac, min_tls, max_tls)
+            );
         }
 
         final ArrayList<Def> Ciphers = new ArrayList<Def>( 96 );

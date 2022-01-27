@@ -30,6 +30,7 @@ package org.jruby.ext.openssl;
 import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.OpenSSL.warn;
 import static org.jruby.ext.openssl.X509._X509;
+import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_ptr_idx;
 import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
 
 import org.jruby.Ruby;
@@ -243,18 +244,44 @@ public class X509Store extends RubyObject {
         public int call(final StoreContext context, final Integer outcome) {
             int preverify_ok = outcome.intValue();
 
-            IRubyObject proc = (IRubyObject) context.getExtraData(ossl_ssl_ex_vcb_idx);
-            if (proc == null) {
-                proc = (IRubyObject) context.getStore().getExtraData(ossl_ssl_ex_vcb_idx);
+            IRubyObject cb = (IRubyObject) context.getExtraData(ossl_ssl_ex_vcb_idx);
+            if (cb == null) {
+                cb = (IRubyObject) context.getStore().getExtraData(ossl_ssl_ex_vcb_idx);
 
-                if (proc == null) return preverify_ok;
+                if (cb == null) return preverify_ok;
             }
 
+            /*
+            if (preverify_ok && RTEST(verify_hostname) && !SSL_is_server(ssl) &&
+            !X509_STORE_CTX_get_error_depth(ctx)) {
+            ret = rb_protect(call_verify_certificate_identity, (VALUE)ctx, &status);
+            if (status) {
+                rb_ivar_set(ssl_obj, ID_callback_state, INT2NUM(status));
+                return 0;
+            }
+                if (ret != Qtrue) {
+                    preverify_ok = 0;
+        #if defined(X509_V_ERR_HOSTNAME_MISMATCH)
+                    X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH);
+        #else
+                    X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED);
+        #endif
+                }
+            }
 
-            if ( ! proc.isNil() ) {
-                final Ruby runtime = proc.getRuntime();
+            return ossl_verify_cb_call(cb, preverify_ok, ctx);
+             */
+
+            //SSLContext sslctx_obj = (SSLContext) context.getExtraData(ossl_ssl_ex_ptr_idx);
+            //boolean verify_hostname = sslctx_obj.internalContext.verifyHostname;
+
+            //if (preverify_ok != 0 && verify_hostname) {
+            //}
+
+            if ( ! cb.isNil() ) {
+                final Ruby runtime = cb.getRuntime();
                 X509StoreContext store_context = X509StoreContext.newStoreContext(runtime, context);
-                IRubyObject ret = proc.callMethod(runtime.getCurrentContext(), "call",
+                IRubyObject ret = cb.callMethod(runtime.getCurrentContext(), "call",
                     new IRubyObject[] { runtime.newBoolean(preverify_ok != 0), store_context }
                 );
                 if (ret.isTrue()) {
@@ -271,6 +298,27 @@ public class X509Store extends RubyObject {
             return preverify_ok;
         }
     };
+
+    private static boolean call_verify_certificate_identity(final StoreContext context) {
+//        X509_STORE_CTX *ctx = (X509_STORE_CTX *)ctx_v;
+//        SSL *ssl;
+//        VALUE ssl_obj, hostname, cert_obj;
+//
+//        ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+//        ssl_obj = (VALUE)SSL_get_ex_data(ssl, ossl_ssl_ex_ptr_idx);
+//        hostname = rb_attr_get(ssl_obj, id_i_hostname);
+//
+//        if (!RTEST(hostname)) {
+//            rb_warning("verify_hostname requires hostname to be set");
+//            return Qtrue;
+//        }
+//
+//        cert_obj = ossl_x509_new(X509_STORE_CTX_get_current_cert(ctx));
+//        return rb_funcall(mSSL, rb_intern("verify_certificate_identity"), 2,
+//                cert_obj, hostname);
+
+        return false;
+    }
 
     private static RubyClass _StoreError(final Ruby runtime) {
         return _X509(runtime).getClass("StoreError");

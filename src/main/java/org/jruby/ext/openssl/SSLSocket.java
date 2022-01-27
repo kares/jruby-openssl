@@ -215,7 +215,8 @@ public class SSLSocket extends RubyObject {
         // Server Name Indication (SNI) RFC 3546
         // SNI support will not be attempted unless hostname is explicitly set by the caller
         IRubyObject hostname = getInstanceVariable("@hostname");
-        String peerHost = hostname == null ? null : hostname.toString();
+        String peerHost = hostname == null ? null : hostname.toString(); //
+
         final int peerPort = socketChannelImpl().getRemotePort();
         engine = sslContext.createSSLEngine(peerHost, peerPort);
 
@@ -294,14 +295,14 @@ public class SSLSocket extends RubyObject {
             if ( ex != null ) return ex; // :wait_readable | :wait_writable
         }
         catch (SSLHandshakeException e) {
-            //debugStackTrace(runtime, e);
+            debugStackTrace(context.runtime, e);
             // unlike server side, client should close outbound channel even if
             // we have remaining data to be sent.
             forceClose();
             throw newSSLErrorFromHandshake(context.runtime, e);
         }
         catch (IOException e) {
-            //debugStackTrace(context.runtime, e);
+            debugStackTrace(context.runtime, e);
             forceClose();
             throw newSSLError(context.runtime, e);
         }

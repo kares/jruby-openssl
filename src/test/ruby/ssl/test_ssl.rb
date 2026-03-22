@@ -119,6 +119,76 @@ class TestSSL < TestCase
 
   public
 
+  # Ported from CRuby's test_verify_hostname_on_connect (test/openssl/test_ssl.rb).
+  # Verifies that SSLSocket#connect enforces verify_hostname automatically.
+  # On CRuby this is checked inside the OpenSSL verify callback during handshake;
+  # on JRuby it is checked after the JSSE handshake completes (equivalent effect).
+  def test_verify_hostname_on_connect
+    now = Time.now
+    exts = [
+      ["keyUsage", "keyEncipherment,digitalSignature", true],
+      ["subjectAltName", "DNS:a.example.com,DNS:*.b.example.com", false],
+    ]
+    @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
+                           not_before: now, not_after: now + 1800)
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_hostname = true
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+      [
+        ["a.example.com", true],
+        ["A.Example.Com", true],
+        ["x.example.com", false],
+        ["b.example.com", false],
+        ["x.b.example.com", true],
+      ].each do |name, expected_ok|
+        begin
+          sock = TCPSocket.new("127.0.0.1", port)
+          ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+          ssl.hostname = name
+          if expected_ok
+            ssl.connect
+          else
+            assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+          end
+        ensure
+          ssl&.close rescue nil
+          sock&.close rescue nil
+        end
+      end
+    end
+  end
+
+  def test_verify_hostname_not_enforced_when_disabled
+    now = Time.now
+    exts = [
+      ["keyUsage", "keyEncipherment,digitalSignature", true],
+      ["subjectAltName", "DNS:a.example.com", false],
+    ]
+    @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
+                           not_before: now, not_after: now + 1800)
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      # verify_hostname defaults to false/nil — mismatched hostname should succeed
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.hostname = "wrong.example.com"
+      ssl.connect # should succeed — verify_hostname is not set
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
   def test_post_connect_check_with_anon_ciphers
     unless OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384
       return skip('OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384 not enabled')

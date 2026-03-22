@@ -42,6 +42,8 @@ import org.bouncycastle.asn1.x509.DistributionPoint;
 import org.bouncycastle.asn1.x509.DistributionPointName;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.GeneralSubtree;
+import org.bouncycastle.asn1.x509.NameConstraints;
 
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -213,6 +215,9 @@ public class X509ExtensionFactory extends RubyObject {
             }
             else if (isNetscapeIA5StringExtension(id)) {
                 value = new DEROctetString(new DERIA5String(valuex).getEncoded(ASN1Encoding.DER));
+            }
+            else if (id.equals("2.5.29.30")) { // nameConstraints
+                value = parseNameConstraints(valuex);
             }
             else {
                 value = new DEROctetString(new DEROctetString(ByteList.plain(valuex)).getEncoded(ASN1Encoding.DER));
@@ -717,6 +722,42 @@ public class X509ExtensionFactory extends RubyObject {
             vector.add(new AccessDescription(method, parseGeneralName(accessLocation)));
         }
         return new DERSequence(vector);
+    }
+
+    /**
+     * Parses nameConstraints from the OpenSSL config format:
+     * "permitted;DNS:.example.com,excluded;IP:10.0.0.0/255.0.0.0"
+     *
+     * C OpenSSL's v2i_NAME_CONSTRAINTS strips the "permitted"/"excluded" prefix
+     * and passes the remainder to v2i_GENERAL_NAME_ex.
+     */
+    private DEROctetString parseNameConstraints(final String valuex) throws IOException {
+        final java.util.List<GeneralSubtree> permitted = new java.util.ArrayList<>();
+        final java.util.List<GeneralSubtree> excluded = new java.util.ArrayList<>();
+
+        final String[] entries = valuex.split(",");
+        for (String entry : entries) {
+            entry = entry.trim();
+            final String nameValue;
+            final java.util.List<GeneralSubtree> target;
+            if (entry.startsWith("permitted;")) {
+                nameValue = entry.substring("permitted;".length()).trim();
+                target = permitted;
+            } else if (entry.startsWith("excluded;")) {
+                nameValue = entry.substring("excluded;".length()).trim();
+                target = excluded;
+            } else {
+                throw new IOException("Invalid nameConstraints syntax: " + entry);
+            }
+            final GeneralName name = parseGeneralName(nameValue);
+            target.add(new GeneralSubtree(name));
+        }
+
+        final NameConstraints nc = new NameConstraints(
+                permitted.isEmpty() ? null : permitted.toArray(new GeneralSubtree[0]),
+                excluded.isEmpty() ? null : excluded.toArray(new GeneralSubtree[0]));
+
+        return new DEROctetString(nc.getEncoded(ASN1Encoding.DER));
     }
 
     private GeneralNames parseGeneralNames(final ThreadContext context, final String valuex) throws IOException {

@@ -592,29 +592,7 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_OK, store2.error
   end
 
-  # Helper: build a proper ASN.1 nameConstraints extension since
-  # JRuby's create_extension doesn't encode nameConstraints correctly yet.
   private
-
-  def build_name_constraints_ext(permitted_dns: nil, excluded_dns: nil)
-    subtrees = []
-    if permitted_dns
-      dns_names = Array(permitted_dns).map do |name|
-        dns = OpenSSL::ASN1::IA5String.new(name, 2, :IMPLICIT, :CONTEXT_SPECIFIC)
-        OpenSSL::ASN1::Sequence.new([dns])
-      end
-      subtrees << OpenSSL::ASN1::Sequence.new(dns_names, 0, :IMPLICIT, :CONTEXT_SPECIFIC)
-    end
-    if excluded_dns
-      dns_names = Array(excluded_dns).map do |name|
-        dns = OpenSSL::ASN1::IA5String.new(name, 2, :IMPLICIT, :CONTEXT_SPECIFIC)
-        OpenSSL::ASN1::Sequence.new([dns])
-      end
-      subtrees << OpenSSL::ASN1::Sequence.new(dns_names, 1, :IMPLICIT, :CONTEXT_SPECIFIC)
-    end
-    nc = OpenSSL::ASN1::Sequence.new(subtrees)
-    OpenSSL::X509::Extension.new("nameConstraints", nc.to_der, true)
-  end
 
   def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)
     key = OpenSSL::PKey::RSA.new(2048)
@@ -638,10 +616,9 @@ class TestX509Store < TestCase
     now = Time.now
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
-      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true],
+       ["nameConstraints","permitted;DNS:.example.com",true]],
       nil, nil, not_before: now, not_after: now + 3600)
-    ca_cert.add_extension(build_name_constraints_ext(permitted_dns: [".example.com"]))
-    ca_cert.sign(ca_key, "SHA256")  # re-sign after adding extension
 
     good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
     bad = build_cert_with_san("bad", 11, "evil.attacker.com", ca_cert, ca_key)
@@ -658,10 +635,9 @@ class TestX509Store < TestCase
     now = Time.now
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
-      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true],
+       ["nameConstraints","excluded;DNS:.evil.com",true]],
       nil, nil, not_before: now, not_after: now + 3600)
-    ca_cert.add_extension(build_name_constraints_ext(excluded_dns: [".evil.com"]))
-    ca_cert.sign(ca_key, "SHA256")
 
     good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
     bad = build_cert_with_san("bad", 11, "bad.evil.com", ca_cert, ca_key)
@@ -690,12 +666,9 @@ class TestX509Store < TestCase
     now = Time.now
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
-      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true],
+       ["nameConstraints","permitted;DNS:.example.com,excluded;DNS:.bad.example.com",true]],
       nil, nil, not_before: now, not_after: now + 3600)
-    # Permit .example.com but exclude .bad.example.com
-    ca_cert.add_extension(build_name_constraints_ext(
-      permitted_dns: [".example.com"], excluded_dns: [".bad.example.com"]))
-    ca_cert.sign(ca_key, "SHA256")
 
     good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
     bad = build_cert_with_san("bad", 11, "test.bad.example.com", ca_cert, ca_key)

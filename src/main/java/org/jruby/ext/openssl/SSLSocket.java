@@ -325,9 +325,8 @@ public class SSLSocket extends RubyObject {
         }
 
         // CRuby enforces verify_hostname inside the OpenSSL verify callback
-        // during the handshake (ossl_ssl.c ossl_ssl_verify_callback, depth 0).
-        // JSSE has no equivalent hook, so we check after the handshake completes.
-        // This is functionally equivalent — connect raises SSLError on mismatch.
+        // during the handshake (ossl_ssl.c ossl_ssl_verify_callback, depth 0)
+        // JSSE has no equivalent hook, so we check after the handshake completes
         verifyHostnameConnectionCheck(context);
 
         return this;

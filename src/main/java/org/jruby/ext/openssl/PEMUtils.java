@@ -27,6 +27,10 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 
 import java.security.Key;
@@ -39,6 +43,7 @@ import java.security.cert.Certificate;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Collection;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
@@ -59,6 +64,10 @@ import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.PEMWriter;
 import org.bouncycastle.operator.OperatorCreationException;
 
+import org.jruby.RubyString;
+import org.jruby.runtime.builtin.IRubyObject;
+import org.jruby.util.ByteList;
+
 import org.jruby.ext.openssl.impl.pem.MiscPEMGeneratorHelper;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 //import org.bouncycastle.util.io.pem.PemReader;
@@ -71,6 +80,58 @@ import static org.jruby.ext.openssl.x509store.PEMInputOutput.getKeyFactory;
  * @author kares
  */
 public abstract class PEMUtils {
+
+    /**
+     * Convert a Ruby string to a password char[] without creating an intermediate
+     * Java String (which would be immutable and unclearable in memory).
+     * <p>
+     * This matches C OpenSSL's password handling where the password is used
+     * in-place from the caller's buffer ({@code const char *pass}) with no
+     * intermediate immutable copy.
+     * <p>
+     * The caller can clear the returned array after use via {@link #clearChars}.
+     *
+     * @param passwd a Ruby string (or nil)
+     * @return password as char[], never null
+     */
+    public static char[] toPasswordChars(final IRubyObject passwd) {
+        if (passwd == null || passwd.isNil()) return new char[0];
+
+        final RubyString str = passwd.convertToString();
+        final ByteList byteList = str.getByteList();
+
+        return toPasswordChars(
+            byteList.getUnsafeBytes(), byteList.getBegin(), byteList.getRealSize(),
+            byteList.getEncoding().getCharset()
+        );
+    }
+
+    // Package-private for testing
+    static char[] toPasswordChars(final byte[] bytes, final int offset, final int length, Charset charset) {
+        if (length == 0) return new char[0];
+
+        if (charset == null) charset = StandardCharsets.ISO_8859_1;
+
+        final ByteBuffer byteBuf = ByteBuffer.wrap(bytes, offset, length);
+        final CharBuffer charBuf = charset.decode(byteBuf);
+
+        final char[] result = new char[charBuf.remaining()];
+        charBuf.get(result);
+
+        // Clear the decoder's intermediate buffer
+        if (charBuf.hasArray()) {
+            Arrays.fill(charBuf.array(), '\0');
+        }
+
+        return result;
+    }
+
+    /**
+     * Zero-fill a password char array. Safe to call with null.
+     */
+    public static void clearChars(final char[] chars) {
+        if (chars != null) Arrays.fill(chars, '\0');
+    }
 
     /*
     private static boolean bcPEMParser;

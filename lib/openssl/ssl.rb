@@ -12,6 +12,7 @@
 
 require "openssl/buffering"
 require "io/nonblock"
+require "ipaddr"
 require "socket"
 
 module OpenSSL
@@ -319,15 +320,10 @@ YoaOffgTf5qxiwkjnlVZQc3whgnEt9FpVMvQ9eknyeGB5KHfayAc3+hUAvI3/Cr3
           #when 7 # iPAddress in GeneralName (RFC5280)
           elsif /\AIP(?: Address)?:(.*)/ =~ general_name
             should_verify_common_name = false
-            return true if $1 == hostname
-            # NOTE: bellow logic makes little sense JRuby reads exts differently
-            # follows GENERAL_NAME_print() in x509v3/v3_alt.c
-            # if san.value.size == 4 || san.value.size == 16
-            #    begin
-            #      return true if $1 == IPAddr.new(hostname).to_s
-            #    rescue IPAddr::InvalidAddressError
-            #    end
-            # end
+            begin
+              return true if IPAddr.new($1) == IPAddr.new(hostname)
+            rescue IPAddr::InvalidAddressError
+            end
           end
         }
       }

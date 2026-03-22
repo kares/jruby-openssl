@@ -322,6 +322,15 @@ public class SSLSocket extends RubyObject {
         catch (NotYetConnectedException e) {
             throw newErrnoEPIPEError(context.runtime, "SSL_connect");
         }
+
+        // CRuby enforces verify_hostname inside the OpenSSL verify callback
+        // during the handshake (ossl_ssl.c ossl_ssl_verify_callback, depth 0).
+        // JSSE has no equivalent hook, so we check after the handshake completes.
+        // This is functionally equivalent — connect raises SSLError on mismatch.
+        // Note: net/http and net/imap also call post_connection_check explicitly,
+        // so this may double-check in those cases (harmless, same result).
+        verifyHostnameIfRequired(context);
+
         return this;
     }
 
@@ -409,6 +418,18 @@ public class SSLSocket extends RubyObject {
             throw newSSLError(context.runtime, e);
         }
         return this;
+    }
+
+    private void verifyHostnameIfRequired(final ThreadContext context) {
+        final IRubyObject verifyHostname = sslContext.getInstanceVariable("@verify_hostname");
+        if (verifyHostname == null || !verifyHostname.isTrue()) return;
+
+        final IRubyObject hostname = getInstanceVariable("@hostname");
+        if (hostname == null || hostname.isNil()) return;
+
+        // delegates to post_connection_check (defined in Ruby) which calls
+        // OpenSSL::SSL.verify_certificate_identity(peer_cert, hostname)
+        callMethod(context, "post_connection_check", hostname);
     }
 
     final IRubyObject verify_mode(final ThreadContext context) {

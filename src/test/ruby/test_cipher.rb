@@ -158,6 +158,121 @@ class TestCipher < TestCase
     assert_equal ct1, ct2
   end
 
+  # GH-183: cipher.update should flush complete blocks immediately,
+  # matching C OpenSSL's EVP_EncryptUpdate behavior.
+  def test_update_flushes_complete_blocks_cbc
+    key = "0123456789abcdef"
+    iv = "fedcba9876543210"
+    [
+      [1,  0],  [15, 0],  [16, 16], [17, 16],
+      [32, 32], [48, 48], [31, 16], [33, 32],
+    ].each do |input_len, expected_output_len|
+      c = OpenSSL::Cipher.new("AES-128-CBC")
+      c.encrypt; c.key = key; c.iv = iv
+      out = c.update("x" * input_len)
+      assert_equal expected_output_len, out.length,
+        "update(#{input_len}).length should be #{expected_output_len}"
+    end
+  end
+
+  def test_update_flushes_complete_blocks_ecb
+    key = "0123456789abcdef"
+    [16, 32, 48].each do |n|
+      c = OpenSSL::Cipher.new("AES-128-ECB")
+      c.encrypt; c.key = key
+      assert_equal n, c.update("x" * n).length,
+        "ECB update(#{n}).length should be #{n}"
+    end
+  end
+
+  def test_update_multi_chunk_accumulation
+    key = "0123456789abcdef"
+    iv = "fedcba9876543210"
+    c = OpenSSL::Cipher.new("AES-128-CBC")
+    c.encrypt; c.key = key; c.iv = iv
+    # 5 bytes: no output (partial block)
+    assert_equal 0, c.update("x" * 5).length
+    # 11 more bytes (total 16): flush one block
+    assert_equal 16, c.update("y" * 11).length
+    # 3 more bytes: no output (partial block)
+    assert_equal 0, c.update("z" * 3).length
+    # final: flush padded last block
+    assert_equal 16, c.final.length
+  end
+
+  def test_update_roundtrip_after_fix
+    key = "0123456789abcdef"
+    iv = "fedcba9876543210"
+    data = "The quick brown fox jumps over the lazy dog!"
+    c = OpenSSL::Cipher.new("AES-128-CBC")
+    c.encrypt; c.key = key; c.iv = iv
+    ct = c.update(data) + c.final
+
+    d = OpenSSL::Cipher.new("AES-128-CBC")
+    d.decrypt; d.key = key; d.iv = iv
+    pt = d.update(ct) + d.final
+    assert_equal data, pt
+  end
+
+  # Ensure encrypt→decrypt on the same object still works
+  def test_encrypt_then_decrypt_same_object
+    key = "0123456789abcdef"
+    iv = "fedcba9876543210"
+    data = "hello world!!!!!"  # 16 bytes
+
+    c = OpenSSL::Cipher.new("AES-128-CBC")
+    c.encrypt; c.key = key; c.iv = iv
+    ct = c.update(data) + c.final
+
+    c.decrypt; c.key = key; c.iv = iv
+    pt = c.update(ct) + c.final
+    assert_equal data, pt
+  end
+
+  # GCM round-trip should not be affected by the buffering change
+  def test_gcm_roundtrip_not_affected
+    key = "0123456789abcdef"
+    iv = "0123456789ab"
+    data = "hello world"
+    c = OpenSSL::Cipher.new("AES-128-GCM")
+    c.encrypt; c.key = key; c.iv = iv; c.auth_data = "aad"
+    ct = c.update(data) + c.final
+    tag = c.auth_tag
+
+    d = OpenSSL::Cipher.new("AES-128-GCM")
+    d.decrypt; d.key = key; d.iv = iv; d.auth_data = "aad"; d.auth_tag = tag
+    pt = d.update(ct) + d.final
+    assert_equal data, pt
+  end
+
+  # Workaround from rubyzip (hainesr/rubyzip@3567ff4) added cipher.final
+  # after block-by-block decryption on JRuby. With our fix this workaround
+  # must remain harmless — final should return empty on both platforms.
+  def test_block_decrypt_with_extra_final_workaround
+    key = "0123456789abcdef"
+    iv = "fedcba9876543210"
+    plaintext = "Hello World!! :)" * 4  # 64 bytes = 4 blocks
+
+    enc = OpenSSL::Cipher.new("AES-128-CBC")
+    enc.encrypt; enc.key = key; enc.iv = iv
+    ct = enc.update(plaintext) + enc.final
+
+    # Block-by-block decrypt with padding=0 and explicit final (the workaround)
+    dec = OpenSSL::Cipher.new("AES-128-CBC")
+    dec.decrypt; dec.key = key; dec.iv = iv; dec.padding = 0
+    result = ""
+    (0...ct.length).step(16) { |i| result << dec.update(ct[i, 16]) }
+    result << dec.final  # should be harmless (empty)
+    assert_equal plaintext, result[0...plaintext.length]
+
+    # Same without final — should also work
+    dec2 = OpenSSL::Cipher.new("AES-128-CBC")
+    dec2.decrypt; dec2.key = key; dec2.iv = iv; dec2.padding = 0
+    result2 = ""
+    (0...ct.length).step(16) { |i| result2 << dec2.update(ct[i, 16]) }
+    assert_equal plaintext, result2[0...plaintext.length]
+  end
+
   @@test_encrypt_decrypt_des_variations = nil
 
   def test_encrypt_decrypt_des_variations

@@ -1038,6 +1038,12 @@ public class Cipher extends RubyObject {
         if ( key == null ) { //key = emptyKey(keyLength);
             throw newCipherError(runtime, "key not specified");
         }
+        // If a previous encrypt pass swapped in a NoPadding cipher, restore
+        // the original PKCS5Padding cipher before re-initializing.
+        if ( updateBuffer != null ) {
+            this.cipher = getCipherInstance();
+            updateBuffer = null;
+        }
         try {
             // ECB mode is the only mode that does not require an IV
             if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
@@ -1084,6 +1090,35 @@ public class Cipher extends RubyObject {
         }
         cipherInited = true;
         processedDataBytes = 0;
+
+        if ( needsManualBlockBuffering() ) {
+            // Switch JCE cipher to NoPadding so it flushes complete blocks
+            // immediately. We'll add PKCS7 padding ourselves in do_final.
+            final int blockSize = cipher.getBlockSize();
+            if ( blockSize > 0 ) {
+                final String noPadName = realName.replace("PKCS5Padding", "NoPadding");
+                try {
+                    javax.crypto.Cipher noPad = getCipherInstance(noPadName, false);
+                    if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
+                        noPad.init(ENCRYPT_MODE, new SimpleSecretKey(getCipherAlgorithm(), this.key));
+                    } else {
+                        noPad.init(ENCRYPT_MODE,
+                            new SimpleSecretKey(getCipherAlgorithm(), this.key),
+                            new IvParameterSpec(this.realIV));
+                    }
+                    this.cipher = noPad;
+                    updateBuffer = new byte[blockSize];
+                    updateBufferPos = 0;
+                }
+                catch (Exception e) {
+                    // fall back to default behavior if NoPadding variant unavailable
+                    debugStackTrace(runtime, e);
+                    updateBuffer = null;
+                }
+            }
+        } else {
+            updateBuffer = null;
+        }
     }
 
     private String getCipherAlgorithm() {
@@ -1093,6 +1128,15 @@ public class Cipher extends RubyObject {
 
     private int processedDataBytes = 0;
     private byte[] lastIV;
+
+    // C OpenSSL's EVP_EncryptUpdate flushes complete blocks immediately,
+    // while Java's Cipher.update with PKCS5Padding holds back the last
+    // complete block for potential padding merge in doFinal. We buffer
+    // partial blocks ourselves and feed only complete blocks to Java
+    // (configured with NoPadding), adding PKCS7 padding manually in final.
+    // This is only active for padded block cipher encryption (CBC, ECB).
+    private byte[] updateBuffer;
+    private int updateBufferPos;
 
     @JRubyMethod
     public IRubyObject update(final ThreadContext context, final IRubyObject arg) {
@@ -1122,19 +1166,26 @@ public class Cipher extends RubyObject {
 
             final byte[] in = data.getUnsafeBytes();
             final int offset = data.begin();
-            final byte[] out = cipher.update(in, offset, length);
-            if ( out != null ) {
-                str = new ByteList(out, false);
-                if ( realIV != null ) {
-                    if ( encryptMode ) setLastIVIfNeeded( out );
-                    else setLastIVIfNeeded( in, offset, length );
-                }
 
-                processedDataBytes += length;
+            if ( updateBuffer != null ) {
+                // Manual block buffering for padded block cipher encryption.
+                // Feed only complete blocks to NoPadding cipher, buffer the rest.
+                str = updateWithManualBuffering(in, offset, length);
             }
             else {
-                str = new ByteList(ByteList.NULL_ARRAY);
+                final byte[] out = cipher.update(in, offset, length);
+                if ( out != null ) {
+                    str = new ByteList(out, false);
+                    if ( realIV != null ) {
+                        if ( encryptMode ) setLastIVIfNeeded( out );
+                        else setLastIVIfNeeded( in, offset, length );
+                    }
+                }
+                else {
+                    str = new ByteList(ByteList.NULL_ARRAY);
+                }
             }
+            processedDataBytes += length;
         }
         catch (Exception e) {
             debugStackTrace( runtime, e );
@@ -1146,6 +1197,48 @@ public class Cipher extends RubyObject {
         buffer = TypeConverter.convertToType(buffer, context.runtime.getString(), "to_str", true);
         ((RubyString) buffer).setValue(str);
         return buffer;
+    }
+
+    private ByteList updateWithManualBuffering(final byte[] in, int offset, int length) {
+        final int blockSize = updateBuffer.length;
+        // Merge input with any previously buffered partial block
+        final int total = updateBufferPos + length;
+        final int fullBlocks = total / blockSize;
+        final int remainder = total % blockSize;
+
+        if ( fullBlocks == 0 ) {
+            // Not enough for a complete block — just buffer
+            System.arraycopy(in, offset, updateBuffer, updateBufferPos, length);
+            updateBufferPos = total;
+            return new ByteList(ByteList.NULL_ARRAY);
+        }
+
+        // Build a byte array of complete blocks to feed to the cipher
+        final byte[] toEncrypt = new byte[fullBlocks * blockSize];
+        int pos = 0;
+        // First copy any previously buffered bytes
+        if ( updateBufferPos > 0 ) {
+            System.arraycopy(updateBuffer, 0, toEncrypt, 0, updateBufferPos);
+            pos = updateBufferPos;
+        }
+        // Then copy from input up to the full-block boundary
+        final int fromInput = fullBlocks * blockSize - pos;
+        System.arraycopy(in, offset, toEncrypt, pos, fromInput);
+        offset += fromInput;
+
+        // Buffer the remainder for next update/final
+        if ( remainder > 0 ) {
+            System.arraycopy(in, offset, updateBuffer, 0, remainder);
+        }
+        updateBufferPos = remainder;
+
+        // Encrypt complete blocks (NoPadding flushes immediately)
+        final byte[] out = cipher.update(toEncrypt);
+        if ( out != null ) {
+            if ( realIV != null ) setLastIVIfNeeded(out);
+            return new ByteList(out, false);
+        }
+        return new ByteList(ByteList.NULL_ARRAY);
     }
 
     @JRubyMethod(name = "<<")
@@ -1169,6 +1262,9 @@ public class Cipher extends RubyObject {
         try {
             if ( isAuthDataMode() ) {
                 str = do_final_with_auth(runtime);
+            }
+            else if ( updateBuffer != null ) {
+                str = do_final_with_manual_padding();
             }
             else {
                 final byte[] out = cipher.doFinal();
@@ -1207,6 +1303,27 @@ public class Cipher extends RubyObject {
             throw newCipherError(runtime, e);
         }
         return RubyString.newString(runtime, str);
+    }
+
+    private ByteList do_final_with_manual_padding() throws GeneralSecurityException {
+        // Add PKCS7 padding to buffered partial block and encrypt.
+        // If buffer is empty (0 bytes remaining), a full padding block is added.
+        final int blockSize = updateBuffer.length;
+        final int padLen = blockSize - updateBufferPos;
+        final byte[] lastBlock = new byte[blockSize];
+        if ( updateBufferPos > 0 ) {
+            System.arraycopy(updateBuffer, 0, lastBlock, 0, updateBufferPos);
+        }
+        // PKCS7: fill remaining bytes with the pad length value
+        java.util.Arrays.fill(lastBlock, updateBufferPos, blockSize, (byte) padLen);
+
+        final byte[] out = cipher.doFinal(lastBlock);
+        updateBufferPos = 0;
+        if ( out != null ) {
+            if ( realIV != null ) setLastIVIfNeeded(out);
+            return new ByteList(out, false);
+        }
+        return new ByteList(ByteList.NULL_ARRAY);
     }
 
     private ByteList do_final_with_auth(final Ruby runtime) throws GeneralSecurityException {
@@ -1385,6 +1502,15 @@ public class Cipher extends RubyObject {
 
     private boolean isStreamCipher() {
         return cipher.getBlockSize() == 0;
+    }
+
+    // True when we need manual block buffering to match C OpenSSL's
+    // EVP_EncryptUpdate flush behavior (see updateBuffer field comment).
+    private boolean needsManualBlockBuffering() {
+        return encryptMode
+            && "PKCS5Padding".equals(paddingType)
+            && !isStreamCipher()
+            && !isAuthDataMode();
     }
 
     private static RaiseException newCipherError(Ruby runtime, Exception e) {

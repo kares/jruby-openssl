@@ -273,6 +273,77 @@ class TestCipher < TestCase
     assert_equal plaintext, result2[0...plaintext.length]
   end
 
+  # AES-CCM support via BouncyCastle (#96)
+  # Uses RFC 3610 Section 8 Test Case 1 — same vector as CRuby's test_aes_ccm
+  def test_aes_ccm_rfc3610
+    key = ["c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"].pack("H*")
+    iv =  ["00000003020100a0a1a2a3a4a5"].pack("H*")
+    aad = ["0001020304050607"].pack("H*")
+    pt =  ["08090a0b0c0d0e0f101112131415161718191a1b1c1d1e"].pack("H*")
+    expected_ct =  ["588c979a61c663d2f066d0c2c0f989806d5f6b61dac384"].pack("H*")
+    expected_tag = ["17e8d12cfdf926e0"].pack("H*")
+
+    c = OpenSSL::Cipher.new("AES-128-CCM")
+    c.encrypt
+    c.auth_tag_len = 8
+    c.iv_len = 13
+    c.key = key
+    c.iv = iv
+    c.ccm_data_len = pt.length
+    c.auth_data = aad
+    ct = c.update(pt) + c.final
+    assert_equal expected_ct, ct
+    assert_equal expected_tag, c.auth_tag(8)
+
+    d = OpenSSL::Cipher.new("AES-128-CCM")
+    d.decrypt
+    d.auth_tag_len = 8
+    d.iv_len = 13
+    d.key = key
+    d.iv = iv
+    d.ccm_data_len = ct.length
+    d.auth_tag = expected_tag
+    d.auth_data = aad
+    assert_equal pt, d.update(ct) + d.final
+  end
+
+  def test_aes_ccm_wrong_tag_rejected
+    key = ["c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"].pack("H*")
+    iv =  ["00000003020100a0a1a2a3a4a5"].pack("H*")
+    aad = ["0001020304050607"].pack("H*")
+    ct =  ["588c979a61c663d2f066d0c2c0f989806d5f6b61dac384"].pack("H*")
+    tag = ["17e8d12cfdf926e0"].pack("H*")
+
+    bad_tag = tag.dup
+    bad_tag.setbyte(-1, (bad_tag.getbyte(-1) + 1) & 0xff)
+
+    d = OpenSSL::Cipher.new("AES-128-CCM")
+    d.decrypt; d.auth_tag_len = 8; d.iv_len = 13
+    d.key = key; d.iv = iv
+    d.ccm_data_len = ct.length; d.auth_tag = bad_tag; d.auth_data = aad
+    assert_raise(OpenSSL::Cipher::CipherError) { d.update(ct) + d.final }
+  end
+
+  def test_aes_ccm_authenticated
+    c = OpenSSL::Cipher.new("AES-128-CCM")
+    assert_equal true, c.authenticated?
+  end
+
+  def test_aes_256_ccm_roundtrip
+    key = OpenSSL::Random.random_bytes(32)
+    iv = OpenSSL::Random.random_bytes(12)
+    data = "AES-256-CCM test data for round-trip"
+
+    c = OpenSSL::Cipher.new("AES-256-CCM")
+    c.encrypt; c.key = key; c.iv = iv; c.auth_data = "aad"
+    ct = c.update(data) + c.final
+    tag = c.auth_tag
+
+    d = OpenSSL::Cipher.new("AES-256-CCM")
+    d.decrypt; d.key = key; d.iv = iv; d.auth_tag = tag; d.auth_data = "aad"
+    assert_equal data, d.update(ct) + d.final
+  end
+
   @@test_encrypt_decrypt_des_variations = nil
 
   def test_encrypt_decrypt_des_variations

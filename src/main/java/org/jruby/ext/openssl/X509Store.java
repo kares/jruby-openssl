@@ -166,13 +166,26 @@ public class X509Store extends RubyObject {
 
     @JRubyMethod
     public IRubyObject add_path(final ThreadContext context, final IRubyObject arg) {
-        warn(context, "WARNING: unimplemented method called: OpenSSL::X509::Store#add_path");
-        return context.nil;
+        String path = arg.convertToString().toString();
+        final Ruby runtime = context.runtime;
+        try {
+            if (store.loadLocations(runtime, null, path) != 1) {
+                throw newStoreError(runtime, "X509_LOOKUP_add_dir");
+            }
+        }
+        catch (RaiseException e) {
+            throw e;
+        }
+        catch (Exception e) {
+            debugStackTrace(runtime, e);
+            throw newStoreError(runtime, "loading path failed: ", e);
+        }
+        return this;
     }
 
     @JRubyMethod
     public IRubyObject add_file(final IRubyObject arg) {
-        String file = arg.toString();
+        String file = arg.convertToString().toString();
         final Ruby runtime = getRuntime();
         try {
             if (store.loadLocations(runtime, file, null) != 1) {

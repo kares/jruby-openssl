@@ -310,7 +310,7 @@ public class SSLContext extends RubyObject {
     private PKey t_key;
     private X509Cert t_cert;
 
-    private int verifyResult = 1; /* avoid 0 (= X509_V_OK) just in case */
+    private int verifyResult = X509Utils.V_OK; // C OpenSSL initializes to X509_V_OK
 
     //private int sessionCacheMode; // 2 default on MRI
     private int sessionCacheSize; // 20480
@@ -1217,18 +1217,23 @@ public class SSLContext extends RubyObject {
         }
 
         // c: ssl_verify_cert_chain
+        // C OpenSSL always runs verification to populate verify_result
+        // (accessible via SSL_get_verify_result), but only aborts the
+        // handshake when VERIFY_PEER is set. VERIFY_NONE still records
+        // the error (e.g. V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) for
+        // inspection after connect.
         private void checkTrusted(final String purpose, final X509Certificate[] chain) throws CertificateException {
             if ( chain != null && chain.length > 0 ) {
-                if ( (internalContext.verifyMode & SSL.VERIFY_PEER) != 0 ) {
-                    // verify_peer
-                    final StoreContext storeContext = internalContext.createStoreContext(purpose);
-                    if ( storeContext == null ) {
+                final StoreContext storeContext = internalContext.createStoreContext(purpose);
+                if ( storeContext == null ) {
+                    if ( (internalContext.verifyMode & SSL.VERIFY_PEER) != 0 ) {
                         throw new CertificateException("couldn't initialize store");
                     }
-                    storeContext.setCertificate(chain[0]);
-                    storeContext.setChain(chain);
-                    verifyChain(storeContext);
+                    return;
                 }
+                storeContext.setCertificate(chain[0]);
+                storeContext.setChain(chain);
+                verifyChain(storeContext, (internalContext.verifyMode & SSL.VERIFY_PEER) != 0);
             } else {
                 if ( (internalContext.verifyMode & SSL.VERIFY_FAIL_IF_NO_PEER_CERT) != 0 ) {
                     // fail if no peer cert
@@ -1237,7 +1242,7 @@ public class SSLContext extends RubyObject {
             }
         }
 
-        private void verifyChain(final StoreContext storeContext) throws CertificateException {
+        private void verifyChain(final StoreContext storeContext, final boolean raiseOnFailure) throws CertificateException {
             final int ok;
             try {
                 ok = storeContext.verifyCertificate();
@@ -1247,11 +1252,14 @@ public class SSLContext extends RubyObject {
                 if ( storeContext.getError() == X509Utils.V_OK ) {
                     internalContext.setLastVerifyResult(X509Utils.V_ERR_CERT_REJECTED);
                 }
-                throw new CertificateException("certificate verify failed", e);
+                if ( raiseOnFailure ) {
+                    throw new CertificateException("certificate verify failed", e);
+                }
+                return;
             }
 
             internalContext.setLastVerifyResult(storeContext.getError());
-            if ( ok == 0 ) {
+            if ( ok == 0 && raiseOnFailure ) {
                 throw new CertificateException("certificate verify failed");
             }
         }

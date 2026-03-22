@@ -189,6 +189,91 @@ class TestSSL < TestCase
     end
   end
 
+  # GH-25: verify_result should report the actual verification error even
+  # when VERIFY_NONE is set. C OpenSSL always runs ssl_verify_cert_chain
+  # and stores the result; VERIFY_NONE only suppresses the handshake abort.
+
+  def test_verify_result_with_verify_none_self_signed
+    # Self-signed cert: verify_result should be V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT
+    self_key = OpenSSL::PKey::RSA.new(2048)
+    now = Time.now
+    self_cert = issue_cert(
+      OpenSSL::X509::Name.parse("/CN=Self Signed"), self_key, 10,
+      [["keyUsage", "keyEncipherment,digitalSignature", true]],
+      nil, nil, not_before: now, not_after: now + 1800)
+
+    @svr_cert = self_cert
+    @svr_key = self_key
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.connect
+      assert_equal OpenSSL::X509::V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT, ssl.verify_result
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
+  def test_verify_result_with_verify_none_valid_cert
+    # Valid cert signed by trusted CA: verify_result should be V_OK
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.connect
+      assert_equal OpenSSL::X509::V_OK, ssl.verify_result
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
+  def test_verify_result_with_verify_peer_valid_cert
+    # VERIFY_PEER with trusted CA: connect succeeds, verify_result is V_OK
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.connect
+      assert_equal OpenSSL::X509::V_OK, ssl.verify_result
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
+  def test_verify_result_with_verify_peer_self_signed
+    # VERIFY_PEER with self-signed cert: connect should fail
+    self_key = OpenSSL::PKey::RSA.new(2048)
+    now = Time.now
+    self_cert = issue_cert(
+      OpenSSL::X509::Name.parse("/CN=Self Signed"), self_key, 10,
+      [["keyUsage", "keyEncipherment,digitalSignature", true]],
+      nil, nil, not_before: now, not_after: now + 1800)
+
+    @svr_cert = self_cert
+    @svr_key = self_key
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
   def test_post_connect_check_with_anon_ciphers
     unless OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384
       return skip('OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384 not enabled')

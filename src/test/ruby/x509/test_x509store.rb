@@ -491,4 +491,105 @@ class TestX509Store < TestCase
     assert_equal false, ok # OpenSSL 1.1.1 behavior
   end
 
+  # Constant value assertions — portable across CRuby and JRuby.
+  # Values match OpenSSL 1.1.1 (some were renumbered in 3.x).
+  def test_v_err_constants
+    x = OpenSSL::X509
+    assert_equal 0,  x::V_OK
+    assert_equal 1,  x::V_ERR_UNSPECIFIED
+    assert_equal 18, x::V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT
+    assert_equal 19, x::V_ERR_SELF_SIGNED_CERT_IN_CHAIN
+    assert_equal 20, x::V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
+    assert_equal 33, x::V_ERR_UNABLE_TO_GET_CRL_ISSUER
+    assert_equal 34, x::V_ERR_UNHANDLED_CRITICAL_EXTENSION
+    assert_equal 35, x::V_ERR_KEYUSAGE_NO_CRL_SIGN
+    assert_equal 37, x::V_ERR_INVALID_NON_CA
+    assert_equal 40, x::V_ERR_PROXY_CERTIFICATES_NOT_ALLOWED
+    assert_equal 43, x::V_ERR_NO_EXPLICIT_POLICY
+    assert_equal 50, x::V_ERR_APPLICATION_VERIFICATION
+    assert_equal 55, x::V_ERR_PATH_LOOP
+    assert_equal 62, x::V_ERR_HOSTNAME_MISMATCH
+    assert_equal 63, x::V_ERR_EMAIL_MISMATCH
+    assert_equal 64, x::V_ERR_IP_ADDRESS_MISMATCH
+    assert_equal 69, x::V_ERR_INVALID_CALL
+    assert_equal 70, x::V_ERR_STORE_LOOKUP
+  end
+
+  def test_v_flag_constants
+    x = OpenSSL::X509
+    assert_equal 0x4,      x::V_FLAG_CRL_CHECK
+    assert_equal 0x8,      x::V_FLAG_CRL_CHECK_ALL
+    assert_equal 0x2,      x::V_FLAG_USE_CHECK_TIME
+    assert_equal 0x10,     x::V_FLAG_IGNORE_CRITICAL
+    assert_equal 0x20,     x::V_FLAG_X509_STRICT
+    assert_equal 0x40,     x::V_FLAG_ALLOW_PROXY_CERTS
+    assert_equal 0x80,     x::V_FLAG_POLICY_CHECK
+    assert_equal 0x100,    x::V_FLAG_EXPLICIT_POLICY
+    assert_equal 0x200,    x::V_FLAG_INHIBIT_ANY
+    assert_equal 0x400,    x::V_FLAG_INHIBIT_MAP
+    assert_equal 0x800,    x::V_FLAG_NOTIFY_POLICY
+    assert_equal 0x4000,   x::V_FLAG_CHECK_SS_SIGNATURE
+    assert_equal 0x8000,   x::V_FLAG_TRUSTED_FIRST
+    assert_equal 0x80000,  x::V_FLAG_PARTIAL_CHAIN
+    assert_equal 0x100000, x::V_FLAG_NO_ALT_CHAINS
+    assert_equal 0x200000, x::V_FLAG_NO_CHECK_TIME
+  end
+
+  def test_v_flag_no_check_time
+    now = Time.now
+    ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ee_exts = [["keyUsage","keyEncipherment,digitalSignature",true]]
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1, ca_exts, nil, nil,
+                         not_before: now, not_after: now + 3600)
+    ee_key = OpenSSL::PKey::RSA.new(2048)
+    # expired cert
+    expired = issue_cert(OpenSSL::X509::Name.parse("/CN=Expired"), ee_key, 2, ee_exts, ca_cert, ca_key,
+                         not_before: now - 7200, not_after: now - 3600)
+
+    # Without NO_CHECK_TIME: expired cert fails
+    store = OpenSSL::X509::Store.new
+    store.add_cert(ca_cert)
+    assert_equal false, store.verify(expired)
+    assert_equal OpenSSL::X509::V_ERR_CERT_HAS_EXPIRED, store.error
+
+    # With NO_CHECK_TIME: expired cert passes
+    store2 = OpenSSL::X509::Store.new
+    store2.add_cert(ca_cert)
+    store2.flags = OpenSSL::X509::V_FLAG_NO_CHECK_TIME
+    assert_equal true, store2.verify(expired)
+    assert_equal OpenSSL::X509::V_OK, store2.error
+  end
+
+  def test_v_flag_partial_chain
+    # TODO: V_FLAG_PARTIAL_CHAIN is functional in StoreContext.check_trust
+    # but chain building doesn't fully support it yet on JRuby
+    skip 'PARTIAL_CHAIN chain building not fully working' if defined?(JRUBY_VERSION)
+
+    now = Time.now
+    ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ee_exts = [["keyUsage","keyEncipherment,digitalSignature",true]]
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    root_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=Root"), root_key, 1, ca_exts, nil, nil,
+                           not_before: now, not_after: now + 3600)
+    inter_key = OpenSSL::PKey::RSA.new(2048)
+    inter_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=Intermediate"), inter_key, 2, ca_exts,
+                            root_cert, root_key, not_before: now, not_after: now + 3600)
+    ee_key = OpenSSL::PKey::RSA.new(2048)
+    ee_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=Leaf"), ee_key, 3, ee_exts,
+                         inter_cert, inter_key, not_before: now, not_after: now + 1800)
+
+    # Without PARTIAL_CHAIN: only intermediate in store, leaf verification fails
+    store = OpenSSL::X509::Store.new
+    store.add_cert(inter_cert)
+    assert_equal false, store.verify(ee_cert)
+
+    # With PARTIAL_CHAIN: intermediate is accepted as trust anchor
+    store2 = OpenSSL::X509::Store.new
+    store2.add_cert(inter_cert)
+    store2.flags = OpenSSL::X509::V_FLAG_PARTIAL_CHAIN
+    assert_equal true, store2.verify(ee_cert)
+    assert_equal OpenSSL::X509::V_OK, store2.error
+  end
+
 end

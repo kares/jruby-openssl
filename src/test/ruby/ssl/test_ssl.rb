@@ -80,6 +80,45 @@ class TestSSL < TestCase
     end
   end
 
+  # ported from CRuby's test/openssl/test_ssl.rb
+  def test_verify_certificate_identity_ipv4
+    cert = create_cert_with_san("IP:192.168.7.1")
+    assert_equal true,  OpenSSL::SSL.verify_certificate_identity(cert, "192.168.7.1")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "192.168.7.255")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "192.168.7.2")
+  end
+
+  # ported from CRuby's test/openssl/test_ssl.rb
+  def test_verify_certificate_identity_ipv6
+    cert = create_cert_with_san("IP:13::17")
+    assert_equal true,  OpenSSL::SSL.verify_certificate_identity(cert, "13::17")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "13::18")
+    # expanded form
+    assert_equal true,  OpenSSL::SSL.verify_certificate_identity(cert, "13:0:0:0:0:0:0:17")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "44:0:0:0:0:0:0:17")
+    # fully expanded with leading zeros
+    assert_equal true,  OpenSSL::SSL.verify_certificate_identity(cert, "0013:0000:0000:0000:0000:0000:0000:0017")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "1313:0000:0000:0000:0000:0000:0000:0017")
+  end
+
+  def test_verify_certificate_identity_dns_no_ip_match
+    cert = create_cert_with_san("DNS:example.com")
+    assert_equal true,  OpenSSL::SSL.verify_certificate_identity(cert, "example.com")
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, "192.168.7.1")
+  end
+
+  private
+
+  def create_cert_with_san(san)
+    ef = OpenSSL::X509::ExtensionFactory.new
+    cert = OpenSSL::X509::Certificate.new
+    cert.subject = OpenSSL::X509::Name.parse("/DC=some/DC=site/CN=Some Site")
+    cert.add_extension ef.create_ext("subjectAltName", san)
+    cert
+  end
+
+  public
+
   def test_post_connect_check_with_anon_ciphers
     unless OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384
       return skip('OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384 not enabled')

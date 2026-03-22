@@ -427,6 +427,13 @@ YoaOffgTf5qxiwkjnlVZQc3whgnEt9FpVMvQ9eknyeGB5KHfayAc3+hUAvI3/Cr3
       # This method MUST be called after calling #connect to ensure that the
       # hostname of a remote peer has been verified.
       def post_connection_check(hostname)
+        # If connect already verified this hostname (via verify_hostname), skip.
+        # Avoids double-verification in libraries that call post_connection_check.
+        if defined?(@verified_hostname) && @verified_hostname == hostname
+          @verified_hostname = nil
+          return true
+        end
+
         if peer_cert.nil?
           msg = "Peer verification enabled, but no certificate received."
           if using_anon_cipher?

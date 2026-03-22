@@ -327,9 +327,7 @@ public class SSLSocket extends RubyObject {
         // during the handshake (ossl_ssl.c ossl_ssl_verify_callback, depth 0).
         // JSSE has no equivalent hook, so we check after the handshake completes.
         // This is functionally equivalent — connect raises SSLError on mismatch.
-        // Note: net/http and net/imap also call post_connection_check explicitly,
-        // so this may double-check in those cases (harmless, same result).
-        verifyHostnameIfRequired(context);
+        verifyHostnameConnectionCheck(context);
 
         return this;
     }
@@ -420,7 +418,7 @@ public class SSLSocket extends RubyObject {
         return this;
     }
 
-    private void verifyHostnameIfRequired(final ThreadContext context) {
+    private void verifyHostnameConnectionCheck(final ThreadContext context) {
         final IRubyObject verifyHostname = sslContext.getInstanceVariable("@verify_hostname");
         if (verifyHostname == null || !verifyHostname.isTrue()) return;
 
@@ -430,6 +428,10 @@ public class SSLSocket extends RubyObject {
         // delegates to post_connection_check (defined in Ruby) which calls
         // OpenSSL::SSL.verify_certificate_identity(peer_cert, hostname)
         callMethod(context, "post_connection_check", hostname);
+
+        // stash verified hostname so a subsequent explicit post_connection_check
+        // (e.g. from net/http) does not execute the check twice (to match MRI)
+        setInstanceVariable("@verified_hostname", hostname);
     }
 
     final IRubyObject verify_mode(final ThreadContext context) {

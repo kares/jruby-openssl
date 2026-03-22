@@ -449,6 +449,14 @@ YoaOffgTf5qxiwkjnlVZQc3whgnEt9FpVMvQ9eknyeGB5KHfayAc3+hUAvI3/Cr3
         return true
       end
 
+      # @private JRuby due having to call this outside of post_connection_check
+      def verify_certificate_identity_internal(hostname)
+        peer_cert = self.peer_cert
+        return nil if peer_cert.nil?
+        OpenSSL::SSL.verify_certificate_identity(peer_cert, hostname)
+      end
+      private :verify_certificate_identity_internal
+
       # call-seq:
       #   ssl.session -> aSession
       #

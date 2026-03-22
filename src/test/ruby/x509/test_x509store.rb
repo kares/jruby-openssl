@@ -592,4 +592,119 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_OK, store2.error
   end
 
+  # Helper: build a proper ASN.1 nameConstraints extension since
+  # JRuby's create_extension doesn't encode nameConstraints correctly yet.
+  private
+
+  def build_name_constraints_ext(permitted_dns: nil, excluded_dns: nil)
+    subtrees = []
+    if permitted_dns
+      dns_names = Array(permitted_dns).map do |name|
+        dns = OpenSSL::ASN1::IA5String.new(name, 2, :IMPLICIT, :CONTEXT_SPECIFIC)
+        OpenSSL::ASN1::Sequence.new([dns])
+      end
+      subtrees << OpenSSL::ASN1::Sequence.new(dns_names, 0, :IMPLICIT, :CONTEXT_SPECIFIC)
+    end
+    if excluded_dns
+      dns_names = Array(excluded_dns).map do |name|
+        dns = OpenSSL::ASN1::IA5String.new(name, 2, :IMPLICIT, :CONTEXT_SPECIFIC)
+        OpenSSL::ASN1::Sequence.new([dns])
+      end
+      subtrees << OpenSSL::ASN1::Sequence.new(dns_names, 1, :IMPLICIT, :CONTEXT_SPECIFIC)
+    end
+    nc = OpenSSL::ASN1::Sequence.new(subtrees)
+    OpenSSL::X509::Extension.new("nameConstraints", nc.to_der, true)
+  end
+
+  def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)
+    key = OpenSSL::PKey::RSA.new(2048)
+    cert = OpenSSL::X509::Certificate.new
+    cert.version = 2; cert.serial = serial
+    cert.subject = OpenSSL::X509::Name.parse("/CN=#{name}")
+    cert.issuer = issuer_cert.subject
+    cert.not_before = Time.now - 3600; cert.not_after = Time.now + 3600
+    cert.public_key = key.public_key
+    ef = OpenSSL::X509::ExtensionFactory.new
+    ef.subject_certificate = cert; ef.issuer_certificate = issuer_cert
+    cert.add_extension(ef.create_extension("subjectAltName", "DNS:#{san_dns}"))
+    cert.sign(issuer_key, "SHA256")
+    cert
+  end
+
+  public
+
+  # jruby/jruby#3502: nameConstraints verification
+  def test_name_constraints_permitted_dns
+    now = Time.now
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      nil, nil, not_before: now, not_after: now + 3600)
+    ca_cert.add_extension(build_name_constraints_ext(permitted_dns: [".example.com"]))
+    ca_cert.sign(ca_key, "SHA256")  # re-sign after adding extension
+
+    good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
+    bad = build_cert_with_san("bad", 11, "evil.attacker.com", ca_cert, ca_key)
+
+    store = OpenSSL::X509::Store.new; store.add_cert(ca_cert)
+    assert_equal true, store.verify(good), "cert within permitted DNS subtree should verify"
+    assert_equal OpenSSL::X509::V_OK, store.error
+
+    assert_equal false, store.verify(bad), "cert outside permitted DNS subtree should fail"
+    assert_equal OpenSSL::X509::V_ERR_PERMITTED_VIOLATION, store.error
+  end
+
+  def test_name_constraints_excluded_dns
+    now = Time.now
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      nil, nil, not_before: now, not_after: now + 3600)
+    ca_cert.add_extension(build_name_constraints_ext(excluded_dns: [".evil.com"]))
+    ca_cert.sign(ca_key, "SHA256")
+
+    good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
+    bad = build_cert_with_san("bad", 11, "bad.evil.com", ca_cert, ca_key)
+
+    store = OpenSSL::X509::Store.new; store.add_cert(ca_cert)
+    assert_equal true, store.verify(good), "cert not in excluded subtree should verify"
+
+    assert_equal false, store.verify(bad), "cert in excluded DNS subtree should fail"
+    assert_equal OpenSSL::X509::V_ERR_EXCLUDED_VIOLATION, store.error
+  end
+
+  def test_name_constraints_no_constraints_passes
+    now = Time.now
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      nil, nil, not_before: now, not_after: now + 3600)
+    # No nameConstraints at all
+    leaf = build_cert_with_san("leaf", 10, "anything.example.com", ca_cert, ca_key)
+
+    store = OpenSSL::X509::Store.new; store.add_cert(ca_cert)
+    assert_equal true, store.verify(leaf), "cert without name constraints should verify"
+  end
+
+  def test_name_constraints_permitted_and_excluded_combined
+    now = Time.now
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=CA"), ca_key, 1,
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      nil, nil, not_before: now, not_after: now + 3600)
+    # Permit .example.com but exclude .bad.example.com
+    ca_cert.add_extension(build_name_constraints_ext(
+      permitted_dns: [".example.com"], excluded_dns: [".bad.example.com"]))
+    ca_cert.sign(ca_key, "SHA256")
+
+    good = build_cert_with_san("good", 10, "good.example.com", ca_cert, ca_key)
+    bad = build_cert_with_san("bad", 11, "test.bad.example.com", ca_cert, ca_key)
+    outside = build_cert_with_san("outside", 12, "other.org", ca_cert, ca_key)
+
+    store = OpenSSL::X509::Store.new; store.add_cert(ca_cert)
+    assert_equal true, store.verify(good)
+    assert_equal false, store.verify(bad)
+    assert_equal false, store.verify(outside)
+  end
+
 end

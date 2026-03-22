@@ -45,11 +45,20 @@ import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.GeneralSubtree;
+import org.bouncycastle.asn1.x509.NameConstraints;
+import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
+import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
 import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.SecurityHelper;
 import org.jruby.util.SafePropertyAccessor;
 
+import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.x509store.X509Error.addError;
 import static org.jruby.ext.openssl.x509store.X509Utils.*;
 
@@ -972,7 +981,8 @@ public class StoreContext {
         int ok = checkChainExtensions();
         if ( ok == 0 ) return ok;
 
-        /* TODO: Check name constraints (from 1.0.0) */
+        ok = checkNameConstraints();
+        if ( ok == 0 ) return ok;
 
         // The chain extensions are OK: check trust
         if ( verifyParameter.trust > 0 ) ok = checkTrust();
@@ -1031,8 +1041,8 @@ public class StoreContext {
         ok = verify != null ? verify.call(this) : internal_verify();
         if (ok == 0) return ok;
 
-        //if ((ok = check_name_constraints(ctx)) == 0)
-        //    return ok;
+        if ((ok = checkNameConstraints()) == 0)
+            return ok;
 
         /* If we get this far evaluate policies */
         if ((getParam().flags & V_FLAG_POLICY_CHECK) != 0) {
@@ -1359,12 +1369,98 @@ public class StoreContext {
         return rv;
     }
 
+    private static final String OID_NAME_CONSTRAINTS = "2.5.29.30";
+    private static final String OID_SUBJECT_ALT_NAME = "2.5.29.17";
+
+    /**
+     * c: check_name_constraints
+     *
+     * Checks that each certificate's subject DN and SANs are within the
+     * name constraints (permitted/excluded subtrees) of all CA certificates
+     * higher in the chain. Uses BouncyCastle's PKIXNameConstraintValidator
+     * which implements RFC 5280 Section 4.2.1.10.
+     */
+    private int checkNameConstraints() throws Exception {
+        final int num = chain.size();
+
+        for (int i = num - 1; i >= 0; i--) {
+            final X509AuxCertificate x = chain.get(i);
+
+            // Skip self-issued intermediates (not the leaf)
+            if (i != 0 && (x.getExFlags() & EXFLAG_SI) != 0) continue;
+
+            // Check x against nameConstraints from every cert higher in the chain
+            for (int j = i + 1; j < num; j++) {
+                final X509AuxCertificate issuer = chain.get(j);
+                final byte[] ncBytes = issuer.getExtensionValue(OID_NAME_CONSTRAINTS);
+                if (ncBytes == null) continue;
+
+                final NameConstraints nc;
+                try {
+                    // Extension value is OCTET STRING wrapping the actual ASN.1
+                    ASN1OctetString oct = ASN1OctetString.getInstance(ncBytes);
+                    nc = NameConstraints.getInstance(ASN1Sequence.getInstance(oct.getOctets()));
+                } catch (Exception e) {
+                    if (verify_cb_cert(x, i, V_ERR_UNSPECIFIED) == 0) return 0;
+                    continue;
+                }
+
+                final PKIXNameConstraintValidator validator = new PKIXNameConstraintValidator();
+                GeneralSubtree[] permitted = nc.getPermittedSubtrees();
+                if (permitted != null) {
+                    validator.intersectPermittedSubtree(permitted);
+                }
+                GeneralSubtree[] excluded = nc.getExcludedSubtrees();
+                if (excluded != null) {
+                    for (GeneralSubtree sub : excluded) {
+                        validator.addExcludedSubtree(sub);
+                    }
+                }
+
+                // Check subject DN as directoryName
+                try {
+                    javax.security.auth.x500.X500Principal subj = x.getSubjectX500Principal();
+                    if (subj != null && subj.getEncoded().length > 2) {
+                        X500Name dn = X500Name.getInstance(subj.getEncoded());
+                        GeneralName dnName = new GeneralName(GeneralName.directoryName, dn);
+                        validator.checkPermitted(dnName);
+                        validator.checkExcluded(dnName);
+                    }
+                } catch (NameConstraintValidatorException e) {
+                    int err = e.getMessage() != null && e.getMessage().contains("excluded")
+                            ? V_ERR_EXCLUDED_VIOLATION : V_ERR_PERMITTED_VIOLATION;
+                    if (verify_cb_cert(x, i, err) == 0) return 0;
+                }
+
+                // Check all Subject Alternative Names
+                try {
+                    byte[] sanBytes = x.getExtensionValue(OID_SUBJECT_ALT_NAME);
+                    if (sanBytes != null) {
+                        ASN1OctetString sanOct = ASN1OctetString.getInstance(sanBytes);
+                        GeneralNames sans = GeneralNames.getInstance(sanOct.getOctets());
+                        for (GeneralName san : sans.getNames()) {
+                            validator.checkPermitted(san);
+                            validator.checkExcluded(san);
+                        }
+                    }
+                } catch (NameConstraintValidatorException e) {
+                    debugStackTrace(e);
+                    int err = e.getMessage() != null && e.getMessage().contains("excluded")
+                            ? V_ERR_EXCLUDED_VIOLATION : V_ERR_PERMITTED_VIOLATION;
+                    if (verify_cb_cert(x, i, err) == 0) return 0;
+                }
+            }
+        }
+        return 1;
+    }
+
     private final static Set<String> CRITICAL_EXTENSIONS = new HashSet<String>(8);
     static {
         CRITICAL_EXTENSIONS.add("2.16.840.1.113730.1.1"); // netscape cert type, NID 71
         CRITICAL_EXTENSIONS.add("2.5.29.15"); // key usage, NID 83
-        CRITICAL_EXTENSIONS.add("2.5.29.17"); // subject alt name, NID 85
+        CRITICAL_EXTENSIONS.add(OID_SUBJECT_ALT_NAME); // subject alt name, NID 85
         CRITICAL_EXTENSIONS.add("2.5.29.19"); // basic constraints, NID 87
+        CRITICAL_EXTENSIONS.add(OID_NAME_CONSTRAINTS); // name constraints, NID 666
         CRITICAL_EXTENSIONS.add("2.5.29.37"); // ext key usage, NID 126
         CRITICAL_EXTENSIONS.add("1.3.6.1.5.5.7.1.14"); // proxy cert info, NID 661
     }

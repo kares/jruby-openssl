@@ -191,6 +191,12 @@ public abstract class X509Utils {
                 return("invalid or inconsistent certificate policy extension");
             case V_ERR_NO_EXPLICIT_POLICY:
                 return("no explicit policy");
+            case V_ERR_PERMITTED_VIOLATION:
+                return("permitted subtree violation");
+            case V_ERR_EXCLUDED_VIOLATION:
+                return("excluded subtree violation");
+            case V_ERR_SUBTREE_MINMAX:
+                return("name constraints minimum and maximum not supported");
             case V_ERR_APPLICATION_VERIFICATION:
                 return("application verification failure");
             case V_ERR_PATH_LOOP:
@@ -420,6 +426,10 @@ public abstract class X509Utils {
     public static final int	V_ERR_INVALID_EXTENSION = 41;
     public static final int	V_ERR_INVALID_POLICY_EXTENSION = 42;
     public static final int	V_ERR_NO_EXPLICIT_POLICY = 43;
+
+    public static final int	V_ERR_PERMITTED_VIOLATION = 47;
+    public static final int	V_ERR_EXCLUDED_VIOLATION = 48;
+    public static final int	V_ERR_SUBTREE_MINMAX = 49;
 
     public static final int	V_ERR_APPLICATION_VERIFICATION = 50;
 

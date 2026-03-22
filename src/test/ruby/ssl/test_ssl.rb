@@ -274,6 +274,79 @@ class TestSSL < TestCase
     end
   end
 
+  # verify_result should report V_ERR_HOSTNAME_MISMATCH when hostname
+  # verification fails during connect (matches CRuby behavior).
+  def test_verify_result_hostname_mismatch
+    now = Time.now
+    exts = [
+      ["keyUsage", "keyEncipherment,digitalSignature", true],
+      ["subjectAltName", "DNS:a.example.com", false],
+    ]
+    @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
+                           not_before: now, not_after: now + 1800)
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_hostname = true
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.hostname = "b.example.com"
+      assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+      assert_equal OpenSSL::X509::V_ERR_HOSTNAME_MISMATCH, ssl.verify_result
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
+  # Ported from CRuby's test_verify_hostname_failure_error_code.
+  # CRuby invokes verify_callback with V_ERR_HOSTNAME_MISMATCH because the
+  # hostname check runs inside OpenSSL's verify callback during handshake.
+  # JRuby checks hostname post-handshake (JSSE limitation), so the callback
+  # doesn't see the error. Skipped on JRuby; runs on CRuby for parity check.
+  def test_verify_hostname_failure_error_code_via_callback
+    skip 'verify_callback not invoked for hostname mismatch (JSSE limitation)' if defined?(JRUBY_VERSION)
+
+    now = Time.now
+    exts = [
+      ["keyUsage", "keyEncipherment,digitalSignature", true],
+      ["subjectAltName", "DNS:a.example.com", false],
+    ]
+    @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
+                           not_before: now, not_after: now + 1800)
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      verify_callback_ok = verify_callback_err = nil
+
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_hostname = true
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.verify_callback = -> (preverify_ok, store_ctx) {
+        verify_callback_ok = preverify_ok
+        verify_callback_err = store_ctx.error
+        preverify_ok
+      }
+
+      begin
+        sock = TCPSocket.new("127.0.0.1", port)
+        ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+        ssl.hostname = "b.example.com"
+        assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+        assert_equal false, verify_callback_ok
+        assert_equal OpenSSL::X509::V_ERR_HOSTNAME_MISMATCH, verify_callback_err
+      ensure
+        ssl&.close rescue nil
+        sock&.close rescue nil
+      end
+    end
+  end
+
   def test_post_connect_check_with_anon_ciphers
     unless OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384
       return skip('OpenSSL::ExtConfig::TLS_DH_anon_WITH_AES_256_GCM_SHA384 not enabled')

@@ -425,13 +425,19 @@ public class SSLSocket extends RubyObject {
         final IRubyObject hostname = getInstanceVariable("@hostname");
         if (hostname == null || hostname.isNil()) return;
 
-        // delegates to post_connection_check (defined in Ruby) which calls
-        // OpenSSL::SSL.verify_certificate_identity(peer_cert, hostname)
-        callMethod(context, "post_connection_check", hostname);
+        // CRuby calls verify_certificate_identity inside the OpenSSL verify
+        // callback and sets V_ERR_HOSTNAME_MISMATCH only when it returns false.
+        IRubyObject result = callMethod(context, "verify_certificate_identity_internal", hostname);
 
-        // stash verified hostname so a subsequent explicit post_connection_check
-        // (e.g. from net/http) does not execute the check twice (to match MRI)
-        setInstanceVariable("@verified_hostname", hostname);
+        if (result.isTrue()) {
+            // stash verified hostname so a subsequent explicit post_connection_check
+            // (e.g. from net/http) does not execute the check twice
+            setInstanceVariable("@verified_hostname", hostname);
+        } else if (!result.isNil()) { // false
+            sslContext.setLastVerifyResult(verifyResult = X509Utils.V_ERR_HOSTNAME_MISMATCH);
+            throw newSSLError(context.runtime, // same as `post_connection_check(hostname)`
+                    "hostname \"" + hostname + "\" does not match the server certificate");
+        }
     }
 
     final IRubyObject verify_mode(final ThreadContext context) {

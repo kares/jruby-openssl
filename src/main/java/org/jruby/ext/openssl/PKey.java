@@ -214,7 +214,10 @@ public abstract class PKey extends RubyObject {
         @JRubyMethod(name = "generate_key", meta = true, required = 1, optional = 1)
         public static IRubyObject generate_key(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
             final Ruby runtime = context.runtime;
-            final String algorithm = args[0].asJavaString();
+            final IRubyObject arg = args[0];
+            if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
+
+            final String algorithm = arg.asJavaString();
             if ( "HMAC".equalsIgnoreCase(algorithm) ) {
                 if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
                 final RubyString key = Utils.extractRubyStringOpt(context, args[1], "key", true);
@@ -225,6 +228,29 @@ public abstract class PKey extends RubyObject {
                 return PKeyEdDSA.generate(runtime, algorithm);
             }
             throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+        }
+
+        private static IRubyObject generateKeyFromParams(final ThreadContext context, final PKey baseKey) {
+            final Ruby runtime = context.runtime;
+
+            if (baseKey instanceof PKeyEC) {
+                final PKeyEC ec = (PKeyEC) baseKey.dup();
+                return ec.generate_key(context);
+            }
+
+            if (baseKey instanceof PKeyDH) {
+                final PKeyDH dh = (PKeyDH) baseKey.dup();
+                dh.set_key(context, runtime.getNil(), runtime.getNil());
+                return dh.generate_key(context);
+            }
+
+            if (baseKey instanceof PKeyDSA) {
+                final PKeyDSA dsa = (PKeyDSA) baseKey.dup();
+                dsa.set_key(context, runtime.getNil(), runtime.getNil());
+                return dsa.generate_key(context);
+            }
+
+            throw newPKeyError(runtime, "unsupported parameter type for key generation");
         }
 
         @JRubyMethod(name = "new_raw_private_key", meta = true)

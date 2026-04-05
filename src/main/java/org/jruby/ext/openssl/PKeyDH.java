@@ -264,7 +264,7 @@ public class PKeyDH extends PKey {
     }
 
     @JRubyMethod(name = "generate_key!")
-    public synchronized IRubyObject generate_key() {
+    public synchronized IRubyObject generate_key(ThreadContext context) {
         BigInteger p, g, x, y;
         if ((p = this.dh_p) == null || (g = this.dh_g) == null) {
             throw newDHError(getRuntime(), "can't generate key");

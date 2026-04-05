@@ -127,6 +127,35 @@ class TestPKey < TestCase
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("HMAC", {}) }
   end
 
+  def test_generate_key_from_ec_params
+    ec_params = OpenSSL::PKey::EC.new("secp384r1")
+
+    pkey = OpenSSL::PKey.generate_key(ec_params)
+
+    assert_instance_of OpenSSL::PKey::EC, pkey
+    assert_equal "secp384r1", pkey.group.curve_name
+    assert_not_nil pkey.private_key
+    assert_not_nil pkey.public_key
+    assert_nil ec_params.private_key
+  end
+
+  def test_generate_key_from_dsa_params
+    original = Fixtures.pkey("dsa1024")
+    dsa_params = OpenSSL::PKey::DSA.new
+    dsa_params.set_pqg(original.p, original.q, original.g)
+
+    pkey = OpenSSL::PKey.generate_key(dsa_params)
+
+    assert_instance_of OpenSSL::PKey::DSA, pkey
+    assert_equal original.p, pkey.p
+    assert_equal original.q, pkey.q
+    assert_equal original.g, pkey.g
+    assert_not_nil pkey.priv_key
+    assert_not_nil pkey.pub_key
+    assert_nil dsa_params.priv_key
+    assert_nil dsa_params.pub_key
+  end
+
   def test_raw_initialize_errors
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("foo123", "xxx") }
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("ED25519", "xxx") }

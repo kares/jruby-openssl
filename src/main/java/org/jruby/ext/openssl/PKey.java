@@ -80,6 +80,8 @@ public abstract class PKey extends RubyObject {
 
         PKeyPKey.defineAnnotatedMethods(PKey.class);
 
+        PKeyEdDSA.defineEdDSAMethods(PKeyPKey);
+
         PKeyRSA.createPKeyRSA(runtime, PKey, PKeyPKey, PKeyError);
         PKeyDSA.createPKeyDSA(runtime, PKey, PKeyPKey, PKeyError);
         PKeyDH.createPKeyDH(runtime, PKey, PKeyPKey, PKeyError);
@@ -91,6 +93,7 @@ public abstract class PKey extends RubyObject {
     }
 
     public static PKey newInstance(final Ruby runtime, final PublicKey publicKey) {
+        assert publicKey != null;
         if (publicKey instanceof RSAPublicKey) {
             return new PKeyRSA(runtime, (RSAPublicKey) publicKey);
         }
@@ -100,7 +103,9 @@ public abstract class PKey extends RubyObject {
         if (publicKey instanceof ECPublicKey) {
             return new PKeyEC(runtime, publicKey);
         }
-        assert publicKey != null;
+        if (PKeyEdDSA.isEdDSAKey(publicKey)) {
+            return new PKeyEdDSA(runtime, publicKey);
+        }
         throw runtime.newNotImplementedError("public key algorithm: " + (publicKey != null ? publicKey.getAlgorithm() : "nil"));
     }
 
@@ -155,6 +160,9 @@ public abstract class PKey extends RubyObject {
                 if ( "EC".equals(alg) || "ECDSA".equals(alg) ) { // Sun vs BC provider naming
                     return new PKeyEC(runtime, _PKey(runtime).getClass("EC"), keyPair.getPrivate(), keyPair.getPublic());
                 }
+                if ( PKeyEdDSA.isEdDSAAlgorithm(alg) ) {
+                    return PKeyEdDSA.newInstance(runtime, keyPair);
+                }
                 debug(runtime, "PKey readPrivateKey unexpected key pair algorithm: " + alg);
             }
 
@@ -197,8 +205,45 @@ public abstract class PKey extends RubyObject {
             if (pubKey instanceof ECPublicKey) {
                 return new PKeyEC(runtime, pubKey);
             }
+            if (PKeyEdDSA.isEdDSAKey(pubKey)) {
+                return new PKeyEdDSA(runtime, pubKey);
+            }
 
             throw newPKeyError(runtime, "Could not parse PKey: unsupported");
+        }
+
+        @JRubyMethod(name = "generate_key", meta = true, required = 1, optional = 1)
+        public static IRubyObject generate_key(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
+            final Ruby runtime = context.runtime;
+            final String algorithm = args[0].asJavaString();
+            if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
+                return PKeyEdDSA.generate(runtime, algorithm);
+            }
+            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+        }
+
+        @JRubyMethod(name = "new_raw_private_key", meta = true)
+        public static IRubyObject new_raw_private_key(final ThreadContext context, IRubyObject recv,
+            IRubyObject type, IRubyObject key) {
+            final Ruby runtime = context.runtime;
+            final String algorithm = type.asJavaString();
+            if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
+                final byte[] bytes = key.convertToString().getBytes();
+                return PKeyEdDSA.fromRawPrivateKey(runtime, algorithm, bytes);
+            }
+            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+        }
+
+        @JRubyMethod(name = "new_raw_public_key", meta = true)
+        public static IRubyObject new_raw_public_key(final ThreadContext context, IRubyObject recv,
+            IRubyObject type, IRubyObject key) {
+            final Ruby runtime = context.runtime;
+            final String algorithm = type.asJavaString();
+            final byte[] raw = key.convertToString().getBytes();
+            if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
+                return PKeyEdDSA.fromRawPublicKey(runtime, algorithm, raw);
+            }
+            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
         }
 
         private static String getAlgorithm(final KeyPair key) {
@@ -228,9 +273,12 @@ public abstract class PKey extends RubyObject {
 
     public boolean isPrivateKey() { return getPrivateKey() != null; }
 
-    public abstract RubyString to_der() ;
+    public abstract RubyString to_der();
 
     public abstract RubyString to_pem(ThreadContext context, final IRubyObject[] args) ;
+
+    @JRubyMethod
+    public abstract IRubyObject oid();
 
     @JRubyMethod(name = "sign")
     public IRubyObject sign(IRubyObject digest, IRubyObject data) {

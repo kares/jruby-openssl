@@ -101,6 +101,11 @@ public class PKeyDH extends PKey {
         super(runtime, clazz);
     }
 
+    @Override
+    public IRubyObject oid() {
+        return getRuntime().newString("dhKeyAgreement");
+    }
+
     @JRubyMethod(visibility = Visibility.PRIVATE)
     @Override
     public IRubyObject initialize_copy(final IRubyObject original) {

@@ -1576,6 +1576,11 @@ public class PEMInputOutput {
         if (X9ObjectIdentifiers.id_dsa.equals(algIdentifier)) {
             return Type.DSA;
         }
+        // EdDSA: Ed25519 (1.3.101.112) and Ed448 (1.3.101.113)
+        if (org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_Ed25519.equals(algIdentifier) ||
+            org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) {
+            return Type.EdDSA;
+        }
 
         return Type.valueOf(algIdentifier.getId());
     }

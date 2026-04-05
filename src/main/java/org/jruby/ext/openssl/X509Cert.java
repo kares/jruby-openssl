@@ -600,7 +600,11 @@ public class X509Cert extends RubyObject {
         // Have to obey some artificial constraints of the OpenSSL implementation. Stupid.
         final String keyAlg = ((PKey) key).getAlgorithm();
         final String digAlg; final String digName;
-        if (digest instanceof Digest) {
+        if (digest.isNil() && PKeyEdDSA.isEdDSAAlgorithm(keyAlg)) {
+            // PureEdDSA (Ed25519/Ed448) — no digest needed
+            digAlg = null; digName = null;
+        }
+        else if (digest instanceof Digest) {
             digAlg = ((Digest) digest).getShortAlgorithm();
             digName = ((Digest) digest).getName();
         }
@@ -611,8 +615,9 @@ public class X509Cert extends RubyObject {
             throw runtime.newTypeError(digest, Digest._Digest(runtime));
         }
 
-        if( ( "DSA".equalsIgnoreCase(keyAlg) && "MD5".equalsIgnoreCase(digAlg) ) ||
-            ( "RSA".equalsIgnoreCase(keyAlg) && "DSS1".equals(digName) ) ) {
+        if( digAlg != null &&
+            ( ( "DSA".equalsIgnoreCase(keyAlg) && "MD5".equalsIgnoreCase(digAlg) ) ||
+              ( "RSA".equalsIgnoreCase(keyAlg) && "DSS1".equals(digName) ) ) ) {
             throw newCertificateError(runtime, "signature_algorithm not supported");
         }
 
@@ -627,10 +632,11 @@ public class X509Cert extends RubyObject {
             }
         }
 
+        final String signatureAlg = (digAlg == null) ? keyAlg : digAlg + "WITH" + keyAlg;
         final X509CertificateHolder certHolder;
         try {
             ContentSigner signer =
-                    new JcaContentSignerBuilder(digAlg + "WITH" + keyAlg).
+                    new JcaContentSignerBuilder(signatureAlg).
                             build(((PKey) key).getPrivateKey());
             certHolder = builder.build(signer);
         } catch (OperatorCreationException e) {

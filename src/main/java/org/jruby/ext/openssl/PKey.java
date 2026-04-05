@@ -81,8 +81,6 @@ public abstract class PKey extends RubyObject {
 
         PKeyPKey.defineAnnotatedMethods(PKey.class);
 
-        PKeyEdDSA.defineEdDSAMethods(PKeyPKey);
-
         PKeyRSA.createPKeyRSA(runtime, PKey, PKeyPKey, PKeyError);
         PKeyDSA.createPKeyDSA(runtime, PKey, PKeyPKey, PKeyError);
         PKeyDH.createPKeyDH(runtime, PKey, PKeyPKey, PKeyError);
@@ -287,6 +285,31 @@ public abstract class PKey extends RubyObject {
      */
     @JRubyMethod(name = "to_text")
     public abstract RubyString to_text();
+
+    /**
+     * Derives a shared secret from this key and the peer key.
+     * Only supported for key types that support key agreement (e.g. EC, DH).
+     */
+    @JRubyMethod(name = "derive")
+    public IRubyObject derive(ThreadContext context, IRubyObject peer) {
+        throw newPKeyError(context.runtime, "EVP_PKEY_derive_init");
+    }
+
+    /**
+     * Returns the raw private key data as a binary string.
+     */
+    @JRubyMethod(name = "raw_private_key")
+    public IRubyObject raw_private_key(ThreadContext context) {
+        throw newPKeyError(context.runtime, "EVP_PKEY_get_raw_private_key");
+    }
+
+    /**
+     * Returns the raw public key data as a binary string.
+     */
+    @JRubyMethod(name = "raw_public_key")
+    public IRubyObject raw_public_key(ThreadContext context) {
+        throw newPKeyError(context.runtime, "EVP_PKEY_get_raw_public_key");
+    }
 
     /**
      * Serializes the public key to DER-encoded X.509 SubjectPublicKeyInfo format

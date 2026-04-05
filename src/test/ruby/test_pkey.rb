@@ -97,6 +97,36 @@ class TestPKey < TestCase
     assert_equal nil, dh.q
   end
 
+  def test_hmac_sign_verify
+    pkey = OpenSSL::PKey.generate_key("HMAC", { "key" => "abcd" })
+
+    assert_instance_of OpenSSL::PKey::PKey, pkey
+    assert_equal "HMAC", pkey.oid
+    assert_equal false, pkey.public?
+    assert_equal true, pkey.private?
+    assert_equal "abcd", pkey.raw_private_key
+
+    hmac = OpenSSL::HMAC.new("abcd", "SHA256").update("data").digest
+    assert_equal hmac, pkey.sign("SHA256", "data")
+    assert_match(/HMAC Private-Key/, pkey.to_text)
+
+    assert_raise(OpenSSL::PKey::PKeyError) { pkey.verify("SHA256", hmac, "data") }
+    assert_raise(OpenSSL::PKey::PKeyError) { pkey.raw_public_key }
+  end
+
+  def test_hmac_new_raw_private_key
+    pkey = OpenSSL::PKey.new_raw_private_key("HMAC", "secret")
+
+    assert_instance_of OpenSSL::PKey::PKey, pkey
+    assert_equal "secret", pkey.raw_private_key
+    assert_equal OpenSSL::HMAC.digest("SHA256", "secret", "payload"), pkey.sign("SHA256", "payload")
+  end
+
+  def test_hmac_generate_key_requires_key_option
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("HMAC") }
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("HMAC", {}) }
+  end
+
   def test_compare?
     key1 = Fixtures.pkey("rsa-1.pem")
     key2 = Fixtures.pkey("rsa-1.pem")

@@ -127,6 +127,29 @@ class TestPKey < TestCase
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("HMAC", {}) }
   end
 
+  def test_raw_initialize_errors
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("foo123", "xxx") }
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("ED25519", "xxx") }
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_public_key("foo123", "xxx") }
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_public_key("ED25519", "xxx") }
+  end
+
+  def test_oid_and_inspect
+    rsa = Fixtures.pkey("rsa-1.pem")
+    assert_equal "rsaEncryption", rsa.oid
+    assert_match(/OpenSSL::PKey::RSA/, rsa.inspect)
+  end
+
+  def test_read_pem_skip_non_key_blocks
+    orig = Fixtures.pkey("rsa-1.pem")
+    subject = OpenSSL::X509::Name.new([["CN", "test"]])
+    cert = issue_cert(subject, orig, 1, [], nil, nil)
+
+    input = cert.to_text + cert.to_pem + orig.to_text + orig.private_to_pem
+    pkey = OpenSSL::PKey.read(input)
+    assert_equal orig.private_to_der, pkey.private_to_der
+  end
+
   def test_compare?
     key1 = Fixtures.pkey("rsa-1.pem")
     key2 = Fixtures.pkey("rsa-1.pem")

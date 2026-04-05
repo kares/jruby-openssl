@@ -40,6 +40,7 @@ import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.RSAKeyGenParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 
 import org.bouncycastle.asn1.ASN1InputStream;
@@ -227,6 +228,18 @@ public abstract class PKey extends RubyObject {
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                 return PKeyEdDSA.generate(runtime, algorithm);
             }
+            if ( "RSA".equalsIgnoreCase(algorithm) ) {
+                return generateRSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
+            }
+            if ( "DSA".equalsIgnoreCase(algorithm) ) {
+                return generateDSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
+            }
+            if ( "EC".equalsIgnoreCase(algorithm) ) {
+                return generateECKey(context, args.length > 1 ? args[1] : runtime.getNil());
+            }
+            if ( "DH".equalsIgnoreCase(algorithm) ) {
+                return generateDHKey(context, args.length > 1 ? args[1] : runtime.getNil());
+            }
             throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
         }
 
@@ -311,6 +324,39 @@ public abstract class PKey extends RubyObject {
             }
             params.set_g(BN.newBN(runtime, BigInteger.valueOf(generator)));
             return params;
+        }
+
+        private static IRubyObject generateRSAKey(final ThreadContext context, final IRubyObject options) {
+            final int bits = Utils.extractIntOpt(context, options, "rsa_keygen_bits", 2048, true);
+            final IRubyObject pubexp = Utils.extractOpt(context, options, "rsa_keygen_pubexp", true);
+
+            final Ruby runtime = context.runtime;
+            final BigInteger exponent = pubexp == null || pubexp.isNil() ? RSAKeyGenParameterSpec.F4 : BN.getBigInteger(pubexp);
+            return PKeyRSA.rsaGenerate(runtime, new PKeyRSA(runtime, PKeyRSA._RSA(runtime)), bits, exponent);
+        }
+
+        private static IRubyObject generateDSAKey(final ThreadContext context, final IRubyObject options) {
+            final IRubyObject bits = Utils.extractOpt(context, options, "dsa_paramgen_bits", true);
+
+            final Ruby runtime = context.runtime;
+            if (bits == null || bits.isNil()) throw newPKeyError(runtime, "missing dsa_paramgen_bits parameter");
+            return PKeyDSA.generate(context, PKeyDSA._DSA(runtime), bits);
+        }
+
+        private static IRubyObject generateECKey(final ThreadContext context, final IRubyObject options) {
+            final RubyString curve = Utils.extractRubyStringOpt(context, options, "ec_paramgen_curve", true);
+
+            final Ruby runtime = context.runtime;
+            if (curve == null) throw newPKeyError(runtime, "missing ec_paramgen_curve parameter");
+            return PKeyEC.generate(context, PKeyEC._EC(runtime), curve);
+        }
+
+        private static IRubyObject generateDHKey(final ThreadContext context, final IRubyObject options) {
+            final int bits = Utils.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
+            final int generator = Utils.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
+
+            final Ruby runtime = context.runtime;
+            return PKeyDH.generate(context, _PKey(runtime).getClass("DH"), runtime.newFixnum(bits), runtime.newFixnum(generator));
         }
 
         @JRubyMethod(name = "new_raw_private_key", meta = true)

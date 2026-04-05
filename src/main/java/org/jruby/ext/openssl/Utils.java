@@ -197,19 +197,14 @@ final class Utils {
 
     static String extractStringOpt(ThreadContext context, IRubyObject opts,
                                    String key, boolean tryStringKey) {
-        final RubyString val = extractRubyStringOpt(context, opts, key, tryStringKey);
-        return val == null ? null : val.asJavaString();
+        final IRubyObject val = extractOpt(context, opts, key, tryStringKey);
+        return val == null ? null : val.convertToString().asJavaString();
     }
 
     static RubyString extractRubyStringOpt(ThreadContext context, IRubyObject opts,
                                            String key, boolean tryStringKey) {
-        if (!(opts instanceof RubyHash)) return null;
-        RubyHash hash = (RubyHash) opts;
-        // OpenSSL option hashes may use string or symbol keys — try both.
-        IRubyObject val = hash.fastARef(context.runtime.newSymbol(key));
-        if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
-        if (val == null || val.isNil()) return null;
-        return val.convertToString();
+        final IRubyObject val = extractOpt(context, opts, key, tryStringKey);
+        return val == null ? null : val.convertToString();
     }
 
     static int extractIntOpt(ThreadContext context, IRubyObject opts,
@@ -221,6 +216,17 @@ final class Utils {
         if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
         if (val == null || val.isNil()) return defaultVal;
         return RubyNumeric.fix2int(val);
+    }
+
+    static IRubyObject extractOpt(ThreadContext context, IRubyObject opts,
+                                  String key, boolean tryStringKey) {
+        if (!(opts instanceof RubyHash)) return null;
+        RubyHash hash = (RubyHash) opts;
+        // OpenSSL option hashes may use string or symbol keys — try both.
+        IRubyObject val = hash.fastARef(context.runtime.newSymbol(key));
+        if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
+        if (val == null || val.isNil()) return null;
+        return val;
     }
 
     static ByteBuffer ensureCapacity(final ByteBuffer buffer, final int size) {

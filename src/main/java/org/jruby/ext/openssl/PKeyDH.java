@@ -147,7 +147,7 @@ public class PKeyDH extends PKey {
     }
 
     @JRubyMethod(name = "generate", meta = true, rest = true)
-    public static IRubyObject generate(final ThreadContext context, IRubyObject self, IRubyObject[] args) {
+    public static IRubyObject generate(final ThreadContext context, IRubyObject self, IRubyObject... args) {
         final Ruby runtime = context.runtime;
         final int g;
         if (Arity.checkArgumentCount(runtime, args, 1, 2) == 2) {
@@ -156,7 +156,7 @@ public class PKeyDH extends PKey {
             g = 2;
         }
 
-        PKeyDH pkey = new PKeyDH(runtime);
+        PKeyDH pkey = new PKeyDH(runtime, (RubyClass) self);
         pkey.generate(runtime, args[0], g);
         return pkey;
     }
@@ -202,7 +202,7 @@ public class PKeyDH extends PKey {
         try {
             p = generateP(RubyNumeric.num2int(bits), gval);
         }
-        catch(IllegalArgumentException e) {
+        catch (IllegalArgumentException e) {
             throw runtime.newArgumentError(e.getMessage());
         }
         BigInteger g = BigInteger.valueOf(gval);

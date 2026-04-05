@@ -156,6 +156,49 @@ class TestPKey < TestCase
     assert_nil dsa_params.pub_key
   end
 
+  def test_generate_parameters_ec
+    pkey = OpenSSL::PKey.generate_parameters("EC", {
+      "ec_paramgen_curve" => "secp384r1"
+    })
+
+    assert_instance_of OpenSSL::PKey::EC, pkey
+    assert_equal "secp384r1", pkey.group.curve_name
+    assert_equal nil, pkey.private_key
+  end
+
+  def test_generate_parameters_ec_invalid_option
+    assert_raise(OpenSSL::PKey::PKeyError) do
+      OpenSSL::PKey.generate_parameters("EC", "invalid" => "option")
+    end
+  end
+
+  def test_generate_parameters_dsa
+    pkey = OpenSSL::PKey.generate_parameters("DSA", {
+      "dsa_paramgen_bits" => 1024
+    })
+
+    assert_instance_of OpenSSL::PKey::DSA, pkey
+    assert_equal 1024, pkey.p.num_bits
+    assert_not_nil pkey.p
+    assert_not_nil pkey.q
+    assert_not_nil pkey.g
+    assert_nil pkey.priv_key
+    assert_nil pkey.pub_key
+  end
+
+  def test_generate_parameters_dh
+    pkey = OpenSSL::PKey.generate_parameters("DH", {
+      "dh_paramgen_prime_len" => 512,
+      "dh_paramgen_generator" => 5
+    })
+
+    assert_instance_of OpenSSL::PKey::DH, pkey
+    assert_equal 512, pkey.p.num_bits
+    assert_equal 5, pkey.g.to_i
+    assert_nil pkey.priv_key
+    assert_nil pkey.pub_key
+  end
+
   def test_raw_initialize_errors
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("foo123", "xxx") }
     assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.new_raw_private_key("ED25519", "xxx") }

@@ -94,6 +94,10 @@ public class PKeyDSA extends PKey {
         super(runtime, type);
     }
 
+    PKeyDSA(Ruby runtime) {
+        this(runtime, _DSA(runtime));
+    }
+
     public PKeyDSA(Ruby runtime, RubyClass type, DSAPrivateKey privKey, DSAPublicKey pubKey) {
         super(runtime, type);
         this.privateKey = privKey;

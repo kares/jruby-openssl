@@ -253,6 +253,66 @@ public abstract class PKey extends RubyObject {
             throw newPKeyError(runtime, "unsupported parameter type for key generation");
         }
 
+        @JRubyMethod(name = "generate_parameters", meta = true, required = 1, optional = 1)
+        public static IRubyObject generate_parameters(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
+            final Ruby runtime = context.runtime;
+            final String algorithm = args[0].asJavaString();
+            final IRubyObject options = args.length > 1 ? args[1] : runtime.getNil();
+
+            if ("EC".equalsIgnoreCase(algorithm)) {
+                return generateECParameters(context, options);
+            }
+            if ("DSA".equalsIgnoreCase(algorithm)) {
+                return generateDSAParameters(context, options);
+            }
+            if ("DH".equalsIgnoreCase(algorithm)) {
+                return generateDHParameters(context, options);
+            }
+
+            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+        }
+
+        private static IRubyObject generateECParameters(final ThreadContext context, final IRubyObject options) {
+            final String curve = Utils.extractStringOpt(context, options, "ec_paramgen_curve", true);
+
+            final Ruby runtime = context.runtime;
+            if (curve == null) throw newPKeyError(runtime, "missing ec_paramgen_curve parameter");
+            return new PKeyEC(runtime).initialize(context, new IRubyObject[] { runtime.newString(curve) }, Block.NULL_BLOCK);
+        }
+
+        private static IRubyObject generateDSAParameters(final ThreadContext context, final IRubyObject options) {
+            final int bits = Utils.extractIntOpt(context, options, "dsa_paramgen_bits", 2048, true);
+
+            final Ruby runtime = context.runtime;
+            final PKeyDSA generated;
+            try {
+                generated = PKeyDSA.generateImpl(runtime, new PKeyDSA(runtime), bits);
+            }
+            catch (NoSuchAlgorithmException e) {
+                throw newPKeyError(runtime, e.getMessage());
+            }
+
+            final PKeyDSA params = new PKeyDSA(runtime);
+            params.set_pqg(generated.get_p(), generated.get_q(), generated.get_g());
+            return params;
+        }
+
+        private static IRubyObject generateDHParameters(final ThreadContext context, final IRubyObject options) {
+            final int bits = Utils.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
+            final int generator = Utils.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
+
+            final Ruby runtime = context.runtime;
+            final PKeyDH params = new PKeyDH(runtime);
+            try {
+                params.set_p(BN.newBN(runtime, PKeyDH.generateP(bits, generator)));
+            }
+            catch (IllegalArgumentException e) {
+                throw newPKeyError(runtime, e.getMessage());
+            }
+            params.set_g(BN.newBN(runtime, BigInteger.valueOf(generator)));
+            return params;
+        }
+
         @JRubyMethod(name = "new_raw_private_key", meta = true)
         public static IRubyObject new_raw_private_key(final ThreadContext context, IRubyObject recv,
             IRubyObject type, IRubyObject key) {

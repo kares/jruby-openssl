@@ -101,6 +101,10 @@ public class PKeyDH extends PKey {
         super(runtime, clazz);
     }
 
+    PKeyDH(Ruby runtime) {
+        this(runtime, _PKey(runtime).getClass("DH"));
+    }
+
     @Override
     @JRubyMethod
     public RubyString oid() {
@@ -152,7 +156,7 @@ public class PKeyDH extends PKey {
             g = 2;
         }
 
-        PKeyDH pkey = new PKeyDH(runtime, _PKey(runtime).getClass("DH"));
+        PKeyDH pkey = new PKeyDH(runtime);
         pkey.generate(runtime, args[0], g);
         return pkey;
     }

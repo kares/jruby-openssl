@@ -900,17 +900,6 @@ public class PEMInputOutput {
         }
     }
 
-    public static void writeDSAPublicKey(Writer _out, DSAPublicKey obj) throws IOException {
-        BufferedWriter out = makeBuffered(_out);
-        final byte[] enc = getEncoded(obj);
-        out.write(BEF_G + PEM_STRING_PUBLIC + AFT);
-        out.newLine();
-        writeEncoded(out, enc, enc.length);
-        out.write(BEF_E + PEM_STRING_PUBLIC + AFT);
-        out.newLine();
-        out.flush();
-    }
-
     /** writes an RSA public key encoded in an PKCS#1 RSA structure. */
     public static void writeRSAPublicKey(Writer _out, RSAPublicKey obj) throws IOException {
         BufferedWriter out = makeBuffered(_out);
@@ -923,7 +912,7 @@ public class PEMInputOutput {
         out.flush();
     }
 
-    public static void writeECPublicKey(Writer _out, ECPublicKey obj) throws IOException {
+    public static void writePublicKey(Writer _out, java.security.PublicKey obj) throws IOException {
         BufferedWriter out = makeBuffered(_out);
         final byte[] enc = getEncoded(obj);
         out.write(BEF_G); out.write(PEM_STRING_PUBLIC); out.write(AFT);

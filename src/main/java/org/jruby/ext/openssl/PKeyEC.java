@@ -611,8 +611,8 @@ public final class PKeyEC extends PKey {
         return dh_compute_key(context, peerPublicKey);
     }
 
-    @JRubyMethod
-    public IRubyObject oid() {
+    @Override
+    public RubyString oid() {
         return getRuntime().newString("id-ecPublicKey");
     }
 
@@ -722,7 +722,7 @@ public final class PKeyEC extends PKey {
         return privateKey != null ? getRuntime().getTrue() : getRuntime().getFalse();
     }
 
-    @JRubyMethod
+    @Override
     public RubyString public_to_der(ThreadContext context) {
         return public_to_der(context.runtime);
     }
@@ -756,12 +756,12 @@ public final class PKeyEC extends PKey {
         }
     }
 
-    @JRubyMethod
-    public RubyString private_to_der(ThreadContext context) {
-        return private_to_der(context.runtime);
-    }
-
-    private RubyString private_to_der(final Ruby runtime) {
+    @Override
+    public RubyString private_to_der(ThreadContext context, final IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
+        if (args.length > 0) {
+            throw newECError(runtime, "encryption not supported for EC private key export");
+        }
         final byte[] encoded;
         if (privateKey instanceof ECPrivateKey) {
             try {
@@ -860,11 +860,11 @@ public final class PKeyEC extends PKey {
         }
     }
 
-    @JRubyMethod
+    @Override
     public RubyString public_to_pem(ThreadContext context) {
         try {
             final StringWriter writer = new StringWriter();
-            PEMInputOutput.writeECPublicKey(writer, publicKey);
+            PEMInputOutput.writePublicKey(writer, publicKey);
             return RubyString.newString(context.runtime, writer.getBuffer());
         } catch (IOException ex) {
             throw newECError(context.runtime, ex.getMessage(), ex);

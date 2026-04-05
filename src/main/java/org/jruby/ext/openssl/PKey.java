@@ -30,6 +30,7 @@ package org.jruby.ext.openssl;
 import java.io.Console;
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.math.BigInteger;
 import java.security.*;
 import java.security.interfaces.DSAPrivateKey;
@@ -279,6 +280,78 @@ public abstract class PKey extends RubyObject {
 
     @JRubyMethod
     public abstract IRubyObject oid();
+
+    /**
+     * Serializes the public key to DER-encoded X.509 SubjectPublicKeyInfo format
+     */
+    @JRubyMethod(name = "public_to_der")
+    public RubyString public_to_der(ThreadContext context) {
+        final Ruby runtime = context.runtime;
+        final PublicKey publicKey = getPublicKey();
+        if (publicKey == null) {
+            throw newPKeyError(runtime, "public key not set");
+        }
+        return StringHelper.newString(runtime, publicKey.getEncoded());
+    }
+
+    /**
+     * Serializes the public key to PEM-encoded X.509 SubjectPublicKeyInfo format
+     */
+    @JRubyMethod(name = "public_to_pem")
+    public RubyString public_to_pem(ThreadContext context) {
+        final Ruby runtime = context.runtime;
+        final PublicKey publicKey = getPublicKey();
+        if (publicKey == null) {
+            throw newPKeyError(runtime, "public key not set");
+        }
+        try {
+            StringWriter writer = new StringWriter();
+            PEMInputOutput.writePublicKey(writer, publicKey);
+            return RubyString.newString(runtime, writer.toString());
+        }
+        catch (IOException e) {
+            throw newPKeyError(runtime, e.getMessage());
+        }
+    }
+
+    /**
+     * Serializes the private key to DER-encoded PKCS#8 format
+     */
+    @JRubyMethod(name = "private_to_der", rest = true)
+    public RubyString private_to_der(ThreadContext context, IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
+        final PrivateKey privateKey = getPrivateKey();
+        if (privateKey == null) {
+            throw newPKeyError(runtime, "private key not set");
+        }
+        if (args.length > 0) {
+            throw newPKeyError(runtime, "encryption not supported for this key type");
+        }
+        return StringHelper.newString(runtime, privateKey.getEncoded());
+    }
+
+    /**
+     * Serializes the private key to PEM-encoded PKCS#8 format
+     */
+    @JRubyMethod(name = "private_to_pem", rest = true)
+    public RubyString private_to_pem(ThreadContext context, IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
+        final PrivateKey privateKey = getPrivateKey();
+        if (privateKey == null) {
+            throw newPKeyError(runtime, "private key not set");
+        }
+        if (args.length > 0) {
+            throw newPKeyError(runtime, "encryption not supported for this key type");
+        }
+        try {
+            StringWriter writer = new StringWriter();
+            PEMInputOutput.writePKCS8PrivateKey(writer, privateKey.getEncoded());
+            return RubyString.newString(runtime, writer.toString());
+        }
+        catch (IOException e) {
+            throw newPKeyError(runtime, e.getMessage());
+        }
+    }
 
     @JRubyMethod(name = "sign")
     public IRubyObject sign(IRubyObject digest, IRubyObject data) {

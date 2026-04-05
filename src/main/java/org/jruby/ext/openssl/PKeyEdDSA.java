@@ -8,7 +8,6 @@
 package org.jruby.ext.openssl;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -31,8 +30,6 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
 import org.bouncycastle.jcajce.interfaces.EdDSAPublicKey;
-import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
-import org.bouncycastle.util.io.pem.PemObject;
 
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
@@ -51,13 +48,6 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  */
 public class PKeyEdDSA extends PKey {
 
-    /**
-     * Register EdDSA-specific methods (oid, raw_*_key, derive, public?, private?,
-     * public_to_pem, public_to_der, private_to_pem, private_to_der) on PKey::PKey.
-     *
-     * sign/verify/to_der/to_pem are handled by the base PKey class delegating
-     * to this class when the receiver is a PKeyEdDSA instance.
-     */
     static void defineEdDSAMethods(final RubyClass PKeyPKey) {
         PKeyPKey.defineAnnotatedMethods(EdDSAMethods.class);
     }
@@ -78,30 +68,6 @@ public class PKeyEdDSA extends PKey {
         public static IRubyObject raw_public_key(ThreadContext context, IRubyObject self) {
             if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).raw_public_key(context);
             throw newPKeyError(context.runtime, "raw_public_key not supported for this key type");
-        }
-
-        @JRubyMethod(name = "public_to_pem")
-        public static IRubyObject public_to_pem(ThreadContext context, IRubyObject self) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).public_to_pem(context);
-            throw newPKeyError(context.runtime, "public_to_pem not supported for this key type");
-        }
-
-        @JRubyMethod(name = "public_to_der")
-        public static IRubyObject public_to_der(ThreadContext context, IRubyObject self) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).public_to_der(context);
-            throw newPKeyError(context.runtime, "public_to_der not supported for this key type");
-        }
-
-        @JRubyMethod(name = "private_to_pem", rest = true)
-        public static IRubyObject private_to_pem(ThreadContext context, IRubyObject self, IRubyObject[] args) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).private_to_pem(context, args);
-            throw newPKeyError(context.runtime, "private_to_pem not supported for this key type");
-        }
-
-        @JRubyMethod(name = "private_to_der", rest = true)
-        public static IRubyObject private_to_der(ThreadContext context, IRubyObject self, IRubyObject[] args) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).private_to_der(context, args);
-            throw newPKeyError(context.runtime, "private_to_der not supported for this key type");
         }
 
         @JRubyMethod(name = "to_text")
@@ -234,11 +200,9 @@ public class PKeyEdDSA extends PKey {
     public String getKeyType() { return "EdDSA"; }
 
     @Override
-    public IRubyObject oid() { // MRI: OBJ_nid2sn returns "ED25519" or "ED448"
+    public RubyString oid() { // MRI: OBJ_nid2sn returns "ED25519" or "ED448"
         return getRuntime().newString(getAlgorithm().toUpperCase());
     }
-
-    // --- sign / verify ---
 
     @Override
     public IRubyObject sign(IRubyObject digest, IRubyObject data) {
@@ -343,7 +307,7 @@ public class PKeyEdDSA extends PKey {
         final Ruby runtime = context.runtime;
         try {
             if (privateKey != null) {
-                return private_to_pem(context);
+                return private_to_pem(context, args);
             }
             if (publicKey != null) {
                 return public_to_pem(context);
@@ -354,60 +318,6 @@ public class PKeyEdDSA extends PKey {
             throw newPKeyError(runtime, e.getMessage());
         }
     }
-
-    @JRubyMethod(name = "private_to_der", rest = true)
-    public IRubyObject private_to_der(ThreadContext context, final IRubyObject[] args) {
-        final Ruby runtime = context.runtime;
-        if (privateKey == null) throw newPKeyError(runtime, "private key not set");
-        if (args.length > 0) {
-            throw newPKeyError(runtime, "EdDSA does not support encryption of private key");
-        }
-        return StringHelper.newString(runtime, privateKey.getEncoded());
-    }
-
-    @JRubyMethod(name = "public_to_der")
-    public IRubyObject public_to_der(ThreadContext context) {
-        final Ruby runtime = context.runtime;
-        if (publicKey == null) throw newPKeyError(runtime, "public key not set");
-        return StringHelper.newString(runtime, publicKey.getEncoded());
-    }
-
-    @JRubyMethod(name = "private_to_pem", rest = true)
-    public RubyString private_to_pem(ThreadContext context, final IRubyObject... args) {
-        final Ruby runtime = context.runtime;
-        if (privateKey == null) throw newPKeyError(runtime, "private key not set");
-        if (args.length > 0) {
-            throw newPKeyError(runtime, "EdDSA does not support encryption of private key");
-        }
-        try {
-            StringWriter sw = new StringWriter();
-            JcaPEMWriter writer = new JcaPEMWriter(sw);
-            writer.writeObject(new PemObject("PRIVATE KEY", privateKey.getEncoded()));
-            writer.flush();
-            return RubyString.newString(runtime, sw.toString());
-        }
-        catch (IOException e) {
-            throw newPKeyError(runtime, e.getMessage());
-        }
-    }
-
-    @JRubyMethod(name = "public_to_pem")
-    public RubyString public_to_pem(ThreadContext context) {
-        final Ruby runtime = context.runtime;
-        if (publicKey == null) throw newPKeyError(runtime, "public key not set");
-        try {
-            StringWriter sw = new StringWriter();
-            JcaPEMWriter writer = new JcaPEMWriter(sw);
-            writer.writeObject(new PemObject("PUBLIC KEY", publicKey.getEncoded()));
-            writer.flush();
-            return RubyString.newString(runtime, sw.toString());
-        }
-        catch (IOException e) {
-            throw newPKeyError(runtime, e.getMessage());
-        }
-    }
-
-    // --- to_text ---
 
     @JRubyMethod(name = "to_text")
     public IRubyObject to_text() {

@@ -102,7 +102,7 @@ public class PKeyDH extends PKey {
     }
 
     @Override
-    public IRubyObject oid() {
+    public RubyString oid() {
         return getRuntime().newString("dhKeyAgreement");
     }
 

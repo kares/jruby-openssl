@@ -302,7 +302,7 @@ public class PKeyDSA extends PKey {
         return privateKey != null ? getRuntime().getTrue() : getRuntime().getFalse();
     }
 
-    @JRubyMethod(name = "public_to_der")
+    @Override
     public RubyString public_to_der(ThreadContext context) {
         if (publicKey == null) {
             throw newDSAError(context.runtime, "incompletely initialized DSA key");
@@ -411,7 +411,7 @@ public class PKeyDSA extends PKey {
                 PEMInputOutput.writeDSAPrivateKey(writer, privateKey, spec, passwd);
             }
             else {
-                PEMInputOutput.writeDSAPublicKey(writer, publicKey);
+                PEMInputOutput.writePublicKey(writer, publicKey);
             }
             return RubyString.newString(context.runtime, writer.getBuffer());
         }
@@ -423,11 +423,11 @@ public class PKeyDSA extends PKey {
         }
     }
 
-    @JRubyMethod
+    @Override
     public RubyString public_to_pem(ThreadContext context) {
         try {
             final StringWriter writer = new StringWriter();
-            PEMInputOutput.writeDSAPublicKey(writer, publicKey);
+            PEMInputOutput.writePublicKey(writer, publicKey);
             return RubyString.newString(context.runtime, writer.getBuffer());
         }
         catch (NoClassDefFoundError ncdfe) {
@@ -517,8 +517,8 @@ public class PKeyDSA extends PKey {
         }
     }
 
-    @JRubyMethod
-    public IRubyObject oid() {
+    @Override
+    public RubyString oid() {
         return getRuntime().newString("DSA");
     }
 

@@ -387,7 +387,7 @@ public class PKeyRSA extends PKey {
         return getRuntime().newBoolean(isPrivateKey());
     }
 
-    @JRubyMethod(name = "public_to_der")
+    @Override
     public RubyString public_to_der(ThreadContext context) {
         final byte[] bytes;
         try {
@@ -516,7 +516,7 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    @JRubyMethod
+    @Override
     public RubyString public_to_pem(ThreadContext context) {
         try {
             final StringWriter writer = new StringWriter();
@@ -531,7 +531,7 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    @JRubyMethod(rest = true)
+    @Override
     public RubyString private_to_der(ThreadContext context, final IRubyObject[] args) {
         Arity.checkArgumentCount(context.runtime, args, 0, 2);
         if (privateKey == null) {
@@ -560,7 +560,7 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    @JRubyMethod(rest = true)
+    @Override
     public RubyString private_to_pem(ThreadContext context, final IRubyObject[] args) {
         Arity.checkArgumentCount(context.runtime, args, 0, 2);
         if (privateKey == null) {
@@ -687,8 +687,8 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    @JRubyMethod
-    public IRubyObject oid() {
+    @Override
+    public RubyString oid() {
         return getRuntime().newString("rsaEncryption");
     }
 

@@ -111,6 +111,16 @@ class TestX509Store < TestCase
     assert store.verify(@cert)
   end
 
+  # CRuby raises StoreError when X509_verify_cert returns -1 (internal error).
+  # JRuby's verifyCertificate returns -1 when the StoreContext is reused.
+  def test_store_context_verify_raises_on_reuse
+    store = OpenSSL::X509::Store.new
+    store.add_file @ca_cert
+    ctx = OpenSSL::X509::StoreContext.new(store, @cert)
+    ctx.verify
+    assert_raise(OpenSSL::X509::StoreError) { ctx.verify }
+  end
+
   # CRuby undefs initialize_copy, blocking both dup and clone
   def test_store_dup_clone_not_allowed
     store = OpenSSL::X509::Store.new

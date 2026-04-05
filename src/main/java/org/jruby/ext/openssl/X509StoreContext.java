@@ -159,12 +159,17 @@ public class X509StoreContext extends RubyObject {
             storeContext.setExtraData(ossl_ssl_ex_vcb_idx, verify_callback);
         }
         try {
+            // match CRuby: 1 = true, 0 = false, anything else = raise
             final int result = storeContext.verifyCertificate();
-            return result != 0 ? runtime.getTrue() : runtime.getFalse();
+            if (result == 1) return runtime.getTrue();
+            if (result == 0) return runtime.getFalse();
+            throw newStoreError(runtime, "X509_verify_cert");
+        }
+        catch (RaiseException e) {
+            throw e;
         }
         catch (Exception e) {
             debugStackTrace(runtime, e);
-            // TODO: define suitable exception for jopenssl and catch it.
             throw newStoreError(runtime, e);
         }
     }

@@ -70,12 +70,6 @@ public class PKeyEdDSA extends PKey {
             throw newPKeyError(context.runtime, "raw_public_key not supported for this key type");
         }
 
-        @JRubyMethod(name = "to_text")
-        public static IRubyObject to_text(ThreadContext context, IRubyObject self) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).to_text();
-            throw newPKeyError(context.runtime, "to_text not supported for this key type");
-        }
-
         @JRubyMethod
         public static IRubyObject derive(ThreadContext context, IRubyObject self, IRubyObject peer) {
             if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).derive(context, peer);
@@ -258,7 +252,6 @@ public class PKeyEdDSA extends PKey {
         throw newPKeyError(context.runtime, "operation not supported");
     }
 
-    @JRubyMethod(name = "raw_private_key")
     public IRubyObject raw_private_key(ThreadContext context) {
         final Ruby runtime = context.runtime;
         if (privateKey == null) throw newPKeyError(runtime, "private key not set");
@@ -275,7 +268,6 @@ public class PKeyEdDSA extends PKey {
         }
     }
 
-    @JRubyMethod(name = "raw_public_key")
     public IRubyObject raw_public_key(ThreadContext context) {
         final Ruby runtime = context.runtime;
         if (publicKey == null) throw newPKeyError(runtime, "public key not set");
@@ -319,8 +311,8 @@ public class PKeyEdDSA extends PKey {
         }
     }
 
-    @JRubyMethod(name = "to_text")
-    public IRubyObject to_text() {
+    @Override
+    public RubyString to_text() {
         final StringBuilder sb = new StringBuilder();
         sb.append(getAlgorithm().toUpperCase()).append(' ');
         if (privateKey != null) {
@@ -333,7 +325,7 @@ public class PKeyEdDSA extends PKey {
             sb.append("pub:\n");
             addSplittedAndFormatted(sb, bytesToHex(((EdDSAPublicKey) publicKey).getPointEncoding()));
         }
-        return getRuntime().newString(sb.toString());
+        return RubyString.newString(getRuntime(), sb);
     }
 
     private static StringBuilder bytesToHex(byte[] bytes) {

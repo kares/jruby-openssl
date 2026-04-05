@@ -456,6 +456,7 @@ public class PKeyRSA extends PKey {
         return hash;
     }
 
+    @Override
     @JRubyMethod
     public RubyString to_text() {
         StringBuilder result = new StringBuilder();

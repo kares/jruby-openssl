@@ -871,6 +871,7 @@ public final class PKeyEC extends PKey {
         }
     }
 
+    @Override
     @JRubyMethod
     public RubyString to_text() {
         StringBuilder result = new StringBuilder();

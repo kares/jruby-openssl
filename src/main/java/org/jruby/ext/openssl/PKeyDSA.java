@@ -344,6 +344,7 @@ public class PKeyDSA extends PKey {
         return toASN1Primitive(publicKey);
     }
 
+    @Override
     @JRubyMethod
     public RubyString to_text() {
         StringBuilder result = new StringBuilder();

@@ -282,6 +282,13 @@ public abstract class PKey extends RubyObject {
     public abstract IRubyObject oid();
 
     /**
+     * Dumps key parameters, public key, and private key components contained in
+     * the key into a human-readable text. This is intended for debugging purpose.
+     */
+    @JRubyMethod(name = "to_text")
+    public abstract RubyString to_text();
+
+    /**
      * Serializes the public key to DER-encoded X.509 SubjectPublicKeyInfo format
      */
     @JRubyMethod(name = "public_to_der")

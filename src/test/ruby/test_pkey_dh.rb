@@ -171,6 +171,33 @@ class TestPKeyDH < TestCase
     assert_match(/-----END PRIVATE KEY-----/, pem)
   end
 
+  def test_derive_key
+    dh1 = Fixtures.pkey_dh("dh2048_ffdhe2048")
+    dh1.generate_key!
+    dh2 = Fixtures.pkey_dh("dh2048_ffdhe2048")
+    dh2.generate_key!
+
+    # derive produces the same shared secret from both sides
+    secret1 = dh1.derive(dh2)
+    secret2 = dh2.derive(dh1)
+    assert_equal secret1, secret2
+
+    # Verify against math: g^(a*b) mod p == (g^a mod p)^b mod p
+    z = dh1.g.mod_exp(dh1.priv_key, dh1.p).mod_exp(dh2.priv_key, dh1.p).to_s(2)
+    assert_equal z, secret1
+
+    # derive and compute_key produce the same result
+    assert_equal secret1, dh1.compute_key(dh2.pub_key)
+    assert_equal secret2, dh2.compute_key(dh1.pub_key)
+
+    # Raises when self has no private key (params only)
+    params = Fixtures.pkey_dh("dh2048_ffdhe2048")
+    assert_raise(OpenSSL::PKey::PKeyError) { params.derive(dh1) }
+
+    # Raises when peer has no public key (params only)
+    assert_raise(OpenSSL::PKey::PKeyError) { dh1.derive(params) }
+  end
+
   def test_compute_key
     dh1 = Fixtures.pkey_dh("dh2048_ffdhe2048")
     dh1.generate_key!
@@ -181,9 +208,9 @@ class TestPKeyDH < TestCase
     shared2 = dh2.compute_key(dh1.pub_key)
     assert_equal shared1, shared2
 
-    # The shared secret should be consistent
-    assert_kind_of String, shared1
-    refute_empty shared1
+    # Verify against math: should match BN binary representation (no leading zero)
+    z = dh1.g.mod_exp(dh1.priv_key, dh1.p).mod_exp(dh2.priv_key, dh1.p).to_s(2)
+    assert_equal z, shared1
   end
 
   def test_dup

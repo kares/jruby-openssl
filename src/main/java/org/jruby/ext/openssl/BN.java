@@ -240,12 +240,7 @@ public class BN extends RubyObject {
             // again, following MRI implementation, wherein base 2 deals
             // with strings as byte arrays rather than ASCII-encoded binary
             // digits.  note that negative values are returned as though positive:
-            bytes = this.value.abs().toByteArray();
-            // suppress leading 0 byte to conform to MRI behavior
-            if (bytes[0] == 0) {
-                return runtime.newString(new ByteList(bytes, 1, bytes.length - 1, false));
-            }
-            return runtime.newString(new ByteList(bytes, false));
+            return runtime.newString(new ByteList(toUnsignedBytes(this.value), false));
         case 10:
             return runtime.newString(value.toString(10));
         case 16:
@@ -920,6 +915,20 @@ public class BN extends RubyObject {
     @Deprecated
     public static BigInteger getBigInteger(final IRubyObject arg) {
         return asBigInteger(arg);
+    }
+
+    /**
+     * Converts a BigInteger to unsigned big-endian bytes, stripping any leading
+     * zero sign byte. Equivalent to OpenSSL's BN_bn2bin.
+     */
+    public static byte[] toUnsignedBytes(final BigInteger value) {
+        final byte[] bytes = value.abs().toByteArray();
+        if (bytes.length > 1 && bytes[0] == 0) {
+            byte[] unsigned = new byte[bytes.length - 1];
+            System.arraycopy(bytes, 1, unsigned, 0, unsigned.length);
+            return unsigned;
+        }
+        return bytes;
     }
 
     @Override

@@ -295,7 +295,31 @@ public class PKeyDH extends PKey {
     }
 
     public static byte[] computeKey(BigInteger y, BigInteger x, BigInteger p) {
-        return y.modPow(x, p).toByteArray();
+        return BN.toUnsignedBytes(y.modPow(x, p));
+    }
+
+    /**
+     * Derives a shared secret from this DH key and the peer's DH public key.
+     * Equivalent to CRuby's EVP_PKEY_derive for DH keys.
+     */
+    @Override
+    @JRubyMethod(name = "derive")
+    public IRubyObject derive(ThreadContext context, IRubyObject peer) {
+        if (!(peer instanceof PKeyDH)) {
+            throw newPKeyError(context.runtime, "EVP_PKEY_derive_set_peer");
+        }
+        final PKeyDH peerDH = (PKeyDH) peer;
+        final BigInteger x = this.dh_x;
+        final BigInteger p = this.dh_p;
+        if (x == null || p == null) {
+            throw newPKeyError(context.runtime, "EVP_PKEY_derive_init");
+        }
+        final BigInteger peerY = peerDH.dh_y;
+        if (peerY == null) {
+            throw newPKeyError(context.runtime, "EVP_PKEY_derive_set_peer");
+        }
+        final byte[] secret = computeKey(peerY, x, p);
+        return context.runtime.newString(new ByteList(secret, false));
     }
 
     @JRubyMethod(name = "public?")

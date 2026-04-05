@@ -599,12 +599,12 @@ public final class PKeyEC extends PKey {
 
     // derive(peer_key) -- computes the ECDH shared secret with a peer EC public key.
     // Equivalent to dh_compute_key(peer_key.public_key).
-    @JRubyMethod(name = "derive")
-    public IRubyObject derive(final ThreadContext context, final IRubyObject peer) {
-        if (!(peer instanceof PKeyEC)) {
-            throw context.runtime.newTypeError(peer, _EC(context.runtime));
+    @Override
+    public IRubyObject derive(final ThreadContext context, final IRubyObject peer_pkey) {
+        if (!(peer_pkey instanceof PKeyEC)) {
+            throw context.runtime.newTypeError(peer_pkey, _EC(context.runtime));
         }
-        final IRubyObject peerPublicKey = ((PKeyEC) peer).public_key(context);
+        final IRubyObject peerPublicKey = ((PKeyEC) peer_pkey).public_key(context);
         if (peerPublicKey.isNil()) {
             throw newECError(context.runtime, "no public key");
         }

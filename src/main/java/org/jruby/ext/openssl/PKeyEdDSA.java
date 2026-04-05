@@ -48,35 +48,6 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  */
 public class PKeyEdDSA extends PKey {
 
-    static void defineEdDSAMethods(final RubyClass PKeyPKey) {
-        PKeyPKey.defineAnnotatedMethods(EdDSAMethods.class);
-    }
-
-    /**
-     * Inner class to hold @JRubyMethod annotations that are safe to add to the
-     * base PKey::PKey class without conflicting with existing methods.
-     */
-    public static class EdDSAMethods {
-
-        @JRubyMethod
-        public static IRubyObject raw_private_key(ThreadContext context, IRubyObject self) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).raw_private_key(context);
-            throw newPKeyError(context.runtime, "raw_private_key not supported for this key type");
-        }
-
-        @JRubyMethod
-        public static IRubyObject raw_public_key(ThreadContext context, IRubyObject self) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).raw_public_key(context);
-            throw newPKeyError(context.runtime, "raw_public_key not supported for this key type");
-        }
-
-        @JRubyMethod
-        public static IRubyObject derive(ThreadContext context, IRubyObject self, IRubyObject peer) {
-            if (self instanceof PKeyEdDSA) return ((PKeyEdDSA) self).derive(context, peer);
-            throw newPKeyError(context.runtime, "derive not supported for this key type");
-        }
-    }
-
     private PublicKey publicKey;
     private PrivateKey privateKey;
 
@@ -247,11 +218,15 @@ public class PKeyEdDSA extends PKey {
         }
     }
 
-    IRubyObject derive(ThreadContext context, IRubyObject peer) {
-        // Ed25519 pkey type does not support key derivation
-        throw newPKeyError(context.runtime, "operation not supported");
+    @Override
+    @JRubyMethod(name = "derive")
+    public IRubyObject derive(ThreadContext context, IRubyObject peer) {
+        // EdDSA pkey type does not support key derivation
+        throw newPKeyError(context.runtime, "EVP_PKEY_derive_init");
     }
 
+    @Override
+    @JRubyMethod(name = "raw_private_key")
     public IRubyObject raw_private_key(ThreadContext context) {
         final Ruby runtime = context.runtime;
         if (privateKey == null) throw newPKeyError(runtime, "private key not set");
@@ -268,6 +243,8 @@ public class PKeyEdDSA extends PKey {
         }
     }
 
+    @Override
+    @JRubyMethod(name = "raw_public_key")
     public IRubyObject raw_public_key(ThreadContext context) {
         final Ruby runtime = context.runtime;
         if (publicKey == null) throw newPKeyError(runtime, "public key not set");

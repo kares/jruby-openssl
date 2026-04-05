@@ -646,6 +646,12 @@ public class X509CRL extends RubyObject {
     private static String getSignatureAlgorithm(final Ruby runtime, final PKey key, final IRubyObject digest) {
         // Have to obey some artificial constraints of the OpenSSL implementation. Stupid.
         final String keyAlg = key.getAlgorithm();
+
+        // PureEdDSA (Ed25519/Ed448) — no digest needed
+        if (digest.isNil() && PKeyEdDSA.isEdDSAAlgorithm(keyAlg)) {
+            return keyAlg;
+        }
+
         final String digAlg;
         if (digest instanceof Digest) {
             digAlg = ((Digest) digest).getShortAlgorithm();

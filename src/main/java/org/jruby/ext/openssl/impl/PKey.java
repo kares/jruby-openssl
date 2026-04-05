@@ -72,6 +72,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.DSAParameter;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
 import org.bouncycastle.jcajce.provider.asymmetric.util.KeyUtil;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
@@ -86,7 +87,7 @@ import org.jruby.ext.openssl.SecurityHelper;
  */
 public class PKey {
 
-    public enum Type { RSA, DSA, EC; }
+    public enum Type { RSA, DSA, EC, EdDSA; }
 
     public static KeyPair readPrivateKey(final Type type, final byte[] input)
         throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
@@ -144,6 +145,8 @@ public class PKey {
                 break;
             case EC:
                 return readECPrivateKey(SecurityHelper.getKeyFactory("EC"), keyInfo);
+            case EdDSA:
+                return readEdDSAPrivateKey(keyInfo);
             default:
                 throw new AssertionError("unexpected key type: " + type);
         }
@@ -153,18 +156,20 @@ public class PKey {
 
     // d2i_PUBKEY_bio
     public static PublicKey readPublicKey(final byte[] input) throws IOException {
+        final JcaPEMKeyConverter converter = new JcaPEMKeyConverter()
+            .setProvider(SecurityHelper.getSecurityProvider());
         // Try PEM first
         try (Reader in = new InputStreamReader(new ByteArrayInputStream(input))) {
             Object pemObject = new PEMParser(in).readObject();
             if (pemObject instanceof SubjectPublicKeyInfo) {
-                return new JcaPEMKeyConverter().getPublicKey((SubjectPublicKeyInfo) pemObject);
+                return converter.getPublicKey((SubjectPublicKeyInfo) pemObject);
             }
         }
         // Fall back to DER-encoded SubjectPublicKeyInfo
         try {
             SubjectPublicKeyInfo publicKeyInfo = SubjectPublicKeyInfo.getInstance(ASN1Primitive.fromByteArray(input));
             if (publicKeyInfo != null) {
-                return new JcaPEMKeyConverter().getPublicKey(publicKeyInfo);
+                return converter.getPublicKey(publicKeyInfo);
             }
         } catch (Exception e) {
             throw new IOException("Could not parse public key: " + e.getMessage(), e);
@@ -277,6 +282,20 @@ public class PKey {
         BigInteger p = ((ASN1Integer) seq.getObjectAt(0)).getValue();
         BigInteger g = ((ASN1Integer) seq.getObjectAt(1)).getValue();
         return new DHParameterSpec(p, g);
+    }
+
+    // EdDSA (Ed25519 / Ed448)
+    private static KeyPair readEdDSAPrivateKey(final PrivateKeyInfo keyInfo)
+        throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        KeyFactory keyFactory = SecurityHelper.getKeyFactory("EdDSA");
+        PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyInfo.getEncoded()));
+        PublicKey publicKey;
+        if (privateKey instanceof EdDSAPrivateKey) { // assuming BC provider
+            publicKey = ((EdDSAPrivateKey) privateKey).getPublicKey();
+        } else {
+            publicKey = null;
+        }
+        return new KeyPair(publicKey, privateKey);
     }
 
     public static KeyPair readECPrivateKey(final byte[] input)

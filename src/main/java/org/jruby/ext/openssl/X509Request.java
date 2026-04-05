@@ -47,6 +47,7 @@ import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyClass;
@@ -314,18 +315,23 @@ public class X509Request extends RubyObject {
     }
 
     @JRubyMethod
-    public IRubyObject sign(final ThreadContext context,
-        final IRubyObject key, final IRubyObject _digest) {
-        PrivateKey privateKey = ((PKey) key).getPrivateKey();
-        Digest digest = Digest.getDigest(context, _digest);
-
+    public IRubyObject sign(final ThreadContext context, final IRubyObject key, final IRubyObject _digest) {
+        final PKey pkey = (PKey) key;
         final Ruby runtime = context.runtime;
-        supportedSignatureAlgorithm(runtime, _RequestError(runtime), public_key, digest);
 
-        final String digAlg = digest.getShortAlgorithm();
         try {
             request = null;
-            getRequest().sign( privateKey, digAlg );
+            if (_digest.isNil() && PKeyEdDSA.isEdDSAAlgorithm(pkey.getAlgorithm())) {
+                // PureEdDSA (Ed25519/Ed448) — pass algorithm identifier directly
+                final String keyAlg = pkey.getAlgorithm();
+                AlgorithmIdentifier algId = new DefaultSignatureAlgorithmIdentifierFinder().find(keyAlg);
+                getRequest().sign( pkey.getPrivateKey(), algId );
+            }
+            else {
+                Digest digest = Digest.getDigest(context, _digest);
+                supportedSignatureAlgorithm(runtime, _RequestError(runtime), public_key, digest);
+                getRequest().sign( pkey.getPrivateKey(), digest.getShortAlgorithm() );
+            }
         }
         catch (InvalidKeyException e) {
             debug(runtime, "X509Request#sign invalid key:", e);

@@ -102,8 +102,30 @@ public class PKeyDH extends PKey {
     }
 
     @Override
+    @JRubyMethod
     public RubyString oid() {
         return getRuntime().newString("dhKeyAgreement");
+    }
+
+    @Override
+    @JRubyMethod
+    public RubyString to_text() {
+        StringBuilder result = new StringBuilder();
+        if (dh_p != null) {
+            result.append("DH Parameters: (").append(dh_p.bitLength()).append(" bit)").append('\n');
+            result.append("    prime:");
+            addSplittedAndFormatted(result, dh_p);
+            result.append("    generator: ").append(dh_g).append(" (0x").append(dh_g.toString(16)).append(")\n");
+        }
+        if (dh_x != null) {
+            result.append("    private-key:");
+            addSplittedAndFormatted(result, dh_x);
+        }
+        if (dh_y != null) {
+            result.append("    public-key:");
+            addSplittedAndFormatted(result, dh_y);
+        }
+        return RubyString.newString(getRuntime(), result.toString());
     }
 
     @JRubyMethod(visibility = Visibility.PRIVATE)

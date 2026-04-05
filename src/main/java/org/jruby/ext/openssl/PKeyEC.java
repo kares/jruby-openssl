@@ -206,6 +206,10 @@ public final class PKeyEC extends PKey {
         super(runtime, type);
     }
 
+    PKeyEC(Ruby runtime) {
+        this(runtime, _EC(runtime));
+    }
+
     PKeyEC(Ruby runtime, PublicKey pubKey) {
         this(runtime, _EC(runtime), null, pubKey);
     }

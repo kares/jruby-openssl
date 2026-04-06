@@ -252,6 +252,8 @@ public class Cipher extends RubyObject {
             KNOWN_BLOCK_MODES = new HashSet<>(10, 1);
             for ( String mode : OPENSSL_BLOCK_MODES ) KNOWN_BLOCK_MODES.add(mode);
             KNOWN_BLOCK_MODES.add("CTR");
+            KNOWN_BLOCK_MODES.add("GCM");
+            KNOWN_BLOCK_MODES.add("CCM");
             KNOWN_BLOCK_MODES.add("CTS"); // not supported by OpenSSL
             KNOWN_BLOCK_MODES.add("PCBC"); // not supported by OpenSSL
             KNOWN_BLOCK_MODES.add("NONE"); // valid to pass into JCE
@@ -266,6 +268,7 @@ public class Cipher extends RubyObject {
             NO_PADDING_BLOCK_MODES.add("OFB");
             NO_PADDING_BLOCK_MODES.add("CTR");
             NO_PADDING_BLOCK_MODES.add("GCM");
+            NO_PADDING_BLOCK_MODES.add("CCM");
         }
 
         final static class AllSupportedCiphers {
@@ -1067,7 +1070,7 @@ public class Cipher extends RubyObject {
                 }
                 else {
                     final AlgorithmParameterSpec ivSpec;
-                    if ( "GCM".equalsIgnoreCase(cryptoMode) ) { // e.g. 'aes-128-gcm'
+                    if ( "GCM".equalsIgnoreCase(cryptoMode) || "CCM".equalsIgnoreCase(cryptoMode) ) { // e.g. 'aes-128-gcm'
                         ivSpec = new GCMParameterSpec(getAuthTagLength() * 8, this.realIV);
                     }
                     else {
@@ -1408,6 +1411,17 @@ public class Cipher extends RubyObject {
     public IRubyObject set_auth_tag_len(IRubyObject tag_len) {
         this.auth_tag_len = tag_len.convertToInteger().getIntValue();
         return tag_len;
+    }
+
+    // OpenSSL' ccm_data_len= calls EVP_CipherUpdate(ctx, NULL, &out, NULL, len) to pre-declare the message length
+    // (CCM is a two-pass algorithm in OpenSSL);
+    // BC's CCM JCE wrapper buffers everything internally and processes in doFinal - doesn't need the length upfront
+    @JRubyMethod(name = "ccm_data_len=")
+    public IRubyObject set_ccm_data_len(final ThreadContext context, IRubyObject len) {
+        if ( ! "CCM".equalsIgnoreCase(cryptoMode) ) {
+            throw newCipherError(context.runtime, "ccm_data_len= is only supported in CCM mode");
+        }
+        return len;
     }
 
     private boolean isAuthDataMode() { // Authenticated Encryption with Associated Data (AEAD)

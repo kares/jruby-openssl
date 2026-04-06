@@ -31,7 +31,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyFactorySpi;
@@ -42,6 +41,7 @@ import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.MessageDigestSpi;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.security.PublicKey;
 import java.security.SecureRandom;
@@ -55,10 +55,6 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.CertificateFactorySpi;
 import java.security.cert.X509CRL;
-import java.security.interfaces.DSAParams;
-import java.security.interfaces.DSAPublicKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.util.Locale;
 import java.util.Map;
 import java.util.StringTokenizer;
@@ -77,23 +73,6 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.SecretKeyFactorySpi;
 import javax.net.ssl.SSLContext;
 
-import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.CertificateList;
-import org.bouncycastle.cert.CertException;
-import org.bouncycastle.cert.X509CRLHolder;
-import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
-import org.bouncycastle.crypto.params.DSAParameters;
-import org.bouncycastle.crypto.params.DSAPublicKeyParameters;
-import org.bouncycastle.crypto.params.RSAKeyParameters;
-import org.bouncycastle.jce.provider.X509CRLObject;
-import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
-import org.bouncycastle.operator.ContentVerifierProvider;
-import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
-import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
-import org.bouncycastle.operator.OperatorException;
-import org.bouncycastle.operator.bc.BcDSAContentVerifierProviderBuilder;
-import org.bouncycastle.operator.bc.BcECContentVerifierProviderBuilder;
-import org.bouncycastle.operator.bc.BcRSAContentVerifierProviderBuilder;
 import org.jruby.util.SafePropertyAccessor;
 
 /**
@@ -582,79 +561,24 @@ public abstract class SecurityHelper {
 
     static boolean verify(final X509CRL crl, final PublicKey publicKey, final boolean silent)
         throws NoSuchAlgorithmException, CRLException, InvalidKeyException, SignatureException {
-
-        if ( crl instanceof X509CRLObject ) {
-            final CertificateList crlList = (CertificateList) getCertificateList(crl);
-            final AlgorithmIdentifier tbsSignatureId = crlList.getTBSCertList().getSignature();
-            if ( ! crlList.getSignatureAlgorithm().equals(tbsSignatureId) ) {
-                if ( silent ) return false;
-                throw new CRLException("Signature algorithm on CertificateList does not match TBSCertList.");
+        try {
+            final Provider provider = securityProvider;
+            if (provider != null) {
+                crl.verify(publicKey, provider);
             }
-
-            final Signature signature = getSignature(crl.getSigAlgName(), securityProvider);
-
-            signature.initVerify(publicKey);
-            signature.update(crl.getTBSCertList());
-
-            if ( ! signature.verify( crl.getSignature() ) ) {
-                if ( silent ) return false;
-                throw new SignatureException("CRL does not verify with supplied public key.");
+            else {
+                crl.verify(publicKey);
             }
             return true;
         }
-        else {
-            try {
-                final DigestAlgorithmIdentifierFinder digestAlgFinder = new DefaultDigestAlgorithmIdentifierFinder();
-                final ContentVerifierProvider verifierProvider;
-                if (publicKey instanceof DSAPublicKey) {
-                    BigInteger y = ((DSAPublicKey) publicKey).getY();
-                    DSAParams params = ((DSAPublicKey) publicKey).getParams();
-                    DSAParameters parameters = new DSAParameters(params.getP(), params.getQ(), params.getG());
-                    AsymmetricKeyParameter dsaKey = new DSAPublicKeyParameters(y, parameters);
-                    verifierProvider = new BcDSAContentVerifierProviderBuilder(digestAlgFinder).build(dsaKey);
-                }
-                else if (publicKey instanceof ECPublicKey) {
-                    AsymmetricKeyParameter ecKey = ECUtil.generatePublicKeyParameter(publicKey);
-                    verifierProvider = new BcECContentVerifierProviderBuilder(digestAlgFinder).build(ecKey);
-                }
-                else if (publicKey instanceof RSAPublicKey) {
-                    BigInteger mod = ((RSAPublicKey) publicKey).getModulus();
-                    BigInteger exp = ((RSAPublicKey) publicKey).getPublicExponent();
-                    AsymmetricKeyParameter rsaKey = new RSAKeyParameters(false, mod, exp);
-                    verifierProvider = new BcRSAContentVerifierProviderBuilder(digestAlgFinder).build(rsaKey);
-                }
-                else {
-                    throw new IllegalStateException("unsupported public key type: " + (publicKey != null ? publicKey.getClass() : null));
-                }
-                return new X509CRLHolder(crl.getEncoded()).isSignatureValid( verifierProvider );
-            }
-            catch (OperatorException e) {
-                throw new SignatureException(e);
-            }
-            catch (CertException e) {
-                throw new SignatureException(e);
-            }
-            // can happen if the input is DER but does not match expected structure
-            catch (ClassCastException e) {
-                throw new SignatureException(e);
-            }
-            catch (IOException e) {
-                throw new SignatureException(e);
-            }
+        catch (SignatureException e) {
+            if (silent) return false;
+            throw e;
         }
-    }
-
-    private static Object getCertificateList(final Object crl) { // X509CRLObject
-        try { // private CertificateList c;
-            final Field cField = X509CRLObject.class.getDeclaredField("c");
-            cField.setAccessible(true);
-            return cField.get(crl);
+        catch (NoSuchProviderException e) {
+            if (silent) return false;
+            throw new SignatureException(e);
         }
-        catch (NoSuchFieldException e) {
-            debugStackTrace(e); return null;
-        }
-        catch (IllegalAccessException e) { return null; }
-        catch (SecurityException e) { return null; }
     }
 
     // these are BC JCE (@see javax.crypto.JCEUtil) inspired internals :

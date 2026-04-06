@@ -27,11 +27,6 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.Mac;
 
-import org.bouncycastle.crypto.CipherParameters;
-import org.bouncycastle.crypto.PBEParametersGenerator;
-import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
-import org.bouncycastle.crypto.params.KeyParameter;
-
 import org.jruby.Ruby;
 import org.jruby.RubyModule;
 import org.jruby.RubyNumeric;
@@ -121,10 +116,26 @@ public class PKCS5 {
 
     static RubyString generatePBEKey(final Ruby runtime,
         final char[] pass, final byte[] salt, final int iter, final int keySize) {
-        PBEParametersGenerator generator = new PKCS5S2ParametersGenerator();
-        generator.init(PBEParametersGenerator.PKCS5PasswordToBytes(pass), salt, iter);
-        CipherParameters params = generator.generateDerivedParameters(keySize * 8);
-        return StringHelper.newString(runtime, ((KeyParameter) params).getKey());
+        try {
+            final byte[] passBytes = pkcs5PasswordToBytes(pass);
+            final Mac mac = SecurityHelper.getMac("HmacSHA1");
+            mac.init(new SimpleSecretKey("HmacSHA1", passBytes));
+            return StringHelper.newString(runtime, deriveKey(mac, salt, iter, keySize));
+        }
+        catch (NoSuchAlgorithmException e) {
+            throw Utils.newRuntimeError(runtime, e);
+        }
+        catch (InvalidKeyException e) {
+            throw newKDFError(runtime, e.getMessage());
+        }
+    }
+
+    private static byte[] pkcs5PasswordToBytes(final char[] pass) {
+        final byte[] bytes = new byte[pass.length];
+        for (int i = 0; i < pass.length; i++) {
+            bytes[i] = (byte) pass[i];
+        }
+        return bytes;
     }
 
     public static byte[] deriveKey( final Mac prf, byte[] salt, int iterationCount, int dkLen ) {

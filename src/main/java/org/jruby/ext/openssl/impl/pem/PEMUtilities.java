@@ -28,11 +28,9 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.RC2ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.bouncycastle.crypto.PBEParametersGenerator;
-import org.bouncycastle.crypto.generators.OpenSSLPBEParametersGenerator;
-import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.openssl.EncryptionException;
 
+import org.jruby.ext.openssl.impl.OpenSSLKDF;
 import org.jruby.ext.openssl.SecurityHelper;
 
 /**
@@ -194,13 +192,7 @@ abstract class PEMUtilities
         byte[]  salt,
         boolean des2)
     {
-        OpenSSLPBEParametersGenerator   pGen = new OpenSSLPBEParametersGenerator();
-
-        pGen.init(PBEParametersGenerator.PKCS5PasswordToBytes(password), salt);
-
-        KeyParameter keyParam;
-        keyParam = (KeyParameter) pGen.generateDerivedParameters(keyLength * 8);
-        byte[] key = keyParam.getKey();
+        byte[] key = OpenSSLKDF.evpBytesToKey(password, salt, keyLength);
         if (des2 && key.length >= 24)
         {
             // For DES2, we must copy first 8 bytes into the last 8 bytes.

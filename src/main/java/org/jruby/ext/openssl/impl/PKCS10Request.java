@@ -39,10 +39,8 @@ import java.security.Signature;
 import java.security.SignatureException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.security.spec.KeySpec;
-import java.security.spec.RSAPublicKeySpec;
-import java.security.spec.DSAPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Enumeration;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
@@ -61,15 +59,6 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.pkcs.CertificationRequest;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.pkcs.Attribute;
-import org.bouncycastle.crypto.util.PublicKeyFactory;
-import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
-import org.bouncycastle.crypto.params.DSAPublicKeyParameters;
-import org.bouncycastle.crypto.params.DSAParameters;
-import org.bouncycastle.crypto.params.ECDomainParameters;
-import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.crypto.params.RSAKeyParameters;
-import org.bouncycastle.jce.spec.ECParameterSpec;
-import org.bouncycastle.jce.spec.ECPublicKeySpec;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifier;
 import org.bouncycastle.operator.ContentVerifierProvider;
@@ -243,45 +232,24 @@ public class PKCS10Request {
 
     public PublicKey generatePublicKey() throws NoSuchAlgorithmException,
         InvalidKeySpecException, IOException {
+        final ASN1ObjectIdentifier algOID = publicKeyInfo.getAlgorithm().getAlgorithm();
+        final String algorithm;
 
-        AsymmetricKeyParameter keyParams = PublicKeyFactory.createKey(publicKeyInfo);
-
-        final KeySpec keySpec; final KeyFactory keyFactory;
-
-        if ( keyParams instanceof RSAKeyParameters ) {
-            RSAKeyParameters rsa = (RSAKeyParameters) keyParams;
-            keySpec = new RSAPublicKeySpec(
-                rsa.getModulus(), rsa.getExponent()
-            );
-            keyFactory = SecurityHelper.getKeyFactory("RSA");
-            return keyFactory.generatePublic(keySpec);
-
+        if (PKCSObjectIdentifiers.rsaEncryption.equals(algOID)) {
+            algorithm = "RSA";
         }
-        else if ( keyParams instanceof DSAPublicKeyParameters ) {
-            DSAPublicKeyParameters dsa = (DSAPublicKeyParameters) keyParams;
-            DSAParameters params = dsa.getParameters();
-            keySpec = new DSAPublicKeySpec(
-                dsa.getY(), params.getP(), params.getQ(), params.getG()
-            );
-            keyFactory = SecurityHelper.getKeyFactory("DSA");
-            return keyFactory.generatePublic(keySpec);
+        else if (X9ObjectIdentifiers.id_dsa.equals(algOID)) {
+            algorithm = "DSA";
         }
-        else if ( keyParams instanceof ECPublicKeyParameters ) {
-            ECPublicKeyParameters ec = (ECPublicKeyParameters) keyParams;
-            ECDomainParameters ecParams = ec.getParameters();
-            ECParameterSpec params = new ECParameterSpec(
-                    ecParams.getCurve(),
-                    ecParams.getG(), ecParams.getN(), ecParams.getH(),
-                    ecParams.getSeed()
-            );
-            // NOTE: likely to fail if non BC factory picked up :
-            keySpec = new ECPublicKeySpec(ec.getQ(), params);
-            keyFactory = SecurityHelper.getKeyFactory("EC");
-            return keyFactory.generatePublic(keySpec);
+        else if (X9ObjectIdentifiers.id_ecPublicKey.equals(algOID)) {
+            algorithm = "EC";
         }
         else {
-            throw new IllegalStateException("could not generate public key for request, params type: " + keyParams);
+            throw new NoSuchAlgorithmException("could not generate public key for request, oid: " + algOID);
         }
+
+        final KeyFactory keyFactory = SecurityHelper.getKeyFactory(algorithm);
+        return keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyInfo.getEncoded()));
     }
 
     public Attribute[] getAttributes() {
@@ -440,4 +408,3 @@ public class PKCS10Request {
 
     }
 }
-

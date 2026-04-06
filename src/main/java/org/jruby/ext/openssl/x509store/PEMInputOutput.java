@@ -99,30 +99,12 @@ import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.pkcs.EncryptionScheme;
-import org.bouncycastle.asn1.pkcs.PBES2Parameters;
-import org.bouncycastle.asn1.pkcs.PBKDF2Params;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
-import org.bouncycastle.asn1.pkcs.RC2CBCParameter;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.DSAParameter;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cms.CMSException;
-import org.bouncycastle.crypto.BufferedBlockCipher;
-import org.bouncycastle.crypto.CipherParameters;
-import org.bouncycastle.crypto.InvalidCipherTextException;
-import org.bouncycastle.crypto.PBEParametersGenerator;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
-import org.bouncycastle.crypto.engines.AESEngine;
-import org.bouncycastle.crypto.engines.DESedeEngine;
-import org.bouncycastle.crypto.engines.RC2Engine;
-import org.bouncycastle.crypto.generators.OpenSSLPBEParametersGenerator;
-import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
-import org.bouncycastle.crypto.modes.CBCBlockCipher;
-import org.bouncycastle.crypto.paddings.PaddedBufferedBlockCipher;
-import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.cms.CMSSignedData;
@@ -130,6 +112,7 @@ import org.bouncycastle.cms.CMSSignedData;
 import org.jruby.ext.openssl.Cipher.Algorithm;
 import org.jruby.ext.openssl.impl.ASN1Registry;
 import org.jruby.ext.openssl.impl.CipherSpec;
+import org.jruby.ext.openssl.impl.OpenSSLKDF;
 import org.jruby.ext.openssl.impl.PKey.Type;
 import org.jruby.ext.openssl.impl.PKCS10Request;
 import org.jruby.ext.openssl.SecurityHelper;
@@ -423,82 +406,6 @@ public class PEMInputOutput {
             return (PasswordRequiredException) ex;
         }
         return new IOException(message + ex, ex);
-    }
-
-    private static PrivateKey derivePrivateKeyPBES1(EncryptedPrivateKeyInfo eIn, AlgorithmIdentifier algId, char[] password)
-            throws GeneralSecurityException, IOException {
-        // From BC's PEMReader
-        PKCS12PBEParams pkcs12Params = PKCS12PBEParams.getInstance(algId.getParameters());
-        PBEKeySpec pbeSpec = new PBEKeySpec(password);
-        PBEParameterSpec pbeParams = new PBEParameterSpec(
-            pkcs12Params.getIV(), pkcs12Params.getIterations().intValue()
-        );
-
-        String algorithm = ASN1Registry.o2a(algId.getAlgorithm());
-        algorithm = (algorithm.split("-"))[0];
-
-        SecretKeyFactory secKeyFactory = SecurityHelper.getSecretKeyFactory(algorithm);
-
-        Cipher cipher = SecurityHelper.getCipher(algorithm);
-        cipher.init(Cipher.DECRYPT_MODE, secKeyFactory.generateSecret(pbeSpec), pbeParams);
-
-        PrivateKeyInfo pInfo = PrivateKeyInfo.getInstance(
-            ASN1Primitive.fromByteArray(cipher.doFinal(eIn.getEncryptedData()))
-        );
-
-        KeyFactory keyFactory = getKeyFactory( pInfo.getPrivateKeyAlgorithm() );
-        return keyFactory.generatePrivate( new PKCS8EncodedKeySpec( pInfo.getEncoded() ) );
-    }
-
-    private static PrivateKey derivePrivateKeyPBES2(EncryptedPrivateKeyInfo eIn, AlgorithmIdentifier algId, char[] password)
-            throws GeneralSecurityException, InvalidCipherTextException {
-        PBES2Parameters pbeParams = PBES2Parameters.getInstance((ASN1Sequence) algId.getParameters());
-        CipherParameters cipherParams = extractPBES2CipherParams(password, pbeParams);
-
-        EncryptionScheme scheme = pbeParams.getEncryptionScheme();
-        BufferedBlockCipher cipher;
-        ASN1ObjectIdentifier encOid = scheme.getAlgorithm();
-        if ( encOid.equals( PKCSObjectIdentifiers.RC2_CBC ) ) {
-            RC2CBCParameter rc2Params = RC2CBCParameter.getInstance(scheme);
-            byte[] iv = rc2Params.getIV();
-            CipherParameters param = new ParametersWithIV(cipherParams, iv);
-            cipher = new PaddedBufferedBlockCipher(new CBCBlockCipher(new RC2Engine()));
-            cipher.init(false, param);
-        } else if ( encOid.equals( NISTObjectIdentifiers.id_aes128_CBC ) ||
-                    encOid.equals( NISTObjectIdentifiers.id_aes192_CBC ) ||
-                    encOid.equals( NISTObjectIdentifiers.id_aes256_CBC ) ) {
-            byte[] iv = ASN1OctetString.getInstance( scheme.getParameters() ).getOctets();
-            CipherParameters param = new ParametersWithIV(cipherParams, iv);
-            cipher = new PaddedBufferedBlockCipher(new CBCBlockCipher(new AESEngine()));
-            cipher.init(false, param);
-        } else {
-            byte[] iv = ASN1OctetString.getInstance( scheme.getParameters() ).getOctets();
-            CipherParameters param = new ParametersWithIV(cipherParams, iv);
-            cipher = new PaddedBufferedBlockCipher(new CBCBlockCipher(new DESedeEngine()));
-            cipher.init(false, param);
-        }
-
-        byte[] data = eIn.getEncryptedData();
-        byte[] out = new byte[cipher.getOutputSize(data.length)];
-        int len = cipher.processBytes(data, 0, data.length, out, 0);
-        len += cipher.doFinal(out, len);
-        byte[] pkcs8 = new byte[len];
-        System.arraycopy(out, 0, pkcs8, 0, len);
-        KeyFactory fact = SecurityHelper.getKeyFactory("RSA"); // It seems to work for both RSA and DSA.
-        return fact.generatePrivate( new PKCS8EncodedKeySpec(pkcs8) );
-    }
-
-    private static CipherParameters extractPBES2CipherParams(char[] password, PBES2Parameters pbeParams) {
-        PBKDF2Params pbkdfParams = PBKDF2Params.getInstance(pbeParams.getKeyDerivationFunc().getParameters());
-        int keySize = 192;
-        if (pbkdfParams.getKeyLength() != null) {
-            keySize = pbkdfParams.getKeyLength().intValue() * 8;
-        }
-        int iterationCount = pbkdfParams.getIterationCount().intValue();
-        byte[] salt = pbkdfParams.getSalt();
-        PBEParametersGenerator generator = new PKCS5S2ParametersGenerator();
-        generator.init(PBEParametersGenerator.PKCS5PasswordToBytes(password), salt, iterationCount);
-        return generator.generateDerivedParameters(keySize);
     }
 
     // PEM_read_bio_PUBKEY
@@ -1165,11 +1072,8 @@ public class PEMInputOutput {
         secureRandom().nextBytes(iv);
         final byte[] salt = new byte[8];
         System.arraycopy(iv, 0, salt, 0, 8);
-        OpenSSLPBEParametersGenerator pGen = new OpenSSLPBEParametersGenerator();
-        pGen.init(PBEParametersGenerator.PKCS5PasswordToBytes(passwd), salt);
-
-        KeyParameter param = (KeyParameter) pGen.generateDerivedParameters(cipherSpec.getKeyLenInBits());
-        SecretKey secretKey = new SecretKeySpec(param.getKey(), Algorithm.getAlgorithmBase(cipher));
+        byte[] key = OpenSSLKDF.evpBytesToKey(passwd, salt, cipherSpec.getKeyLenInBits() / 8);
+        SecretKey secretKey = new SecretKeySpec(key, Algorithm.getAlgorithmBase(cipher));
         final byte[] encData;
         try {
             cipher.init(Cipher.ENCRYPT_MODE, secretKey, new IvParameterSpec(iv));
@@ -1358,10 +1262,8 @@ public class PEMInputOutput {
         }
         byte[] salt = new byte[8];
         System.arraycopy(iv, 0, salt, 0, 8);
-        OpenSSLPBEParametersGenerator pGen = new OpenSSLPBEParametersGenerator();
-        pGen.init(PBEParametersGenerator.PKCS5PasswordToBytes(passwd), salt);
-        KeyParameter param = (KeyParameter) pGen.generateDerivedParameters(keyLen * 8);
-        SecretKey secretKey = new SecretKeySpec(param.getKey(), realName);
+        byte[] key = OpenSSLKDF.evpBytesToKey(passwd, salt, keyLen);
+        SecretKey secretKey = new SecretKeySpec(key, realName);
         Cipher cipher = SecurityHelper.getCipher(realName);
         cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(iv));
         return cipher.doFinal(decoded);

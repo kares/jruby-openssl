@@ -172,9 +172,26 @@ class TestRSA < TestCase
     assert_equal false, key.verify("SHA256", sig_pss, data)
 
     # option type check
-    assert_raise_with_message(TypeError, /expected Hash/) {
-      key.sign("SHA256", data, ["x"])
+    assert_raise_with_message(TypeError, /expected Hash/) do
+      key.sign('SHA256', data, ['x'])
+    end
+  end
+
+  def test_sign_verify_options_mgf1_digest_differs
+    key = Fixtures.pkey('rsa2048')
+    data = 'Sign me!'
+    pssopts = {
+      'rsa_padding_mode' => 'pss',
+      'rsa_pss_saltlen' => 20,
+      'rsa_mgf1_md' => 'SHA1'
     }
+
+    sig_pss = key.sign('SHA256', data, pssopts)
+    assert_equal 256, sig_pss.bytesize
+    assert_equal true, key.verify('SHA256', sig_pss, data, pssopts)
+    assert_equal true, key.verify_pss('SHA256', sig_pss, data,
+                                      salt_length: 20, mgf1_hash: 'SHA1')
+    assert_equal false, key.verify('SHA256', sig_pss, data)
   end
 
   def test_sign_verify_raw_legacy
@@ -283,9 +300,44 @@ class TestRSA < TestCase
                    key.verify_pss("SHA256", signature, data, salt_length: :auto, mgf1_hash: "SHA256")
     end
 
-    assert_pkey_error {
-      key.sign_pss("SHA256", data, salt_length: 223, mgf1_hash: "SHA256")
-    }
+    assert_pkey_error do
+      key.sign_pss('SHA256', data, salt_length: 223, mgf1_hash: 'SHA256')
+    end
+  end
+
+  def test_sign_verify_pss_mgf1_digest_differs
+    key = Fixtures.pkey('rsa2048')
+    data = 'Sign me!'
+    invalid_data = 'Sign me?'
+
+    signature = key.sign_pss('SHA256', data, salt_length: 20, mgf1_hash: 'SHA1')
+    assert_equal 256, signature.bytesize
+    assert_equal true,
+                 key.verify_pss('SHA256', signature, data, salt_length: 20, mgf1_hash: 'SHA1')
+    assert_equal true,
+                 key.verify_pss('SHA256', signature, data, salt_length: :auto, mgf1_hash: 'SHA1')
+    assert_equal false,
+                 key.verify_pss('SHA256', signature, invalid_data, salt_length: 20, mgf1_hash: 'SHA1')
+
+    signature = key.sign_pss('SHA256', data, salt_length: :digest, mgf1_hash: 'SHA1')
+    assert_equal true,
+                 key.verify_pss('SHA256', signature, data, salt_length: 32, mgf1_hash: 'SHA1')
+    assert_equal true,
+                 key.verify_pss('SHA256', signature, data, salt_length: :auto, mgf1_hash: 'SHA1')
+    assert_equal false,
+                 key.verify_pss('SHA256', signature, data, salt_length: 20, mgf1_hash: 'SHA1')
+
+    unless OpenSSL.fips_mode
+      signature = key.sign_pss('SHA256', data, salt_length: :max, mgf1_hash: 'SHA1')
+      assert_equal true,
+                   key.verify_pss('SHA256', signature, data, salt_length: 222, mgf1_hash: 'SHA1')
+      assert_equal true,
+                   key.verify_pss('SHA256', signature, data, salt_length: :auto, mgf1_hash: 'SHA1')
+    end
+
+    assert_pkey_error do
+      key.sign_pss('SHA256', data, salt_length: 223, mgf1_hash: 'SHA1')
+    end
   end
 
   # Regression test: verify_pss with salt_length: :auto must handle RSA raw

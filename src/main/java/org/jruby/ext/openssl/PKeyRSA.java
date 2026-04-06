@@ -887,7 +887,7 @@ public class PKeyRSA extends PKey {
         if (saltLenArg instanceof RubySymbol) {
             String sym = saltLenArg.asJavaString();
             if ("auto".equals(sym)) {
-                saltLen = pssAutoSaltLength(publicKey, sigBytes, digestAlg, mgf1Alg);
+                saltLen = autoPSSSaltLength(publicKey, sigBytes, digestAlg, mgf1Alg);
                 if (saltLen < 0) return runtime.getFalse();
             } else if ("max".equals(sym)) {
                 saltLen = maxPSSSaltLength(digestAlg, publicKey.getModulus().bitLength());
@@ -911,7 +911,7 @@ public class PKeyRSA extends PKey {
         boolean verified;
         try {
             verified = verifyWithPSS(rawVerify, publicKey, dataBytes, digestAlg, mgf1Alg, saltLen, sigBytes);
-        } catch (IllegalArgumentException|IllegalStateException e) {
+        } catch (IllegalArgumentException e) {
             verified = false;
         } catch (Exception e) {
             debugStackTrace(runtime, e);
@@ -965,9 +965,9 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    private static PSSParameterSpec buildPSSParameterSpec(String digestAlg, String mgf1Alg, int saltLen) {
-        final MGF1ParameterSpec mgfSpec = new MGF1ParameterSpec(toJcaDigestName(mgf1Alg));
-        return new PSSParameterSpec(toJcaDigestName(digestAlg), "MGF1", mgfSpec, saltLen, 1);
+    private static PSSParameterSpec buildPSSParameterSpec(String javaDigestAlg, String javaMgf1Alg, int saltLen) {
+        final MGF1ParameterSpec mgfSpec = new MGF1ParameterSpec(javaMgf1Alg);
+        return new PSSParameterSpec(javaDigestAlg, "MGF1", mgfSpec, saltLen, 1);
     }
 
     private static byte[] mgf1(byte[] seed, int maskLen, String digestAlg) throws NoSuchAlgorithmException {
@@ -1017,9 +1017,9 @@ public class PKeyRSA extends PKey {
         return digest.digest();
     }
 
-    private static byte[] encodeRawPSS(final byte[] hashBytes, final String digestAlg,
-        final String mgf1Alg, final int saltLen, final int emBits, final Ruby runtime)
-        throws GeneralSecurityException {
+    private byte[] encodeRawPSS(final byte[] hashBytes,
+                                final String digestAlg, final String mgf1Alg,
+                                final int saltLen, final int emBits) throws NoSuchAlgorithmException {
 
         final int hLen = getDigestLength(digestAlg);
         if (hashBytes.length != hLen) {
@@ -1027,12 +1027,10 @@ public class PKeyRSA extends PKey {
         }
 
         final int emLen = (emBits + 7) / 8;
-        if (emLen < hLen + saltLen + 2) {
-            throw new IllegalArgumentException("encoding error");
-        }
+        if (emLen < hLen + saltLen + 2) throw new IllegalArgumentException("encoding error");
 
         final byte[] salt = new byte[saltLen];
-        getSecureRandom(runtime).nextBytes(salt);
+        getSecureRandom(getRuntime()).nextBytes(salt);
 
         final byte[] h = pssHash(hashBytes, salt, digestAlg);
         final int dbLen = emLen - hLen - 1;
@@ -1053,8 +1051,9 @@ public class PKeyRSA extends PKey {
         return em;
     }
 
-    private static boolean verifyRawPSS(final byte[] hashBytes, final byte[] em, final String digestAlg,
-        final String mgf1Alg, final int saltLen, final int emBits) throws GeneralSecurityException {
+    private static boolean verifyRawPSS(final byte[] hashBytes, final byte[] em,
+                                        final String digestAlg, final String mgf1Alg,
+                                        final int saltLen, final int emBits) throws NoSuchAlgorithmException {
 
         final int hLen = getDigestLength(digestAlg);
         if (hashBytes.length != hLen) return false;
@@ -1095,61 +1094,76 @@ public class PKeyRSA extends PKey {
     private byte[] signWithPSS(byte[] hashBytes, String digestAlg, String mgf1Alg, int saltLen)
         throws GeneralSecurityException {
         final int emBits = privateKey.getModulus().bitLength() - 1;
-        final byte[] em = encodeRawPSS(hashBytes, digestAlg, mgf1Alg, saltLen, emBits, getRuntime());
+        final byte[] em = encodeRawPSS(hashBytes, digestAlg, mgf1Alg, saltLen, emBits);
         javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
         rsa.init(ENCRYPT_MODE, privateKey);
         return rsa.doFinal(em);
     }
 
-    private static boolean verifyWithPSS(final boolean rawVerify, RSAPublicKey pubKey, byte[] inputBytes,
-                                         String digestAlg, String mgf1Alg, int saltLen, byte[] sigBytes) {
-        if (!rawVerify) {
+    private static boolean verifyWithPSS(final boolean rawVerify, final RSAPublicKey pubKey,
+                                         final byte[] inputBytes,
+                                         final String digestAlg, final String mgf1Alg,
+                                         int saltLen, byte[] sigBytes) {
+        final String javaDigestAlg = toJcaDigestName(digestAlg);
+        final String javaMgf1Alg = toJcaDigestName(mgf1Alg);
+        // when content and MGF1 digests differ, JCA providers reject the params
+        if (!rawVerify && javaDigestAlg.equals(javaMgf1Alg)) {
             try {
                 Signature verifier = SecurityHelper.getSignature("RSASSA-PSS");
-                verifier.setParameter(buildPSSParameterSpec(digestAlg, mgf1Alg, saltLen));
+                verifier.setParameter(buildPSSParameterSpec(javaDigestAlg, javaMgf1Alg, saltLen));
                 verifier.initVerify(pubKey);
                 verifier.update(inputBytes);
                 return verifier.verify(sigBytes);
             }
             catch (GeneralSecurityException e) {
-                throw new IllegalStateException(e);
+                return false;
             }
         }
+
         try {
+            final byte[] hash = rawVerify ? inputBytes : SecurityHelper.getMessageDigest(javaDigestAlg).digest(inputBytes);
             javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
             rsa.init(DECRYPT_MODE, pubKey);
             final int emBits = pubKey.getModulus().bitLength() - 1;
             final int emLen = (emBits + 7) / 8;
             byte[] em = normalizeEncodedMessage(rsa.doFinal(sigBytes), emLen);
-            return verifyRawPSS(inputBytes, em, digestAlg, mgf1Alg, saltLen, emBits);
+            return verifyRawPSS(hash, em, digestAlg, mgf1Alg, saltLen, emBits);
         }
         catch (GeneralSecurityException e) {
             return false;
         }
     }
 
-    // Signs raw (unhashed) data with RSA-PSS; the Signature implementation applies the hash internally.
     private byte[] signDataWithPSS(Ruby runtime, RubyString data, String digestAlg, String mgf1Alg, int saltLen)
-        throws GeneralSecurityException {
-        Signature signer = SecurityHelper.getSignature("RSASSA-PSS");
-        signer.setParameter(buildPSSParameterSpec(digestAlg, mgf1Alg, saltLen));
-        signer.initSign(privateKey, getSecureRandom(runtime));
+        throws GeneralSecurityException, IllegalArgumentException {
+        final String javaDigestAlg = toJcaDigestName(digestAlg);
+        final String javaMgf1Alg = toJcaDigestName(mgf1Alg);
+
         final ByteList dataBytes = data.getByteList();
-        signer.update(dataBytes.unsafeBytes(), dataBytes.getBegin(), dataBytes.getRealSize());
-        return signer.sign();
+        // when content and MGF1 digests match, use standard JCA RSASSA-PSS
+        if (javaDigestAlg.equals(javaMgf1Alg)) {
+            Signature signer = SecurityHelper.getSignature("RSASSA-PSS");
+            signer.setParameter(buildPSSParameterSpec(javaDigestAlg, javaMgf1Alg, saltLen));
+            signer.initSign(privateKey, getSecureRandom(runtime));
+            signer.update(dataBytes.unsafeBytes(), dataBytes.getBegin(), dataBytes.getRealSize());
+            return signer.sign();
+        }
+        // mismatched digests: hash ourselves and use manual EMSA-PSS encode + raw RSA
+        final MessageDigest digest = SecurityHelper.getMessageDigest(javaDigestAlg);
+        digest.update(dataBytes.unsafeBytes(), dataBytes.getBegin(), dataBytes.getRealSize());
+        return signWithPSS(digest.digest(), digestAlg, mgf1Alg, saltLen);
     }
 
     // Maximum PSS salt length per RFC 8017 §9.1.1:
     //   emLen = ceil((keyBits - 1) / 8),  maxSalt = emLen - 2 - hLen
     private static int maxPSSSaltLength(String digestAlg, int keyBits) {
-        int emLen = (keyBits - 1 + 7) / 8;
+        final int emLen = (keyBits - 1 + 7) / 8;
         return emLen - 2 - getDigestLength(digestAlg);
     }
 
-    // Extracts the actual PSS salt length from a signature by parsing the PSS-encoded message.
-    // Returns -1 if the encoding is invalid (not a well-formed PSS block).
-    // This is used to implement salt_length: :auto in verify_pss.
-    private static int pssAutoSaltLength(RSAPublicKey pubKey, byte[] sigBytes, String digestAlg, String mgf1Alg) {
+    // Extracts the actual PSS salt length from a signature by parsing the PSS-encoded message;
+    // returns -1 if the encoding is invalid (not a well-formed PSS block)
+    private static int autoPSSSaltLength(RSAPublicKey pubKey, byte[] sigBytes, String digestAlg, String mgf1Alg) {
         final byte[] raw;
         try {
             javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");

@@ -27,7 +27,7 @@ public class SecurityHelperTest {
 
     // @BeforeClass
     public static void setBouncyCastleProvider() {
-        SecurityHelper.setBouncyCastleProvider();
+        SecurityHelper.setBouncyCastleProvider(SecurityHelper.BC_PROVIDER_CLASS);
     }
 
     private Provider savedProvider;
@@ -102,7 +102,7 @@ public class SecurityHelperTest {
         final String register = System.getProperty("jruby.openssl.provider.register");
         System.setProperty("jruby.openssl.provider.register", "true");
         try {
-            SecurityHelper.attemptRegisterProviderOnce();
+            SecurityHelper.checkAndRegisterProviderOnce();
             assertNotNull(java.security.Security.getProvider("BC"));
             assertTrue(SecurityHelper.isProviderRegistered());
         }

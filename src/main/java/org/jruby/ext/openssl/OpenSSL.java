@@ -32,7 +32,6 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
 import org.jruby.common.IRubyWarnings;
 import org.jruby.runtime.ThreadContext;
-import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
@@ -46,7 +45,10 @@ import org.jruby.util.SafePropertyAccessor;
 public final class OpenSSL {
 
     public static void load(final Ruby runtime) {
-        SecurityHelper.attemptRegisterProviderOnce();
+        final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
+        SecurityHelper.setFipsMode(fipsMode);
+        SecurityHelper.checkAndRegisterProviderOnce();
+
         createOpenSSL(runtime);
     }
 
@@ -109,6 +111,7 @@ public final class OpenSSL {
         _OpenSSL.setConstant("OPENSSL_VERSION_NUMBER", runtime.newFixnum(OPENSSL_VERSION_NUMBER));
         // MRI 2.3 tests do: /\AOpenSSL +0\./ !~ OpenSSL::OPENSSL_LIBRARY_VERSION
         _OpenSSL.setConstant("OPENSSL_LIBRARY_VERSION", VERSION);
+        // indicating whether the OpenSSL library is FIPS-capable (obsolete and will be removed in the future)
         _OpenSSL.setConstant("OPENSSL_FIPS", runtime.newBoolean(SecurityHelper.isFipsMode()));
     }
 
@@ -174,11 +177,16 @@ public final class OpenSSL {
     }
 
     @JRubyMethod(name = "fips_mode=", meta = true)
-    public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject value) {
-        final boolean requested = value.isTrue();
-        if (requested != SecurityHelper.isFipsMode()) {
-            throw context.runtime.newNotImplementedError("FIPS mode is a boot-time setting; " +
-                    "use -Djruby.openssl.provider.fips=" + requested);
+    public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject mode) {
+        final Ruby runtime = context.runtime;
+        if (mode.isTrue() && !SecurityHelper.isFipsMode()) {
+            throw runtime.newNotImplementedError("[JOpenSSL] FIPS mode requires a different gem version");
+        }
+        if (mode == runtime.getFalse() && SecurityHelper.isFipsMode()) {
+            throw runtime.newSecurityError("[JOpenSSL] FIPS mode can not be disabled at runtime");
+        }
+        if (mode.isNil() && SecurityHelper.isFipsMode()) {
+            OpenSSL.warn(context, "[JOpenSSL] FIPS mode enabled while requested fips_mode = nil");
         }
         return get_fips_mode(context, self);
     }

@@ -328,15 +328,11 @@ public final class OpenSSL {
     private static boolean tryContextSecureRandom = true;
 
     static SecureRandom getSecureRandom(final Ruby runtime) {
-        return getSecureRandom(runtime, false);
-    }
-
-    static SecureRandom getSecureRandom(final Ruby runtime, final boolean nullByDefault) {
         if ( tryContextSecureRandom ) {
             SecureRandom random = getSecureRandomFrom(runtime.getCurrentContext());
             if ( random != null ) return random;
         }
-        return nullByDefault ? null : new SecureRandom();
+        return new SecureRandom();
     }
 
     static SecureRandom getSecureRandom(final ThreadContext context) {

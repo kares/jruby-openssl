@@ -46,19 +46,11 @@ import org.jruby.util.SafePropertyAccessor;
 public final class OpenSSL {
 
     public static void load(final Ruby runtime) {
+        SecurityHelper.attemptRegisterProviderOnce();
         createOpenSSL(runtime);
     }
 
-    public static boolean isProviderAvailable() {
-        return SecurityHelper.isProviderAvailable("BC");
-    }
-
     public static void createOpenSSL(final Ruby runtime) {
-        final String registerProperty = SafePropertyAccessor.getProperty("jruby.openssl.provider.register");
-        SecurityHelper.setRegisterProvider(
-            registerProperty == null ? SecurityHelper.isFipsMode() : Boolean.parseBoolean(registerProperty)
-        );
-
         final RubyModule _OpenSSL = runtime.getOrCreateModule("OpenSSL");
 
         RubyClass StandardError = runtime.getStandardError();
@@ -138,16 +130,11 @@ public final class OpenSSL {
 
     @JRubyMethod(name = "debug", meta = true)
     public static IRubyObject getDebug(IRubyObject self) {
-        return (IRubyObject) getDebug((RubyModule) self);
-    }
-
-    private static Object getDebug(RubyModule self) {
-        return self.getInternalVariable("debug");
+        return self.getRuntime().newBoolean(OpenSSL.debug);
     }
 
     @JRubyMethod(name = "debug=", meta = true)
     public static IRubyObject setDebug(IRubyObject self, IRubyObject debug) {
-        ((RubyModule) self).setInternalVariable("debug", debug);
         OpenSSL.debug = debug.isTrue();
         return debug;
     }
@@ -164,14 +151,9 @@ public final class OpenSSL {
     public static IRubyObject fixed_length_secure_compare(ThreadContext context, IRubyObject self, IRubyObject arg1, IRubyObject arg2) {
         final ByteList str1 = arg1.convertToString().getByteList();
         final ByteList str2 = arg2.convertToString().getByteList();
-        if (str1.length() != str2.length()) {
-            throw context.runtime.newArgumentError("inputs must be of equal length");
-        }
-        return context.runtime.newBoolean(
-                Arrays.constantTimeAreEqual(str1.length(),
-                        str1.unsafeBytes(), str1.begin(),
-                        str2.unsafeBytes(), str2.begin()
-                ));
+        if (str1.length() != str2.length()) throw context.runtime.newArgumentError("inputs must be of equal length");
+        boolean equal = Arrays.constantTimeAreEqual(str1.length(), str1.unsafeBytes(), str1.begin(), str2.unsafeBytes(), str2.begin());
+        return context.runtime.newBoolean(equal);
     }
 
     // API "stubs" in JRuby-OpenSSL :
@@ -223,9 +205,7 @@ public final class OpenSSL {
     }
 
     static boolean isDebug(final Ruby runtime) {
-        final RubyModule OpenSSL = runtime.getModule("OpenSSL");
-        if ( OpenSSL == null ) return debug; // debug early on
-        return getDebug( OpenSSL ) == runtime.getTrue();
+        return debug;
     }
 
     static void debugStackTrace(final Ruby runtime, final Throwable e) {
@@ -270,11 +250,6 @@ public final class OpenSSL {
         String javaVersion = SafePropertyAccessor.getProperty("java.version", def);
         if ( "0".equals(javaVersion) ) javaVersion = "1.7.0"; // Android
         return javaVersion.length() > len && len > -1 ? javaVersion.substring(0, len) : javaVersion;
-    }
-
-    static boolean javaVersion7(final boolean atLeast) {
-        final int gt = "1.7".compareTo( javaVersion("0.0", 3) );
-        return atLeast ? gt <= 0 : gt == 0;
     }
 
     static boolean javaVersion8(final boolean atLeast) {

@@ -45,9 +45,6 @@ public class VersionTest {
     public void testAndroid0() {
         System.setProperty("java.version", "0");
 
-        assertTrue(javaVersion7(true));
-        assertTrue(javaVersion7(false));
-
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
 
@@ -58,9 +55,6 @@ public class VersionTest {
     @Test
     public void testInvalid() {
         System.setProperty("java.version", "");
-
-        //assertTrue(javaVersion7(true));
-        //assertTrue(javaVersion7(false));
 
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
@@ -73,9 +67,6 @@ public class VersionTest {
     public void testJava7() {
         System.setProperty("java.version", "1.7.0");
 
-        assertTrue(javaVersion7(true));
-        assertTrue(javaVersion7(false));
-
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
 
@@ -86,9 +77,6 @@ public class VersionTest {
 	@Test
 	public void testJava8() {
         System.setProperty("java.version", "1.8.1");
-
-		assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
 
         assertTrue(javaVersion8(true));
         assertTrue(javaVersion8(false));
@@ -101,9 +89,6 @@ public class VersionTest {
     public void testJava8Crap() {
         System.setProperty("java.version", "1.8.PRE");
 
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
-
         assertTrue(javaVersion8(true));
         assertTrue(javaVersion8(false));
 
@@ -114,9 +99,6 @@ public class VersionTest {
     @Test
     public void testJava9Pre() {
         System.setProperty("java.version", "9");
-
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
@@ -129,9 +111,6 @@ public class VersionTest {
     public void testJava9Noiz() {
         System.setProperty("java.version", "9-alfa");
 
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
-
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
 
@@ -142,9 +121,6 @@ public class VersionTest {
     @Test
     public void testJava9Bleh() {
         System.setProperty("java.version", "9.X");
-
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
@@ -157,9 +133,6 @@ public class VersionTest {
     public void testJava9() {
         System.setProperty("java.version", "9.0.4");
 
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
-
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
 
@@ -170,9 +143,6 @@ public class VersionTest {
     @Test
     public void testJava10Pre() {
         System.setProperty("java.version", "10");
-
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
@@ -188,9 +158,6 @@ public class VersionTest {
     public void testJava10Noiz() {
         System.setProperty("java.version", "10-RC");
 
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
-
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
 
@@ -204,9 +171,6 @@ public class VersionTest {
     @Test
     public void testJava10() {
         System.setProperty("java.version", "10.0");
-
-        assertTrue(javaVersion7(true));
-        assertFalse(javaVersion7(false));
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));

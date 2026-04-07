@@ -2,16 +2,17 @@
 package org.jruby.ext.openssl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
 import java.security.Security;
-import java.security.Signature;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 
@@ -33,17 +34,22 @@ public class SecurityHelperTest {
 
     @BeforeEach
     public void saveSecurityProvider() {
-        savedProvider = SecurityHelper.getSecurityProvider();
+        savedProvider = SecurityHelper.securityProvider;
     }
 
     @AfterEach
     public void restoreSecurityProvider() {
         SecurityHelper.securityProvider = savedProvider;
+        SecurityHelper.setBouncyCastleProvider = true;
     }
 
     public void disableSecurityProvider() {
         SecurityHelper.securityProvider = null;
         SecurityHelper.setBouncyCastleProvider = false;
+    }
+
+    private static Provider getProvider() {
+        return SecurityHelper.getSecurityProvider();
     }
 
     @Test
@@ -74,6 +80,7 @@ public class SecurityHelperTest {
     public void doesNotRegisterBouncyCastleSecurityProviderByDefault() {
         SecurityHelper.getSecurityProvider();
         assertNull(java.security.Security.getProvider("BC"));
+        assertFalse(SecurityHelper.isProviderRegistered());
     }
 
     @Test
@@ -82,10 +89,31 @@ public class SecurityHelperTest {
         try {
             SecurityHelper.getSecurityProvider();
             assertNotNull(java.security.Security.getProvider("BC"));
+            assertTrue(SecurityHelper.isProviderRegistered());
         }
         finally {
             java.security.Security.removeProvider("BC");
             SecurityHelper.setRegisterProvider(false);
+        }
+    }
+
+    @Test
+    public void attemptsSecurityProviderRegistration() {
+        final String register = System.getProperty("jruby.openssl.provider.register");
+        System.setProperty("jruby.openssl.provider.register", "true");
+        try {
+            SecurityHelper.attemptRegisterProviderOnce();
+            assertNotNull(java.security.Security.getProvider("BC"));
+            assertTrue(SecurityHelper.isProviderRegistered());
+        }
+        finally {
+            java.security.Security.removeProvider("BC");
+            SecurityHelper.setRegisterProvider(false);
+            if (register == null) {
+                System.clearProperty("jruby.openssl.provider.register");
+            } else {
+                System.setProperty("jruby.openssl.provider.register", register);
+            }
         }
     }
 
@@ -114,7 +142,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getKeyFactory("USA", savedProvider);
+            SecurityHelper.getKeyFactory("USA", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -129,7 +157,7 @@ public class SecurityHelperTest {
         assertNotNull( SecurityHelper.getKeyPairGenerator("RSA") );
         assertNotNull( SecurityHelper.getKeyPairGenerator("DSA") );
 
-        assertNotNull( SecurityHelper.getKeyPairGenerator("RSA", savedProvider) );
+        assertNotNull( SecurityHelper.getKeyPairGenerator("RSA", getProvider()) );
     }
 
     @Test
@@ -149,7 +177,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getKeyPairGenerator("USA", savedProvider);
+            SecurityHelper.getKeyPairGenerator("USA", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -163,7 +191,7 @@ public class SecurityHelperTest {
     public void testGetKeyStore() throws Exception {
         assertNotNull( SecurityHelper.getKeyStore("PKCS12") );
 
-        assertNotNull( SecurityHelper.getKeyStore("PKCS12", savedProvider) );
+        assertNotNull( SecurityHelper.getKeyStore("PKCS12", getProvider()) );
     }
 
     @Test
@@ -182,7 +210,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getKeyStore("PKCS42", savedProvider);
+            SecurityHelper.getKeyStore("PKCS42", getProvider());
             fail();
         }
         catch (KeyStoreException e) {
@@ -197,7 +225,7 @@ public class SecurityHelperTest {
         assertNotNull( SecurityHelper.getMessageDigest("MD5") );
         assertNotNull( SecurityHelper.getMessageDigest("SHA-1") );
 
-        assertNotNull( SecurityHelper.getMessageDigest("MD5", savedProvider) );
+        assertNotNull( SecurityHelper.getMessageDigest("MD5", getProvider()) );
     }
 
     @Test
@@ -217,7 +245,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getMessageDigest("XXL", savedProvider);
+            SecurityHelper.getMessageDigest("XXL", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -231,7 +259,7 @@ public class SecurityHelperTest {
     public void testGetSignature() throws Exception {
         assertNotNull( SecurityHelper.getSignature("NONEwithRSA") );
 
-        assertNotNull( SecurityHelper.getSignature("NONEwithRSA", savedProvider) );
+        assertNotNull( SecurityHelper.getSignature("NONEwithRSA", getProvider()) );
     }
 
     @Test
@@ -250,7 +278,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getSignature("SOMEwithRSA", savedProvider);
+            SecurityHelper.getSignature("SOMEwithRSA", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -264,7 +292,7 @@ public class SecurityHelperTest {
     public void testGetCertificateFactory() throws Exception {
         assertNotNull( SecurityHelper.getCertificateFactory("X.509") );
 
-        assertNotNull( SecurityHelper.getCertificateFactory("X.509", savedProvider) );
+        assertNotNull( SecurityHelper.getCertificateFactory("X.509", getProvider()) );
     }
 
     @Test
@@ -283,7 +311,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getCertificateFactory("X.510", savedProvider);
+            SecurityHelper.getCertificateFactory("X.510", getProvider());
             fail();
         }
         catch (CertificateException e) {
@@ -308,9 +336,9 @@ public class SecurityHelperTest {
 
     @Test
     public void testGetCipherBC() throws Exception {
-        assertNotNull( SecurityHelper.getCipher("AES", savedProvider) );
+        assertNotNull( SecurityHelper.getCipher("AES", getProvider()) );
 
-        assertNotNull( SecurityHelper.getCipher("DES/CBC/PKCS5Padding", savedProvider) );
+        assertNotNull( SecurityHelper.getCipher("DES/CBC/PKCS5Padding", getProvider()) );
     }
 
     @Test
@@ -324,7 +352,7 @@ public class SecurityHelperTest {
     public void testGetSecretKeyFactory() throws Exception {
         assertNotNull( SecurityHelper.getSecretKeyFactory("DES") );
 
-        assertNotNull( SecurityHelper.getSecretKeyFactory("DESede", savedProvider) );
+        assertNotNull( SecurityHelper.getSecretKeyFactory("DESede", getProvider()) );
     }
 
     @Test
@@ -344,7 +372,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getSecretKeyFactory("MESS", savedProvider);
+            SecurityHelper.getSecretKeyFactory("MESS", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -359,7 +387,7 @@ public class SecurityHelperTest {
         assertNotNull( SecurityHelper.getMac("HmacMD5") );
         assertNotNull( SecurityHelper.getMac("HmacSHA1") );
 
-        assertNotNull( SecurityHelper.getMac("HmacMD5", savedProvider) );
+        assertNotNull( SecurityHelper.getMac("HmacMD5", getProvider()) );
     }
 
     @Test
@@ -378,7 +406,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getMac("HmacMDX", savedProvider);
+            SecurityHelper.getMac("HmacMDX", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {
@@ -392,7 +420,7 @@ public class SecurityHelperTest {
     public void testGetKeyGenerator() throws Exception {
         assertNotNull( SecurityHelper.getKeyGenerator("AES") );
 
-        assertNotNull( SecurityHelper.getKeyGenerator("AES", savedProvider) );
+        assertNotNull( SecurityHelper.getKeyGenerator("AES", getProvider()) );
     }
 
     @Test
@@ -411,7 +439,7 @@ public class SecurityHelperTest {
             // OK
         }
         try {
-            SecurityHelper.getKeyGenerator("AMD", savedProvider);
+            SecurityHelper.getKeyGenerator("AMD", getProvider());
             fail();
         }
         catch (NoSuchAlgorithmException e) {

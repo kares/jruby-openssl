@@ -110,16 +110,6 @@ public class SSL {
                 OpenSSL.debug("setting " + JSSE_TLS_ephemeralDHKeySize + " failed: " + ex);
             }
         }
-        else { // on JDK 7 DHE is weak - disable completely (unless user-set)
-            try {
-                if ( System.getProperty(JSSE_TLS_disabledAlgorithms) == null ) {
-                    System.setProperty(JSSE_TLS_disabledAlgorithms, JSSE_TLS_disabledAlgorithms_default);
-                }
-            }
-            catch (SecurityException se) {
-                OpenSSL.debug("setting " + JSSE_TLS_disabledAlgorithms + " failed: " + se);
-            }
-        }
     }
 
     static RaiseException handleCouldNotGenerateDHKeyPairError(final Ruby runtime, final RuntimeException ex) {
@@ -127,9 +117,6 @@ public class SSL {
         if ( OpenSSL.javaHotSpot() || OpenSSL.javaOpenJDK() ) {
             if ( OpenSSL.javaVersion8(false) ) { // == 1.8
                 message += " (try disabling DHE using -D"+ JSSE_TLS_disabledAlgorithms +" as only keys of size 1024/2048 are supported in Java 8)";
-            }
-            else if ( ! OpenSSL.javaVersion8(true) ) { // < 1.8
-                message += " (try disabling DHE using -D"+ JSSE_TLS_disabledAlgorithms +" as prior to Java 8 only keys of size < 1024 are supported)";
             }
         }
         return newSSLError(runtime, message, ex);

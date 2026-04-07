@@ -61,7 +61,7 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  */
 public abstract class SecurityHelper {
 
-    static final boolean FIPS_MODE = SafePropertyAccessor.getBoolean("jruby.openssl.provider.fips");
+    private static final boolean FIPS_MODE = SafePropertyAccessor.getBoolean("jruby.openssl.provider.fips");
 
     private static final String BC_PROVIDER_CLASS = FIPS_MODE ?
         "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider" :
@@ -70,7 +70,7 @@ public abstract class SecurityHelper {
     static volatile Provider securityProvider; // 'BC' provider (package access for tests)
     private static volatile Boolean registerProvider = null;
 
-    private static String BCJSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
+    private static String BC_JSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
     static boolean setJsseProvider = true;
     static volatile Provider jsseProvider;
 
@@ -106,9 +106,10 @@ public abstract class SecurityHelper {
                         debug("failed to get provider: " + name, ex);
                     }
                     if (provider == null && "BCJSSE".equals(name)) {
-                        provider = newBouncyCastleProvider(BCJSSE_PROVIDER_CLASS);
+                        provider = newBouncyCastleProvider(BC_JSSE_PROVIDER_CLASS);
                     }
-                    jsseProvider = provider; setJsseProvider = false;
+                    jsseProvider = provider;
+                    if (provider != null) setJsseProvider = false;
                 }
             }
         }
@@ -137,17 +138,23 @@ public abstract class SecurityHelper {
         return null;
     }
 
-    public static synchronized void setRegisterProvider(final boolean register) {
+    static void attemptRegisterProviderOnce() {
+        if ( securityProvider != null ) return;
+
+        final String register = SafePropertyAccessor.getProperty("jruby.openssl.provider.register");
+        SecurityHelper.setRegisterProvider(register == null ? isFipsMode() : Boolean.parseBoolean(register));
+    }
+
+    static synchronized void setRegisterProvider(final boolean register) {
         registerProvider = Boolean.valueOf(register);
         if ( register ) getSecurityProvider(); // so that securityProvider != null
-        // getSecurityProvider does doRegisterProvider();
     }
 
     static boolean isProviderAvailable(final String name) {
         return Security.getProvider(name) != null;
     }
 
-    public static boolean isProviderRegistered() {
+    static boolean isProviderRegistered() {
         if ( securityProvider == null ) return false;
         return Security.getProvider(securityProvider.getName()) != null;
     }
@@ -166,9 +173,6 @@ public abstract class SecurityHelper {
         }
     }
 
-    /**
-     * @note code calling this should not assume BC provider internals !
-     */
     public static CertificateFactory getCertificateFactory(final String type)
         throws CertificateException {
         try {
@@ -184,9 +188,6 @@ public abstract class SecurityHelper {
         return CertificateFactory.getInstance(type, provider);
     }
 
-    /**
-     * @note code calling this should not assume BC provider internals !
-     */
     public static KeyFactory getKeyFactory(final String algorithm)
         throws NoSuchAlgorithmException {
         try {
@@ -239,9 +240,6 @@ public abstract class SecurityHelper {
         return KeyStore.getInstance(type, provider);
     }
 
-    /**
-     * @note code calling this should not assume BC provider internals !
-     */
     public static MessageDigest getMessageDigest(final String algorithm) throws NoSuchAlgorithmException {
         try {
             return MessageDigest.getInstance(algorithm);
@@ -254,7 +252,6 @@ public abstract class SecurityHelper {
         }
     }
 
-    @SuppressWarnings("unchecked")
     static MessageDigest getMessageDigest(final String algorithm, final Provider provider)
         throws NoSuchAlgorithmException {
         return MessageDigest.getInstance(algorithm, provider);

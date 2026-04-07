@@ -71,7 +71,7 @@ import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStyle;
-import org.bouncycastle.asn1.x509.X509DefaultEntryConverter;
+import org.bouncycastle.util.encoders.Hex;
 
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -249,7 +249,6 @@ public class X509Name extends RubyObject {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void addType(final Ruby runtime, final ASN1Encodable value) {
         this.name = null; // NOTE: each fromX factory calls this ...
         this.canonicalName = null;
@@ -261,61 +260,73 @@ public class X509Name extends RubyObject {
         this.types.add(type);
     }
 
-    /**
-     * @param oid
-     * @param value
-     * @param type expected to be legit at this point
-     * @throws RuntimeException
-     */
-    private void addEntry(ASN1ObjectIdentifier oid, RubyString value, final int type) throws RuntimeException {
+    private void addEntry(ASN1ObjectIdentifier oid, RubyString value, final int type) throws IOException {
         this.name = null;
         this.canonicalName = null;
-        this.values.add(NAME_ENTRY_CONVERTER.convertValueFor(oid, value, type));
+        this.values.add(convertNameEntryValue(oid, value, type));
         this.oids.add(oid);
         this.types.add(type);
     }
 
-    private static final X509NameEntryConverterImpl NAME_ENTRY_CONVERTER = new X509NameEntryConverterImpl();
-
-    private static class X509NameEntryConverterImpl extends X509DefaultEntryConverter {
-
-        ASN1Primitive convertValueFor(final ASN1ObjectIdentifier oid, final RubyString value, final int type) {
-            switch (type) {
-                case ASN1.BIT_STRING:
-                    return new DERBitString(value.getBytes());
-                case ASN1.OCTET_STRING:
-                    return new DEROctetString(value.getBytes());
-                case ASN1.UTF8STRING:
-                    return new DERUTF8String(value.asJavaString());
-                case ASN1.NUMERICSTRING:
-                    return new DERNumericString(value.asJavaString()); // validate?
-                case ASN1.PRINTABLESTRING:
-                    return new DERPrintableString(value.asJavaString());
-                case ASN1.T61STRING:
-                    return new DERT61String(value.asJavaString());
-                case ASN1.VIDEOTEXSTRING:
-                    return new DERVideotexString(value.getBytes());
-                case ASN1.IA5STRING:
-                    return new DERIA5String(value.asJavaString());
-                case ASN1.GENERALIZEDTIME:
-                    return new DERGeneralizedTime(value.asJavaString());
-                case ASN1.UTCTIME:
-                    return new DERUTCTime(value.asJavaString());
-                case ASN1.GRAPHICSTRING:
-                    return new DERGraphicString(value.getBytes());
-                //case ASN1.ISO64STRING:
-                    //return new DERVisibleString(value.asJavaString());
-                case ASN1.GENERALSTRING:
-                    return new DERGeneralString(value.asJavaString());
-                case ASN1.UNIVERSALSTRING:
-                    return new DERUniversalString(value.getBytes());
-                case ASN1.BMPSTRING:
-                    return new DERBMPString(value.asJavaString());
-            }
-
-            return super.getConvertedValue(oid, value.toString());
+    // replacement for X509DefaultEntryConverter (due BC-FIPS)
+    private static ASN1Primitive convertNameEntryValue(final ASN1ObjectIdentifier oid, final RubyString value, final int type)
+        throws IOException {
+        switch (type) {
+            case ASN1.BIT_STRING:
+                return new DERBitString(value.getBytes());
+            case ASN1.OCTET_STRING:
+                return new DEROctetString(value.getBytes());
+            case ASN1.UTF8STRING:
+                return new DERUTF8String(value.asJavaString());
+            case ASN1.NUMERICSTRING:
+                return new DERNumericString(value.asJavaString()); // validate?
+            case ASN1.PRINTABLESTRING:
+                return new DERPrintableString(value.asJavaString());
+            case ASN1.T61STRING:
+                return new DERT61String(value.asJavaString());
+            case ASN1.VIDEOTEXSTRING:
+                return new DERVideotexString(value.getBytes());
+            case ASN1.IA5STRING:
+                return new DERIA5String(value.asJavaString());
+            case ASN1.GENERALIZEDTIME:
+                return new DERGeneralizedTime(value.asJavaString());
+            case ASN1.UTCTIME:
+                return new DERUTCTime(value.asJavaString());
+            case ASN1.GRAPHICSTRING:
+                return new DERGraphicString(value.getBytes());
+            //case ASN1.ISO64STRING:
+                //return new DERVisibleString(value.asJavaString());
+            case ASN1.GENERALSTRING:
+                return new DERGeneralString(value.asJavaString());
+            case ASN1.UNIVERSALSTRING:
+                return new DERUniversalString(value.getBytes());
+            case ASN1.BMPSTRING:
+                return new DERBMPString(value.asJavaString());
         }
 
+        return defaultConvertedValue(oid, value.toString());
+    }
+
+    // inlined from X509DefaultEntryConverter.getConvertedValue (not available in BC-FIPS)
+    private static ASN1Primitive defaultConvertedValue(final ASN1ObjectIdentifier oid, String value)
+        throws IOException {
+        if (value.length() != 0 && value.charAt(0) == '#') {
+            return ASN1Primitive.fromByteArray(Hex.decodeStrict(value, 1, value.length() - 1));
+        }
+        if (value.length() != 0 && value.charAt(0) == '\\') {
+            value = value.substring(1);
+        }
+        if (BCStyle.EmailAddress.equals(oid) || BCStyle.DC.equals(oid)) {
+            return new DERIA5String(value);
+        }
+        if (BCStyle.DATE_OF_BIRTH.equals(oid)) {
+            return new DERGeneralizedTime(value);
+        }
+        if (BCStyle.C.equals(oid) || BCStyle.SERIALNUMBER.equals(oid) ||
+            BCStyle.DN_QUALIFIER.equals(oid) || BCStyle.TELEPHONE_NUMBER.equals(oid)) {
+            return new DERPrintableString(value);
+        }
+        return new DERUTF8String(value);
     }
 
     @Override
@@ -427,7 +438,7 @@ public class X509Name extends RubyObject {
         try {
             addEntry(objectId, value.asString(), typeInt);
         }
-        catch (RuntimeException e) {
+        catch (RuntimeException | IOException e) {
             debugStackTrace(runtime, e);
             String msg = e.getMessage(); // X509DefaultEntryConverted: "can't recode value for oid " + oid.getId()
             throw newNameError(runtime, msg == null ? "invalid value" : msg, e);
@@ -762,29 +773,23 @@ public class X509Name extends RubyObject {
         final Class<? extends ASN1Encodable> clazz = ASN1.typeClass(type);
         try {
             if ( clazz != null ) {
-                Constructor<?> ctor = clazz.getConstructor(new Class[]{ String.class });
+                Constructor<?> ctor = clazz.getConstructor(String.class);
                 if (null != ctor) {
-                    return (ASN1Primitive) ctor.newInstance(new Object[]{ value });
+                    return (ASN1Primitive) ctor.newInstance(new Object[] { value });
                 }
             }
-            return new X509DefaultEntryConverter().getConvertedValue(oid, value);
+            return defaultConvertedValue(oid, value);
         }
-        catch (NoSuchMethodException e) {
-            throw newNameError(getRuntime(), e);
-        }
-        catch (InstantiationException e) {
-            throw newNameError(getRuntime(), e);
-        }
-        catch (IllegalAccessException e) {
-            throw newNameError(getRuntime(), e);
-        }
-        catch (IllegalArgumentException e) {
+        catch (NoSuchMethodException | InstantiationException | IllegalAccessException e) {
             throw newNameError(getRuntime(), e);
         }
         catch (InvocationTargetException e) {
             throw newNameError(getRuntime(), e.getTargetException());
         }
-        catch (RuntimeException e) {
+        catch (IllegalArgumentException e) {
+            throw newNameError(getRuntime(), e);
+        }
+        catch (Exception e) {
             debugStackTrace(getRuntime(), e);
             throw newNameError(getRuntime(), e);
         }

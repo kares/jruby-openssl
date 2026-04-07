@@ -30,15 +30,13 @@ package org.jruby.ext.openssl.x509store;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.Principal;
 import java.security.cert.X509Certificate;
 import javax.security.auth.x500.X500Principal;
 
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.jce.X509Principal;
-import org.bouncycastle.jce.provider.X509CertificateObject;
+
 
 import org.jruby.ext.openssl.SecurityHelper;
 
@@ -145,12 +143,6 @@ public class Name {
         return this.name.equals(name);
     }
 
-    @SuppressWarnings("deprecation")
-    final boolean equalTo(final Principal principal) {
-        // assuming "legacy" non X500Principal impl (from BC)
-        return new X509Principal(this.name).equals(principal);
-    }
-
     public boolean equalTo(final X500Principal principal) {
         try {
             return new X500Principal(this.name.getEncoded(ASN1Encoding.DER)).equals(principal);
@@ -161,16 +153,7 @@ public class Name {
     }
 
     public final boolean equalToCertificateSubject(final X509AuxCertificate wrapper) {
-        // on Oracle/OpenJDK internal certificates: sun.security.x509.X509CertImpl
-        // BC: class org.bouncycastle.jcajce.provider.asymmetric.x509.X509CertificateObject
-        final X509Certificate cert = wrapper.cert;
-        if ( cert == null ) return equalTo( wrapper.getSubjectX500Principal() );
-
-        if ( cert instanceof X509CertificateObject ) {
-            return equalTo( cert.getSubjectDN() );
-        }
-        // otherwise need to take the 'expensive' path :
-        return equalTo( cert.getSubjectX500Principal() );
+        return equalTo( wrapper.getSubjectX500Principal() );
     }
 
 }// X509_NAME

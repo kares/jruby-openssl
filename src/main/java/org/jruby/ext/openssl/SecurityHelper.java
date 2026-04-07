@@ -23,57 +23,36 @@
  */
 package org.jruby.ext.openssl;
 
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
-
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
-import java.security.KeyFactorySpi;
 import java.security.KeyPairGenerator;
-import java.security.KeyPairGeneratorSpi;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.MessageDigest;
-import java.security.MessageDigestSpi;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.security.PublicKey;
 import java.security.SecureRandom;
-import java.security.SecureRandomSpi;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
-import java.security.SignatureSpi;
 import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.security.cert.CertificateFactorySpi;
 import java.security.cert.X509CRL;
-import java.util.Locale;
-import java.util.Map;
-import java.util.StringTokenizer;
-import java.util.concurrent.ConcurrentHashMap;
-
 import javax.crypto.Cipher;
-import javax.crypto.CipherSpi;
 import javax.crypto.KeyAgreement;
-import javax.crypto.KeyAgreementSpi;
 import javax.crypto.KeyGenerator;
-import javax.crypto.KeyGeneratorSpi;
 import javax.crypto.Mac;
-import javax.crypto.MacSpi;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.SecretKeyFactorySpi;
 import javax.net.ssl.SSLContext;
 
 import org.jruby.util.SafePropertyAccessor;
+
+import static org.jruby.ext.openssl.OpenSSL.debug;
+import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 
 /**
  * Java Security (and JCE) helpers.
@@ -86,7 +65,6 @@ public abstract class SecurityHelper {
     static boolean setBouncyCastleProvider = true; // (package access for tests)
     static volatile Provider securityProvider; // 'BC' provider (package access for tests)
     private static volatile Boolean registerProvider = null;
-    static final Map<String, Class> implEngines = new ConcurrentHashMap<>(16, 0.75f, 1);
 
     private static String BCJSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
     static boolean setJsseProvider = true;
@@ -129,38 +107,9 @@ public abstract class SecurityHelper {
         return provider;
     }
 
-    static final boolean SPI_ACCESSIBLE;
-
-    static {
-        boolean canSetAccessible = true;
-        if ( OpenSSL.javaVersion9(true) ) {
-            final Provider provider = getSecurityProvider();
-            if ( provider != null ) {
-                try {
-                    // NOTE: some getXxx pieces might still work
-                    // where SPI are returned directly + there's a public <init> e.g. MessageDigest(...)
-                    getCertificateFactory("X.509", provider); // !!! disables EVERYTHING :(
-                }
-                catch (CertificateException ex) {
-                    debugStackTrace(ex);
-                    canSetAccessible = false;
-                }
-                catch (RuntimeException ex) {
-                    debugStackTrace(ex);
-                    // java.lang.reflect.InaccessibleObjectException (extends RuntimeException)
-                    canSetAccessible = false;
-                }
-            }
-        }
-        SPI_ACCESSIBLE = canSetAccessible;
-    }
-
-    static Provider getSecurityProviderIfAccessible() {
-        return SPI_ACCESSIBLE ? getSecurityProvider() : null;
-    }
 
     public static synchronized void setSecurityProvider(final Provider provider) {
-        if ( provider != null ) OpenSSL.debug("using (security) provider: " + provider);
+        if ( provider != null ) debug("using (security) provider: " + provider);
         securityProvider = provider;
     }
 
@@ -175,7 +124,7 @@ public abstract class SecurityHelper {
             return (Provider) Class.forName(klass).newInstance();
         }
         catch (Throwable ignored) {
-            OpenSSL.debug("can not instantiate bouncy-castle provider (" + klass  + ")", ignored);
+            debug("can not instantiate bouncy-castle provider (" + klass  + ")", ignored);
         }
         return null;
     }
@@ -215,7 +164,7 @@ public abstract class SecurityHelper {
     public static CertificateFactory getCertificateFactory(final String type)
         throws CertificateException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getCertificateFactory(type, provider);
         }
         catch (CertificateException e) { debugStackTrace(e); }
@@ -224,8 +173,6 @@ public abstract class SecurityHelper {
 
     static CertificateFactory getCertificateFactory(final String type, final Provider provider)
         throws CertificateException {
-        final CertificateFactorySpi spi = (CertificateFactorySpi) getImplEngine("CertificateFactory", type);
-        if ( spi == null ) throw new CertificateException(type + " not found");
         return CertificateFactory.getInstance(type, provider);
     }
 
@@ -235,7 +182,7 @@ public abstract class SecurityHelper {
     public static KeyFactory getKeyFactory(final String algorithm)
         throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getKeyFactory(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -253,7 +200,7 @@ public abstract class SecurityHelper {
     public static KeyPairGenerator getKeyPairGenerator(final String algorithm)
         throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getKeyPairGenerator(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -272,7 +219,7 @@ public abstract class SecurityHelper {
     public static KeyStore getKeyStore(final String type)
         throws KeyStoreException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getKeyStore(type, provider);
         }
         catch (KeyStoreException e) { }
@@ -292,7 +239,7 @@ public abstract class SecurityHelper {
             return MessageDigest.getInstance(algorithm);
         } catch (NoSuchAlgorithmException nsae) {
             // try reflective logic
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getMessageDigest(algorithm, provider);
 
             throw nsae; // give up
@@ -307,7 +254,7 @@ public abstract class SecurityHelper {
 
     public static SecureRandom getSecureRandom() {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) {
                 final String algorithm = getSecureRandomAlgorithm(provider);
                 if ( algorithm != null ) {
@@ -334,43 +281,17 @@ public abstract class SecurityHelper {
         return null;
     }
 
-    private static Boolean tryCipherInternal = Boolean.FALSE;
-
     /**
      * @note code calling this should not assume BC provider internals !
      */
     public static Cipher getCipher(final String transformation)
         throws NoSuchAlgorithmException, NoSuchPaddingException {
         try {
-            if ( tryCipherInternal == Boolean.FALSE ) {
-                final Provider provider = getSecurityProvider();
-                if ( provider != null ) {
-                    return getCipher(transformation, provider);
-                }
-            }
+            final Provider provider = getSecurityProvider();
+            if ( provider != null ) return getCipher(transformation, provider);
         }
         catch (NoSuchAlgorithmException e) { }
         catch (NoSuchPaddingException e) { }
-        catch (SecurityException e) {
-            // java.lang.SecurityException: JCE cannot authenticate the provider BC
-            if ( tryCipherInternal != null ) tryCipherInternal = Boolean.TRUE;
-            debugStackTrace(e);
-        }
-        if ( tryCipherInternal == Boolean.TRUE ) {
-            try {
-                final Provider provider = getSecurityProvider();
-                if ( provider != null ) {
-                    return getCipherInternal(transformation, provider);
-                }
-            }
-            catch (NoSuchAlgorithmException e) { }
-            catch (RuntimeException e) {
-                // likely javax.crypto.JceSecurityManager.isCallerTrusted gets
-                // us a NPE from javax.crypto.Cipher.<init>(Cipher.java:264)
-                tryCipherInternal = null; // do not try BC at all
-                debugStackTrace(e);
-            }
-        }
         return Cipher.getInstance(transformation);
     }
 
@@ -379,55 +300,14 @@ public abstract class SecurityHelper {
         return Cipher.getInstance(transformation, provider);
     }
 
-    private static final Class<?>[] STRING_PARAM = { String.class };
 
-    private static Cipher getCipherInternal(String transformation, final Provider provider)
-        throws NoSuchAlgorithmException {
-        CipherSpi spi = (CipherSpi) getImplEngine("Cipher", transformation);
-        if ( spi == null ) {
-            //
-            // try the long way
-            //
-            StringTokenizer tok = new StringTokenizer(transformation, "/");
-            final String algorithm = tok.nextToken();
-
-            spi = (CipherSpi) getImplEngine("Cipher", algorithm);
-            if ( spi == null ) {
-                throw new NoSuchAlgorithmException(transformation + " not found");
-            }
-
-            //
-            // make sure we don't get fooled by a "//" in the string
-            //
-            if ( tok.hasMoreTokens() && ! transformation.regionMatches(algorithm.length(), "//", 0, 2) ) {
-                // spi.engineSetMode(tok.nextToken()) :
-                invoke(spi, CipherSpi.class, "engineSetMode", STRING_PARAM, tok.nextToken());
-            }
-            if ( tok.hasMoreTokens() ) {
-                // spi.engineSetPadding(tok.nextToken()) :
-                invoke(spi, CipherSpi.class, "engineSetPadding", STRING_PARAM, tok.nextToken());
-            }
-
-        }
-        try {
-            // this constructor does not verify the provider
-            return Cipher.getInstance(transformation, provider);
-        }
-        catch (Exception e) { // TODO now seems like a redundant left over
-            // this constructor does verify the provider which might fail
-            return newInstance(Cipher.class,
-                    new Class[] { CipherSpi.class, Provider.class, String.class },
-                    new Object[] { spi, provider, transformation }
-            );
-        }
-    }
 
     /**
      * @note code calling this should not assume BC provider internals !
      */
     public static Signature getSignature(final String algorithm) throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getSignature(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -445,7 +325,7 @@ public abstract class SecurityHelper {
      */
     public static Mac getMac(final String algorithm) throws NoSuchAlgorithmException {
         Mac mac = null;
-        final Provider provider = getSecurityProviderIfAccessible();
+        final Provider provider = getSecurityProvider();
         if ( provider != null ) {
             mac = getMac(algorithm, provider, true);
         }
@@ -474,7 +354,7 @@ public abstract class SecurityHelper {
      */
     public static KeyGenerator getKeyGenerator(final String algorithm) throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getKeyGenerator(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -492,7 +372,7 @@ public abstract class SecurityHelper {
      */
     public static KeyAgreement getKeyAgreement(final String algorithm) throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getKeyAgreement(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -510,7 +390,7 @@ public abstract class SecurityHelper {
      */
     public static SecretKeyFactory getSecretKeyFactory(final String algorithm) throws NoSuchAlgorithmException {
         try {
-            final Provider provider = getSecurityProviderIfAccessible();
+            final Provider provider = getSecurityProvider();
             if ( provider != null ) return getSecretKeyFactory(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) { }
@@ -578,103 +458,6 @@ public abstract class SecurityHelper {
         catch (NoSuchProviderException e) {
             if (silent) return false;
             throw new SignatureException(e);
-        }
-    }
-
-    // these are BC JCE (@see javax.crypto.JCEUtil) inspired internals :
-    // https://github.com/bcgit/bc-java/blob/master/jce/src/main/java/javax/crypto/JCEUtil.java
-
-    private static Object getImplEngine(String baseName, String algorithm) {
-        Object engine = findImplEngine(baseName, algorithm.toUpperCase(Locale.ENGLISH));
-        if (engine == null) {
-            engine = findImplEngine(baseName, algorithm);
-        }
-        return engine;
-    }
-
-    private static Object findImplEngine(final String baseName, String algorithm) {
-        Class implEngineClass = implEngines.get(baseName + ":" + algorithm);
-
-        if (implEngineClass == null) {
-            final Provider bcProvider = securityProvider;
-            String alias;
-            while ((alias = bcProvider.getProperty("Alg.Alias." + baseName + "." + algorithm)) != null) {
-                algorithm = alias;
-            }
-            final String className = bcProvider.getProperty(baseName + "." + algorithm);
-            if (className != null) {
-                try {
-                    ClassLoader loader = bcProvider.getClass().getClassLoader();
-                    if (loader != null) {
-                        implEngineClass = loader.loadClass(className);
-                    } else {
-                        implEngineClass = Class.forName(className);
-                    }
-                    implEngineClass.newInstance(); // this instance is thrown away to test newInstance, but only once
-                } catch (ClassNotFoundException e) {
-                    throw new IllegalStateException("algorithm " + algorithm + " in provider " + bcProvider.getName() + " but no class \"" + className + "\" found!");
-                } catch (Exception e) {
-                    throw new IllegalStateException("algorithm " + algorithm + " in provider " + bcProvider.getName() + " but class \"" + className + "\" inaccessible!");
-                }
-            } else {
-                return null;
-            }
-
-            implEngines.put(baseName + ":" + algorithm, implEngineClass);
-        }
-
-        try {
-            return implEngineClass.newInstance();
-        } catch (Exception e) {
-            final Provider bcProvider = securityProvider;
-            String className = implEngineClass.getName();
-            throw new IllegalStateException("algorithm " + algorithm + " in provider " + bcProvider.getName() + " but class \"" + className + "\" inaccessible!");
-        }
-    }
-
-    private static <T> T newInstance(Class<T> klass, Class<?>[] paramTypes, Object... params) {
-        final Constructor<T> constructor;
-        try {
-            constructor = klass.getDeclaredConstructor(paramTypes);
-            constructor.setAccessible(true);
-            return constructor.newInstance(params);
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException(e.getMessage(), e);
-        } catch (InvocationTargetException e) {
-            throw new IllegalStateException(e.getTargetException());
-        } catch (InstantiationException e) {
-            throw new IllegalStateException(e);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> T invoke(Object object, Class<?> klass, String methodName, Class<?>[] paramTypes, Object... params) {
-        final Method method;
-        try {
-            method = klass.getDeclaredMethod(methodName, paramTypes);
-            method.setAccessible(true);
-            return (T) method.invoke(object, params);
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException(e.getMessage(), e);
-        } catch (InvocationTargetException e) {
-            throw new IllegalStateException(e.getTargetException());
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static void setField(Object obj, Class<?> fieldOwner, String fieldName, Object value) {
-        final Field field;
-        try {
-            field = fieldOwner.getDeclaredField(fieldName);
-            field.setAccessible(true);
-            field.set(obj, value);
-        } catch (NoSuchFieldException e) {
-            throw new IllegalStateException("no field '" + fieldName + "' declared in " + fieldOwner + "", e);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
         }
     }
 }

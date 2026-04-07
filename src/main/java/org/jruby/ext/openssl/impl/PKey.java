@@ -66,6 +66,7 @@ import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DLSequence;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -75,7 +76,6 @@ import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
 import org.bouncycastle.jcajce.provider.asymmetric.util.KeyUtil;
 import org.bouncycastle.openssl.PEMParser;
-import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 
 import org.jruby.ext.openssl.SecurityHelper;
 
@@ -162,25 +162,44 @@ public class PKey {
 
     // d2i_PUBKEY_bio
     public static PublicKey readPublicKey(final byte[] input) throws IOException {
-        final JcaPEMKeyConverter converter = new JcaPEMKeyConverter()
-            .setProvider(SecurityHelper.getSecurityProvider());
         // Try PEM first
         try (Reader in = new InputStreamReader(new ByteArrayInputStream(input))) {
             Object pemObject = new PEMParser(in).readObject();
             if (pemObject instanceof SubjectPublicKeyInfo) {
-                return converter.getPublicKey((SubjectPublicKeyInfo) pemObject);
+                return readPublicKey((SubjectPublicKeyInfo) pemObject);
             }
+        } catch (Exception e) {
+            if (e instanceof RuntimeException) throw (RuntimeException) e;
+            throw new IOException("Could not parse public key: " + e.getMessage(), e);
         }
         // Fall back to DER-encoded SubjectPublicKeyInfo
         try {
             SubjectPublicKeyInfo publicKeyInfo = SubjectPublicKeyInfo.getInstance(ASN1Primitive.fromByteArray(input));
-            if (publicKeyInfo != null) {
-                return converter.getPublicKey(publicKeyInfo);
-            }
+            if (publicKeyInfo != null) return readPublicKey(publicKeyInfo);
         } catch (Exception e) {
+            if (e instanceof RuntimeException) throw (RuntimeException) e;
             throw new IOException("Could not parse public key: " + e.getMessage(), e);
         }
         return null;
+    }
+
+    private static PublicKey readPublicKey(final SubjectPublicKeyInfo publicKeyInfo)
+        throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        final Type type = matchPublicKeyType(publicKeyInfo.getAlgorithm());
+        final KeyFactory keyFactory = SecurityHelper.getKeyFactory(type.name());
+        return keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyInfo.getEncoded()));
+    }
+
+    private static Type matchPublicKeyType(final AlgorithmIdentifier algId) throws IllegalArgumentException {
+        final ASN1ObjectIdentifier algIdentifier = algId.getAlgorithm();
+
+        if (X9ObjectIdentifiers.id_ecPublicKey.equals(algIdentifier)) return Type.EC;
+        if (PKCSObjectIdentifiers.rsaEncryption.equals(algIdentifier)) return Type.RSA;
+        if (X9ObjectIdentifiers.id_dsa.equals(algIdentifier)) return Type.DSA;
+        if (EdECObjectIdentifiers.id_Ed25519.equals(algIdentifier)) return Type.EdDSA;
+        if (EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) return Type.EdDSA;
+
+        return Type.valueOf(algIdentifier.getId());
     }
 
     // d2i_RSAPrivateKey_bio

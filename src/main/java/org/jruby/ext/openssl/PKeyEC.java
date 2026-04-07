@@ -25,6 +25,8 @@ import java.security.Signature;
 
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECField;
+import java.security.spec.ECFieldF2m;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.ECParameterSpec;
 import java.security.spec.ECPoint;
@@ -33,6 +35,7 @@ import java.security.spec.ECPublicKeySpec;
 import java.security.spec.EllipticCurve;
 import java.security.spec.ECFieldFp;
 import java.security.spec.InvalidKeySpecException;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.security.spec.InvalidParameterSpecException;
 import java.util.Collections;
@@ -54,10 +57,11 @@ import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
-import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
-import org.bouncycastle.jce.ECPointUtil;
 import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECCurve;
+import org.bouncycastle.math.field.FiniteField;
+import org.bouncycastle.math.field.Polynomial;
+import org.bouncycastle.math.field.PolynomialExtensionField;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyBignum;
@@ -204,6 +208,103 @@ public final class PKeyEC extends PKey {
             }
         }
         return null;
+    }
+
+    // based on BC's EC5Util/ECPointUtil; kept local so we do not depend on non-FIPS-only classes
+    private static EllipticCurve convertCurve(final X9ECParameters ecParams) {
+        final ECCurve curve = ecParams.getCurve();
+        final BigInteger a = curve.getA().toBigInteger();
+        final BigInteger b = curve.getB().toBigInteger();
+        final byte[] seed = ecParams.hasSeed() ? ecParams.getSeed() : null;
+        return new EllipticCurve(convertField(curve.getField()), a, b, seed);
+    }
+
+    private static ECPoint convertPoint(org.bouncycastle.math.ec.ECPoint point) {
+        point = point.normalize();
+        return new ECPoint(point.getAffineXCoord().toBigInteger(), point.getAffineYCoord().toBigInteger());
+    }
+
+    private static ECField convertField(final FiniteField field) {
+        if (ECAlgorithms.isFpField(field)) {
+            return new ECFieldFp(field.getCharacteristic());
+        }
+
+        final Polynomial poly = ((PolynomialExtensionField) field).getMinimalPolynomial();
+        final int[] exponents = poly.getExponentsPresent();
+        final int[] ks = Arrays.copyOfRange(exponents, 1, exponents.length - 1);
+        org.bouncycastle.util.Arrays.reverseInPlace(ks);
+        return new ECFieldF2m(poly.getDegree(), ks);
+    }
+
+    private static ECCurve toBCCurve(final EllipticCurve curve) {
+        final ECField field = curve.getField();
+        final BigInteger a = curve.getA();
+        final BigInteger b = curve.getB();
+
+        if (field instanceof ECFieldFp) {
+            return new ECCurve.Fp(((ECFieldFp) field).getP(), a, b, null, null);
+        }
+
+        final ECFieldF2m fieldF2m = (ECFieldF2m) field;
+        final int m = fieldF2m.getM();
+        final int[] ks = convertMidTerms(fieldF2m.getMidTermsOfReductionPolynomial());
+        return new ECCurve.F2m(m, ks[0], ks[1], ks[2], a, b, null, null);
+    }
+
+    private static org.bouncycastle.math.ec.ECPoint toBCPoint(final ECCurve curve, final ECPoint point) {
+        return curve.createPoint(point.getAffineX(), point.getAffineY());
+    }
+
+    private static org.bouncycastle.math.ec.ECPoint toBCPoint(final ECParameterSpec spec, final ECPoint point) {
+        return toBCPoint(toBCCurve(spec.getCurve()), point);
+    }
+
+    // copied from BC's ECUtil.convertMidTerms
+    private static int[] convertMidTerms(final int[] k) {
+        final int[] res = new int[3];
+
+        if (k.length == 1) {
+            res[0] = k[0];
+            return res;
+        }
+
+        if (k.length != 3) throw new IllegalArgumentException("Only Trinomials and pentanomials supported");
+
+        if (k[0] < k[1] && k[0] < k[2]) {
+            res[0] = k[0];
+            if (k[1] < k[2]) {
+                res[1] = k[1];
+                res[2] = k[2];
+            }
+            else {
+                res[1] = k[2];
+                res[2] = k[1];
+            }
+        }
+        else if (k[1] < k[2]) {
+            res[0] = k[1];
+            if (k[0] < k[2]) {
+                res[1] = k[0];
+                res[2] = k[2];
+            }
+            else {
+                res[1] = k[2];
+                res[2] = k[0];
+            }
+        }
+        else {
+            res[0] = k[2];
+            if (k[0] < k[1]) {
+                res[1] = k[0];
+                res[2] = k[1];
+            }
+            else {
+                res[1] = k[1];
+                res[2] = k[0];
+            }
+        }
+
+        return res;
     }
 
     public PKeyEC(Ruby runtime, RubyClass type) {
@@ -775,11 +876,11 @@ public final class PKeyEC extends PKey {
 
         if (ecSpec == null) return new X962Parameters(DERNull.INSTANCE);
 
-        ECCurve curve = EC5Util.convertCurve(ecSpec.getCurve());
+        ECCurve curve = toBCCurve(ecSpec.getCurve());
 
         X9ECParameters ecParameters = new X9ECParameters(
                 curve,
-                new X9ECPoint(EC5Util.convertPoint(curve, ecSpec.getGenerator()), compressed),
+                new X9ECPoint(toBCPoint(curve, ecSpec.getGenerator()), compressed),
                 ecSpec.getOrder(),
                 BigInteger.valueOf(ecSpec.getCofactor()),
                 ecSpec.getCurve().getSeed());
@@ -807,8 +908,7 @@ public final class PKeyEC extends PKey {
             final ASN1ObjectIdentifier curveOID = getCurveOID(getCurveName()).orElse(null);
             byte[] pubKeyBytes = null;
             if (publicKey != null) {
-                pubKeyBytes = EC5Util.convertPoint(
-                        publicKey.getParams(), publicKey.getW()).getEncoded(false);
+                pubKeyBytes = toBCPoint(publicKey.getParams(), publicKey.getW()).getEncoded(false);
             }
             PEMInputOutput.writeECPrivateKey(writer, (ECPrivateKey) privateKey,
                     curveOID, pubKeyBytes, spec, passwd);
@@ -925,12 +1025,11 @@ public final class PKeyEC extends PKey {
                             setCurveName(runtime, PKeyEC.getCurveName((ASN1ObjectIdentifier) primitive));
                             this.asn1Flag = 1; // NAMED_CURVE
                             return this;
-                        } else if (primitive instanceof ASN1Sequence) {
-                            // Explicit parameters: X9.62 ECParameters SEQUENCE
+                        } else if (primitive instanceof ASN1Sequence) { // explicit X9.62 ECParameters SEQUENCE
                             final X9ECParameters ecParams = X9ECParameters.getInstance(primitive);
-                            final EllipticCurve curve = EC5Util.convertCurve(ecParams.getCurve(), ecParams.getSeed());
+                            final EllipticCurve curve = convertCurve(ecParams);
                             this.paramSpec = new ECParameterSpec(curve,
-                                    EC5Util.convertPoint(ecParams.getG()),
+                                    convertPoint(ecParams.getG()),
                                     ecParams.getN(), ecParams.getH().intValue());
                             this.asn1Flag = 0; // explicit
                             return this;
@@ -1079,10 +1178,10 @@ public final class PKeyEC extends PKey {
                     encoded = oid.getEncoded(ASN1Encoding.DER);
                 } else { // explicit parameters: encode as X9.62 ECParameters SEQUENCE
                     final ECParameterSpec ps = getParamSpec();
-                    final ECCurve bcCurve = EC5Util.convertCurve(ps.getCurve());
+                    final ECCurve bcCurve = toBCCurve(ps.getCurve());
                     final X9ECParameters ecParameters = new X9ECParameters(
                             bcCurve,
-                            new X9ECPoint(EC5Util.convertPoint(bcCurve, ps.getGenerator()), false),
+                            new X9ECPoint(toBCPoint(bcCurve, ps.getGenerator()), false),
                             ps.getOrder(),
                             BigInteger.valueOf(ps.getCofactor()),
                             ps.getCurve().getSeed());
@@ -1203,7 +1302,7 @@ public final class PKeyEC extends PKey {
                 encoded = bn.convertToString().getBytes();
             }
             try {
-                this.point = ECPointUtil.decodePoint(group.getCurve(), encoded);
+                this.point = convertPoint(toBCCurve(group.getCurve()).decodePoint(encoded));
             }
             catch (IllegalArgumentException ex) {
                 // MRI: OpenSSL::PKey::EC::Point::Error: invalid encoding
@@ -1330,19 +1429,19 @@ public final class PKeyEC extends PKey {
             Group groupV = this.group;
             Point result;
 
-            ECCurve selfCurve = EC5Util.convertCurve(groupV.getCurve());
-            pointSelf = EC5Util.convertPoint(selfCurve, asECPoint());
+            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            pointSelf = toBCPoint(selfCurve, asECPoint());
 
             Point otherPoint = (Point) other;
-            ECCurve otherCurve = EC5Util.convertCurve(otherPoint.group.getCurve());
-            pointOther = EC5Util.convertPoint(otherCurve, otherPoint.asECPoint());
+            ECCurve otherCurve = toBCCurve(otherPoint.group.getCurve());
+            pointOther = toBCPoint(otherCurve, otherPoint.asECPoint());
 
             pointResult = pointSelf.add(pointOther);
             if (pointResult == null) {
                 throw newECError(runtime, "EC_POINT_add");
             }
 
-            result = new Point(runtime, EC5Util.convertPoint(pointResult), group);
+            result = new Point(runtime, convertPoint(pointResult), group);
 
             return result;
         }
@@ -1359,8 +1458,8 @@ public final class PKeyEC extends PKey {
 
             Group groupV = this.group;
 
-            ECCurve selfCurve = EC5Util.convertCurve(groupV.getCurve());
-            pointSelf = EC5Util.convertPoint(selfCurve, asECPoint());
+            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            pointSelf = toBCPoint(selfCurve, asECPoint());
 
             BigInteger bn = getBigInteger(context, bn1);
 
@@ -1369,7 +1468,7 @@ public final class PKeyEC extends PKey {
                 throw newECError(runtime, "bad multiply result");
             }
 
-            return new Point(runtime, EC5Util.convertPoint(mulPoint), groupV);
+            return new Point(runtime, convertPoint(mulPoint), groupV);
         }
 
         @JRubyMethod(name = "mul")
@@ -1384,11 +1483,11 @@ public final class PKeyEC extends PKey {
 
             Group groupV = this.group;
 
-            ECCurve selfCurve = EC5Util.convertCurve(groupV.getCurve());
-            pointSelf = EC5Util.convertPoint(selfCurve, asECPoint());
+            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            pointSelf = toBCPoint(selfCurve, asECPoint());
 
-            ECCurve resultCurve = EC5Util.convertCurve(groupV.getCurve());
-            pointResult = EC5Util.convertPoint(resultCurve, ((Point) groupV.generator(context)).asECPoint());
+            ECCurve resultCurve = toBCCurve(groupV.getCurve());
+            pointResult = toBCPoint(resultCurve, ((Point) groupV.generator(context)).asECPoint());
 
             BigInteger bn = getBigInteger(context, bn1);
             BigInteger bn_g = getBigInteger(context, bn2);
@@ -1399,7 +1498,7 @@ public final class PKeyEC extends PKey {
                 throw newECError(runtime, "bad multiply result");
             }
 
-            return new Point(runtime, EC5Util.convertPoint(mulPoint), groupV);
+            return new Point(runtime, convertPoint(mulPoint), groupV);
         }
 
         @JRubyMethod(name = "mul")

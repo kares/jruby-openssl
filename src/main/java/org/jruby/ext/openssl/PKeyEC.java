@@ -59,10 +59,8 @@ import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
 import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
-import org.bouncycastle.jcajce.provider.config.ProviderConfiguration;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.ECPointUtil;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
 import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 import org.bouncycastle.math.ec.ECAlgorithms;
@@ -734,11 +732,11 @@ public final class PKeyEC extends PKey {
     private static org.bouncycastle.asn1.sec.ECPrivateKey toPrivateKeyStructure(final ECPrivateKey privateKey,
                                                                                 final ECPublicKey publicKey,
                                                                                 final boolean compressed) throws IOException {
-        final ProviderConfiguration configuration = BouncyCastleProvider.CONFIGURATION;
         final ECParameterSpec ecSpec = privateKey.getParams();
         final X962Parameters params = getDomainParametersFromName(ecSpec, compressed);
 
-        int orderBitLength = ECUtil.getOrderBitLength(configuration, ecSpec == null ? null : ecSpec.getOrder(), privateKey.getS());
+        // named curves always have an explicit order; implicitCA is not used
+        int orderBitLength = ecSpec != null ? ecSpec.getOrder().bitLength() : privateKey.getS().bitLength();
 
         if (publicKey == null) {
             return new org.bouncycastle.asn1.sec.ECPrivateKey(orderBitLength, privateKey.getS(), params);

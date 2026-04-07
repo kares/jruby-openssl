@@ -58,7 +58,6 @@ import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
-import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.ECPointUtil;
 import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
@@ -178,11 +177,16 @@ public final class PKeyEC extends PKey {
         return curves;
     }
 
-    private static Optional<ASN1ObjectIdentifier> getCurveOID(String curveName) {
+    private static Optional<ASN1ObjectIdentifier> getCurveOID(final String curveName) {
         if (curveName == null) return Optional.empty();
         // work-around getNamedCurveOid not being able to handle "... " (assuming spacePos + 1 is valid index)
         if (curveName.indexOf(' ') == curveName.length() - 1) return Optional.empty();
-        return Optional.ofNullable(ECUtil.getNamedCurveOid(curveName));
+        ASN1ObjectIdentifier oid = org.bouncycastle.asn1.x9.ECNamedCurveTable.getOID(curveName);
+        if (oid == null) { // input might already be an OID string (e.g. "1.2.840.10045.3.1.7")
+            try { oid = new ASN1ObjectIdentifier(curveName); }
+            catch (IllegalArgumentException e) { /* not a valid OID string */ }
+        }
+        return Optional.ofNullable(oid);
     }
 
     private static boolean isCurveName(final String curveName) {
@@ -190,10 +194,8 @@ public final class PKeyEC extends PKey {
     }
 
     private static String getCurveName(final ASN1ObjectIdentifier oid) {
-        final String name = ECUtil.getCurveName(oid);
-        if (name == null) {
-            throw new IllegalStateException("could not identify curve name from: " + oid);
-        }
+        final String name = org.bouncycastle.asn1.x9.ECNamedCurveTable.getName(oid);
+        if (name == null) throw new IllegalStateException("could not identify curve name from: " + oid);
         return name;
     }
 
@@ -757,7 +759,7 @@ public final class PKeyEC extends PKey {
 
     private static X962Parameters getDomainParametersFromName(ECParameterSpec ecSpec, boolean compressed) {
         if (ecSpec instanceof ECNamedCurveSpec) {
-            ASN1ObjectIdentifier curveOid = ECUtil.getNamedCurveOid(((ECNamedCurveSpec)ecSpec).getName());
+            ASN1ObjectIdentifier curveOid = org.bouncycastle.asn1.x9.ECNamedCurveTable.getOID(((ECNamedCurveSpec)ecSpec).getName());
             if (curveOid == null)
             {
                 curveOid = new ASN1ObjectIdentifier(((ECNamedCurveSpec)ecSpec).getName());

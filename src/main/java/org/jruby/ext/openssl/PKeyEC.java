@@ -31,37 +31,31 @@ import java.security.spec.ECPoint;
 import java.security.spec.ECPrivateKeySpec;
 import java.security.spec.ECPublicKeySpec;
 import java.security.spec.EllipticCurve;
+import java.security.spec.ECFieldFp;
 import java.security.spec.InvalidKeySpecException;
+import java.util.Enumeration;
 import java.security.spec.InvalidParameterSpecException;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import javax.crypto.KeyAgreement;
 
-import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
-import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERNull;
-import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
-import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.ECPointUtil;
-import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-import org.bouncycastle.jce.spec.ECNamedCurveSpec;
 import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECCurve;
 import org.jruby.Ruby;
@@ -88,7 +82,6 @@ import org.jruby.runtime.component.VariableEntry;
 import org.jruby.ext.openssl.impl.CipherSpec;
 import org.jruby.ext.openssl.impl.ECPrivateKeyWithName;
 
-import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
 import static org.jruby.ext.openssl.OpenSSL.debug;
@@ -181,7 +174,7 @@ public final class PKeyEC extends PKey {
         if (curveName == null) return Optional.empty();
         // work-around getNamedCurveOid not being able to handle "... " (assuming spacePos + 1 is valid index)
         if (curveName.indexOf(' ') == curveName.length() - 1) return Optional.empty();
-        ASN1ObjectIdentifier oid = org.bouncycastle.asn1.x9.ECNamedCurveTable.getOID(curveName);
+        ASN1ObjectIdentifier oid = ECNamedCurveTable.getOID(curveName);
         if (oid == null) { // input might already be an OID string (e.g. "1.2.840.10045.3.1.7")
             try { oid = new ASN1ObjectIdentifier(curveName); }
             catch (IllegalArgumentException e) { /* not a valid OID string */ }
@@ -194,9 +187,23 @@ public final class PKeyEC extends PKey {
     }
 
     private static String getCurveName(final ASN1ObjectIdentifier oid) {
-        final String name = org.bouncycastle.asn1.x9.ECNamedCurveTable.getName(oid);
+        final String name = ECNamedCurveTable.getName(oid);
         if (name == null) throw new IllegalStateException("could not identify curve name from: " + oid);
         return name;
+    }
+
+    private static ASN1ObjectIdentifier findNamedCurveOID(final ECParameterSpec ecSpec) {
+        final Enumeration<String> names = ECNamedCurveTable.getNames();
+        while (names.hasMoreElements()) {
+            // resolve a ECParameterSpec by matching order+cofactor+field
+            final String name = names.nextElement();
+            final X9ECParameters x9 = ECNamedCurveTable.getByName(name);
+            final BigInteger ecPrime = ((ECFieldFp) ecSpec.getCurve().getField()).getP();
+            if (x9.getN().equals(ecSpec.getOrder()) && x9.getCurve().getField().getCharacteristic().equals(ecPrime)) {
+                return ECNamedCurveTable.getOID(name);
+            }
+        }
+        return null;
     }
 
     public PKeyEC(Ruby runtime, RubyClass type) {
@@ -234,10 +241,6 @@ public final class PKeyEC extends PKey {
             curveName = group.getCurveName();
         }
         return curveName;
-    }
-
-    private ECNamedCurveParameterSpec getParameterSpec() {
-        return ECNamedCurveTable.getParameterSpec(getCurveName());
     }
 
     @Override
@@ -419,11 +422,6 @@ public final class PKeyEC extends PKey {
 
         return this;
     }
-
-    //private static ECNamedCurveParameterSpec readECParameters(final byte[] input) throws IOException {
-    //    ASN1ObjectIdentifier oid = ASN1ObjectIdentifier.getInstance(input);
-    //    return ECNamedCurveTable.getParameterSpec(oid.getId());
-    //}
 
     @JRubyMethod
     public IRubyObject check_key(final ThreadContext context) {
@@ -622,13 +620,24 @@ public final class PKeyEC extends PKey {
         }
     }
 
-    /**
-     * @see ECNamedCurveSpec
-     */
+    // converts ASN1-layer named curve params to JCA ECParameterSpec
     private static ECParameterSpec getParamSpec(final String curveName) {
-        final ECNamedCurveParameterSpec ecCurveParamSpec = ECNamedCurveTable.getParameterSpec(curveName);
-        final EllipticCurve curve = EC5Util.convertCurve(ecCurveParamSpec.getCurve(), ecCurveParamSpec.getSeed());
-        return EC5Util.convertSpec(curve, ecCurveParamSpec);
+        final org.bouncycastle.asn1.x9.X9ECParameters x9 =
+            org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName(curveName);
+        if (x9 == null) return null;
+
+        final org.bouncycastle.math.ec.ECCurve bcCurve = x9.getCurve();
+        final EllipticCurve curve = new EllipticCurve(
+            new ECFieldFp(bcCurve.getField().getCharacteristic()),
+            bcCurve.getA().toBigInteger(),
+            bcCurve.getB().toBigInteger(),
+            x9.getSeed()
+        );
+        final ECPoint generator = new ECPoint(
+            x9.getG().getAffineXCoord().toBigInteger(),
+            x9.getG().getAffineYCoord().toBigInteger()
+        );
+        return new ECParameterSpec(curve, generator, x9.getN(), x9.getH().intValue());
     }
 
     private ECParameterSpec getParamSpec() {
@@ -758,17 +767,14 @@ public final class PKeyEC extends PKey {
     }
 
     private static X962Parameters getDomainParametersFromName(ECParameterSpec ecSpec, boolean compressed) {
-        if (ecSpec instanceof ECNamedCurveSpec) {
-            ASN1ObjectIdentifier curveOid = org.bouncycastle.asn1.x9.ECNamedCurveTable.getOID(((ECNamedCurveSpec)ecSpec).getName());
-            if (curveOid == null)
-            {
-                curveOid = new ASN1ObjectIdentifier(((ECNamedCurveSpec)ecSpec).getName());
-            }
-            return new X962Parameters(curveOid);
+        if (ecSpec != null) {
+            // try to resolve as a named curve by matching order against the ASN1 curve table
+            ASN1ObjectIdentifier curveOid = findNamedCurveOID(ecSpec);
+            if (curveOid != null) return new X962Parameters(curveOid);
         }
-        if (ecSpec == null) {
-            return new X962Parameters(DERNull.INSTANCE);
-        }
+
+        if (ecSpec == null) return new X962Parameters(DERNull.INSTANCE);
+
         ECCurve curve = EC5Util.convertCurve(ecSpec.getCurve());
 
         X9ECParameters ecParameters = new X9ECParameters(

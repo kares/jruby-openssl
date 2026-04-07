@@ -74,7 +74,6 @@ import org.bouncycastle.asn1.x509.DSAParameter;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
-import org.bouncycastle.jcajce.provider.asymmetric.util.KeyUtil;
 import org.bouncycastle.openssl.PEMParser;
 
 import org.jruby.ext.openssl.SecurityHelper;
@@ -386,10 +385,8 @@ public class PKey {
     }
 
     public static byte[] toDerRSAPublicKey(final RSAPublicKey pubKey) throws IOException {
-        // pubKey.getEncoded() :
-        return KeyUtil.getEncodedSubjectPublicKeyInfo(
-                new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, DERNull.INSTANCE), toASN1Primitive(pubKey)
-        );
+        AlgorithmIdentifier algIdentifier = new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, DERNull.INSTANCE);
+        return new SubjectPublicKeyInfo(algIdentifier, toASN1Primitive(pubKey)).getEncoded(); // pubKey.getEncoded()
     }
 
     public static ASN1Sequence toASN1Primitive(final RSAPublicKey publicKey) {

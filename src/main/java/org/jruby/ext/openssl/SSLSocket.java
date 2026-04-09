@@ -421,9 +421,34 @@ public class SSLSocket extends RubyObject {
         }
 
         sslContext.sessionAcceptGoodCount++;
+        callServernameCallback(context);
         callSessionNewCallback(context);
 
         return this;
+    }
+
+    // fires servername_cb on the server after handshake with the client's SNI hostname;
+    // MRI fires during handshake via SSL_CTX_set_tlsext_servername_callback and can switch SSL_CTX;
+    // JSSE does not support mid-handshake context switching so we fire after the handshake
+    private void callServernameCallback(final ThreadContext context) {
+        IRubyObject callback = sslContext.getInstanceVariable("@servername_cb");
+        if (callback == null || callback.isNil()) return;
+
+        final String serverName = BCSSLSupport.getRequestedServerName(engine);
+        if (serverName == null) return;
+
+        final Ruby runtime = context.runtime;
+        IRubyObject ret = callback.callMethod(context, "call",
+                runtime.newArray(this, runtime.newString(serverName)));
+
+        if (ret instanceof SSLContext) { // MRI stores returned context as @context
+            // mostly useless: cannot switch engine's SSL context post-handshake
+            setInstanceVariable("@context", ret);
+            // this.sslContext = (SSLContext) ret;
+        } else if (!ret.isNil()) {
+            throw runtime.newArgumentError("servername_cb must return OpenSSL::SSL::SSLContext object or nil " +
+                    "(got: " + ret.inspect() + ")");
+         }
     }
 
     private void verifyHostnameConnectionCheck(final ThreadContext context) {

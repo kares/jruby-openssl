@@ -570,12 +570,14 @@ class TestSSL < TestCase
   def test_tlsext_hostname
     return unless OpenSSL::SSL::SSLSocket.instance_methods.include?(:hostname)
 
+    called = {}
     fooctx = OpenSSL::SSL::SSLContext.new
     fooctx.cert = @cli_cert
     fooctx.key = @cli_key
 
     ctx_proc = Proc.new do |ctx, ssl|
       ctx.servername_cb = Proc.new do |ssl2, hostname|
+        called[hostname] = true
         case hostname
           when 'foo.example.com'
             fooctx
@@ -590,20 +592,21 @@ class TestSSL < TestCase
     server_proc = Proc.new { |ctx, ssl| readwrite_loop(ctx, ssl) }
 
     start_server(OpenSSL::SSL::VERIFY_NONE, true, :ctx_proc => ctx_proc, :server_proc => server_proc) do |server, port|
-      2.times do |i|
-        ctx = OpenSSL::SSL::SSLContext.new
-        if defined?(OpenSSL::SSL::OP_NO_TICKET)
-          # disable RFC4507 support
-          ctx.options = OpenSSL::SSL::OP_NO_TICKET
-        end
-        server_connect(port, ctx) { |ssl|
-          ssl.hostname = (i & 1 == 0) ? 'foo.example.com' : 'bar.example.com'
-          str = "x" * 100 + "\n"
-          ssl.puts(str)
-          assert_equal(str, ssl.gets)
-        }
+      ['foo.example.com', 'bar.example.com'].each do |host|
+        ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+        sock = TCPSocket.new('127.0.0.1', port)
+        ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+        ssl.sync_close = true
+        ssl.hostname = host # must be set before connect for SNI
+        ssl.connect
+        str = "x" * 100 + "\n"
+        ssl.puts(str)
+        assert_equal(str, ssl.gets)
+        ssl.close
       end
     end
+    assert called['foo.example.com'], 'servername_cb should be called for foo.example.com'
+    assert called['bar.example.com'], 'servername_cb should be called for bar.example.com'
   end
 
   CUSTOM_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:" +

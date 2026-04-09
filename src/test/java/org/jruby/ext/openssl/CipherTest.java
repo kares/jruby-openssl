@@ -1,5 +1,6 @@
 package org.jruby.ext.openssl;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -7,6 +8,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author kares
  */
 public class CipherTest {
+
+    @BeforeAll
+    public static void setFipsMode() {
+        SecurityHelper.setFipsMode(false);
+    }
 
     @Test
     public void ciphersGetLazyInitialized() {

@@ -1,14 +1,6 @@
 
 package org.jruby.ext.openssl;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
-
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
@@ -16,36 +8,43 @@ import java.security.Security;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author kares
  */
 public class SecurityHelperTest {
 
-    // @BeforeClass
-    public static void setBouncyCastleProvider() {
-        SecurityHelper.setBouncyCastleProvider(SecurityHelper.BC_PROVIDER_CLASS);
+    @BeforeAll
+    public static void setFipsMode() {
+        resetProvidersState();
+        SecurityHelper.setFipsMode(false);
     }
 
-    private Provider savedProvider;
-
-    @BeforeEach
-    public void saveSecurityProvider() {
-        savedProvider = SecurityHelper.securityProvider;
+    @AfterAll
+    public static void resetProvidersState() {
+        Security.removeProvider("BC");
+        Security.removeProvider("BCJSSE");
+        SecurityHelper.securityProvider = null;
+        SecurityHelper.initSecurityProvider = true;
+        SecurityHelper.jsseProvider = null;
+        SecurityHelper.initJsseProvider = true;
+        SecurityHelper.registerProvider = null;
     }
 
     @AfterEach
-    public void restoreSecurityProvider() {
-        SecurityHelper.securityProvider = savedProvider;
-        SecurityHelper.setBouncyCastleProvider = true;
+    public void resetState() {
+        resetProvidersState();
     }
 
     public void disableSecurityProvider() {
         SecurityHelper.securityProvider = null;
-        SecurityHelper.setBouncyCastleProvider = false;
+        SecurityHelper.initSecurityProvider = false;
     }
 
     private static Provider getProvider() {
@@ -62,18 +61,16 @@ public class SecurityHelperTest {
 
     @Test
     public void allowsToSetSecurityProvider() {
-        final Provider provider;
-        try {
-            Class providerClass = Class.forName("sun.security.provider.Sun");
-            provider = (Provider) providerClass.newInstance();
-        }
-        catch (Exception e) {
-            System.out.println("allowsToSetSecurityProvider() skipped due: " + e);
-            return;
-        }
+        final Provider provider = new DummyProvider();
         SecurityHelper.setSecurityProvider(provider);
 
         assertSame(provider, SecurityHelper.getSecurityProvider());
+    }
+
+    public final class DummyProvider extends Provider {
+        public DummyProvider() {
+            super("DUMMY", 1.0, SecurityHelperTest.this.toString());
+        }
     }
 
     @Test
@@ -101,10 +98,35 @@ public class SecurityHelperTest {
     public void attemptsSecurityProviderRegistration() {
         final String register = System.getProperty("jruby.openssl.provider.register");
         System.setProperty("jruby.openssl.provider.register", "true");
+        assertNull(SecurityHelper.securityProvider);
         try {
             SecurityHelper.checkAndRegisterProviderOnce();
-            assertNotNull(java.security.Security.getProvider("BC"));
+            assertNotNull(SecurityHelper.getSecurityProvider()); // trigger
+            assertNotNull(SecurityHelper.securityProvider);
             assertTrue(SecurityHelper.isProviderRegistered());
+            assertNotNull(java.security.Security.getProvider("BC"));
+        }
+        finally {
+            java.security.Security.removeProvider("BC");
+            SecurityHelper.setRegisterProvider(false);
+            if (register == null) {
+                System.clearProperty("jruby.openssl.provider.register");
+            } else {
+                System.setProperty("jruby.openssl.provider.register", register);
+            }
+        }
+    }
+
+    @Test
+    public void registersSecurityProviderRegistrationWhenInitialized() {
+        SecurityHelper.getSecurityProvider(); // BC provider initialized
+
+        final String register = System.getProperty("jruby.openssl.provider.register");
+        System.setProperty("jruby.openssl.provider.register", "true");
+        try {
+            SecurityHelper.setRegisterProvider(true);
+            assertTrue(SecurityHelper.isProviderRegistered());
+            assertNotNull(java.security.Security.getProvider("BC"));
         }
         finally {
             java.security.Security.removeProvider("BC");
@@ -185,8 +207,6 @@ public class SecurityHelperTest {
         }
     }
 
-    //
-
     @Test
     public void testGetKeyStore() throws Exception {
         assertNotNull( SecurityHelper.getKeyStore("PKCS12") );
@@ -217,8 +237,6 @@ public class SecurityHelperTest {
             // OK
         }
     }
-
-    //
 
     @Test
     public void testGetMessageDigest() throws Exception {
@@ -253,8 +271,6 @@ public class SecurityHelperTest {
         }
     }
 
-    //
-
     @Test
     public void testGetSignature() throws Exception {
         assertNotNull( SecurityHelper.getSignature("NONEwithRSA") );
@@ -285,8 +301,6 @@ public class SecurityHelperTest {
             // OK
         }
     }
-
-    //
 
     @Test
     public void testGetCertificateFactory() throws Exception {
@@ -380,8 +394,6 @@ public class SecurityHelperTest {
         }
     }
 
-    //
-
     @Test
     public void testGetMac() throws Exception {
         assertNotNull( SecurityHelper.getMac("HmacMD5") );
@@ -413,8 +425,6 @@ public class SecurityHelperTest {
             // OK
         }
     }
-
-    //
 
     @Test
     public void testGetKeyGenerator() throws Exception {

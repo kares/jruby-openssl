@@ -23,6 +23,7 @@
  */
 package org.jruby.ext.openssl;
 
+import java.lang.reflect.Constructor;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
@@ -65,28 +66,32 @@ public abstract class SecurityHelper {
     static final String BC_PROVIDER_CLASS = "org.bouncycastle.jce.provider.BouncyCastleProvider";
     static final String BC_FIPS_PROVIDER_CLASS = "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider";
 
-    static volatile boolean setBouncyCastleProvider = true;
+    static volatile boolean initSecurityProvider = true;
     static volatile Provider securityProvider; // 'BC' (or 'BCFIPS') provider
-    private static volatile Boolean registerProvider;
+    static volatile Boolean registerProvider;
 
-    private static String BC_JSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
-    static boolean setJsseProvider = true;
+    static final String BC_JSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
+    static volatile boolean initJsseProvider = true;
     static volatile Provider jsseProvider;
 
+    /**
+     * @implNote needs to be lazy; happen after {@link #setFipsMode(boolean)}
+     * @return BC security provider
+     */
     public static Provider getSecurityProvider() {
         Provider provider = securityProvider;
-        if (provider == null && setBouncyCastleProvider) {
+        if (provider == null && initSecurityProvider) {
             provider = initSecurityProvider(isFipsMode() ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS);
+            if (provider != null) doRegisterProvider(provider);
         }
-        doRegisterProvider(provider);
         return provider;
     }
 
     private static synchronized Provider initSecurityProvider(final String className) {
         Provider provider = securityProvider;
-        if (provider == null && setBouncyCastleProvider) {
+        if (provider == null && initSecurityProvider) {
             provider = setBouncyCastleProvider(className);
-            setBouncyCastleProvider = false;
+            initSecurityProvider = false;
         }
         return provider;
     }
@@ -103,36 +108,60 @@ public abstract class SecurityHelper {
     }
 
     /**
-     * @implNote EXPERIMENTAL (returns no provider by default)
+     * @return BCJSSE (SSL SPI) provider
      */
-    static Provider getJsseProvider(final String name) {
+    static Provider getJsseProvider() {
         Provider provider = jsseProvider;
-        if (provider == null && setJsseProvider) provider = tryJsseProvider(name);
+        if (provider == null && initJsseProvider) {
+            provider = initJsseProvider(sslProviderName);
+        }
         return provider;
     }
 
-    private static synchronized Provider tryJsseProvider(final String name) {
+    private static synchronized Provider initJsseProvider(final String name) {
         Provider provider = jsseProvider;
-        if (provider == null && setJsseProvider) {
+        if (provider == null && initJsseProvider) {
             try {
                 provider = Security.getProvider(name);
             } catch (Exception ex) {
                 debug("[JOpenSSL] failed to get provider: " + name, ex);
             }
             if (provider == null && "BCJSSE".equals(name)) {
-                provider = newBouncyCastleProvider(BC_JSSE_PROVIDER_CLASS);
+                provider = newBouncyCastleJsseProvider();
+            } else {
+                debug("[JOpenSSL] unknown ssl provider name: " + name);
             }
             jsseProvider = provider;
-            if (provider != null) setJsseProvider = false;
+            initJsseProvider = false;
         }
         return provider;
+    }
+
+    private static Provider newBouncyCastleJsseProvider() {
+        try {
+            final Provider cryptoProvider = getSecurityProvider();
+            // Default JDK security provider lack certain algorithms that BCJSSE's TLS 1.3 implementation
+            // requires for key exchange - e.g. EC operations needed for the TLS 1.3 key_share extension
+            if (cryptoProvider != null) {
+                Constructor<?> init = Class.forName(BC_JSSE_PROVIDER_CLASS).getConstructor(Provider.class);
+                return (Provider) init.newInstance(cryptoProvider); // new BouncyCastleJsseProvider(Provider)
+            } else {
+                final Object provider = Class.forName(BC_JSSE_PROVIDER_CLASS).newInstance();
+                debug("[JOpenSSL] instantiated JSSE provider without default BC provider " +
+                        "(features such as TLS key_share extension will be limited)");
+                return (Provider) provider;
+            }
+        } catch (ReflectiveOperationException ex) {
+            debug("[JOpenSSL] WARN: can not instantiate JSSE provider (" + BC_JSSE_PROVIDER_CLASS + ")", ex);
+        }
+        return null;
     }
 
     private static Provider newBouncyCastleProvider(final String klass) {
         try {
             return (Provider) Class.forName(klass).newInstance();
         } catch (ReflectiveOperationException ex) {
-            debug("[JOpenSSL] can not instantiate provider (" + klass  + ")", ex);
+            debug("[JOpenSSL] WARN: can not instantiate provider (" + klass  + ")", ex);
         }
         return null;
     }
@@ -166,7 +195,8 @@ public abstract class SecurityHelper {
 
     static synchronized void setRegisterProvider(final boolean register) {
         registerProvider = Boolean.valueOf(register);
-        if (register) getSecurityProvider();
+        Provider provider = securityProvider;
+        if (provider != null) doRegisterProvider(provider);
     }
 
     static boolean isProviderAvailable(final String name) {
@@ -400,15 +430,15 @@ public abstract class SecurityHelper {
         return SecretKeyFactory.getInstance(algorithm, provider);
     }
 
-    private static final String sslProviderName; // NOTE: experimental support for using BCJSSE
+    private static final String sslProviderName;
     static {
-        String sslProvider = SafePropertyAccessor.getProperty("jruby.openssl.ssl.provider", "");
+        String sslProvider = SafePropertyAccessor.getProperty("jruby.openssl.provider.ssl", "BCJSSE");
         switch (sslProvider.trim()) {
-            case "BC": case "true":
+            case "BC": case "bc": case "bcjsse": case "BCJSSE": case "true":
                 sslProvider = "BCJSSE";
                 break;
-            case "":  case "false":
-                sslProvider = null;
+            case "": case "false":
+                sslProvider = null; // usually SunJSSE (default) on OpenJDK
                 break;
         }
         sslProviderName = sslProvider;
@@ -416,8 +446,8 @@ public abstract class SecurityHelper {
 
     public static SSLContext getSSLContext(final String protocol) throws NoSuchAlgorithmException {
         try {
-            if (sslProviderName != null && !"SSL".equals(protocol)) { // only TLS supported in BCJSSE
-                final Provider provider = getJsseProvider(sslProviderName);
+            if (sslProviderName == "BCJSSE" && !"SSL".equals(protocol)) { // only TLS supported in BCJSSE
+                final Provider provider = getJsseProvider();
                 if (provider != null) return getSSLContext(protocol, provider);
             }
         }

@@ -2243,6 +2243,26 @@ public class CipherStrings {
         SuiteToOSSL.put("SSL_RSA_WITH_AES_256_GCM_SHA384",         "AES256-GCM-SHA384");
         SuiteToOSSL.put("SSL_RSA_WITH_NULL_SHA256",                "NULL-SHA256");
 
+        // TLS v1.2 CHACHA20-POLY1305 cipher suites (RFC 7905) :
+
+        SuiteToOSSL.put("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", name = "ECDHE-ECDSA-CHACHA20-POLY1305");
+        CipherNames.put(name, new Def(name,
+                SSL_kECDHE|SSL_aECDSA|SSL_CHACHA20|SSL_SHA|SSL_TLSV1,
+                SSL_NOT_EXP|SSL_HIGH, 256, 256, SSL_ALL_CIPHERS, SSL_ALL_STRENGTHS
+        ));
+
+        SuiteToOSSL.put("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", name = "ECDHE-RSA-CHACHA20-POLY1305");
+        CipherNames.put(name, new Def(name,
+                SSL_kECDHE|SSL_aRSA|SSL_CHACHA20|SSL_SHA|SSL_TLSV1,
+                SSL_NOT_EXP|SSL_HIGH, 256, 256, SSL_ALL_CIPHERS, SSL_ALL_STRENGTHS
+        ));
+
+        SuiteToOSSL.put("TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256", name = "DHE-RSA-CHACHA20-POLY1305");
+        CipherNames.put(name, new Def(name,
+                SSL_kEDH|SSL_aRSA|SSL_CHACHA20|SSL_SHA|SSL_TLSV1,
+                SSL_NOT_EXP|SSL_HIGH, 256, 256, SSL_ALL_CIPHERS, SSL_ALL_STRENGTHS
+        ));
+
         // TLS v1.3 (Java 8/11) streaming ciphers :
         // TODO the specifics of using these on 1.3 only is not implemented
 

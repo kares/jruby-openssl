@@ -545,6 +545,28 @@ class TestSSL < TestCase
     end
   end
 
+  def test_renegotiation_cb_is_server_only
+    server_called = 0
+    client_called = 0
+    ctx_proc = Proc.new { |ctx|
+      ctx.renegotiation_cb = Proc.new { |ssl| server_called += 1 }
+    }
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |_server, port|
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      ctx.renegotiation_cb = Proc.new { |ssl| client_called += 1 }
+      sock = TCPSocket.new('127.0.0.1', port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+      ssl.puts 'hello'; assert_equal "hello\n", ssl.gets
+
+      # CRuby only fires renegotiation_cb server-side
+      assert_equal 1, server_called, 'server renegotiation_cb should fire once'
+      assert_equal 0, client_called, 'client renegotiation_cb should not fire'
+      ssl.close
+    end
+  end
+
   def test_tlsext_hostname
     return unless OpenSSL::SSL::SSLSocket.instance_methods.include?(:hostname)
 

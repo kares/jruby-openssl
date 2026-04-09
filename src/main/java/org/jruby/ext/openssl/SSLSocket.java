@@ -49,6 +49,7 @@ import org.jruby.*;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.x509store.X509Utils;
+import org.jruby.javasupport.JavaUtil;
 import org.jruby.runtime.*;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.callsite.FunctionalCachingCallSite;
@@ -230,7 +231,7 @@ public class SSLSocket extends RubyObject {
         netWriteData.limit(0);
 
         this.engine = engine;
-        copySessionSetupIfSet(context);
+        tryResumeSessionIfSet(context);
 
         sslContext.setApplicationProtocolsOrSelector(engine);
 
@@ -1215,7 +1216,7 @@ public class SSLSocket extends RubyObject {
             }
             // return getRuntime().getFalse(); // incorrect (we can not decide)
         }
-        javax.net.ssl.SSLSession session = sslSession();
+        javax.net.ssl.SSLSession session = engine.getSession();
         if (!isNullSession(session)) {
             if (session.getCreationTime() < this.initializeTime) {
                 return getRuntime().getTrue();
@@ -1230,8 +1231,11 @@ public class SSLSocket extends RubyObject {
 
     // JSSE: SSL Sessions can be reused only if connecting to the same host at the same port
 
+    /**
+     * @return session object (in case of BCJSSE the {@link org.bouncycastle.jsse.BCExtendedSSLSession})
+     */
     final javax.net.ssl.SSLSession sslSession() {
-        return engine == null ? null : engine.getSession();
+        return engine == null ? null : BCSSLSupport.getBCSession(engine);
     }
 
     static boolean isNullSession(final javax.net.ssl.SSLSession session) {
@@ -1242,13 +1246,13 @@ public class SSLSocket extends RubyObject {
 
     @JRubyMethod(name = "session")
     public IRubyObject session(final ThreadContext context) {
-        if ( sslSession() == null ) return context.nil;
+        if (sslSession() == null) return context.nil;
         return getSession(context.runtime);
     }
 
     private SSLSession getSession(final Ruby runtime) {
-        if ( session == null ) {
-            return session = new SSLSession(runtime).initializeImpl(this);
+        if (session == null) {
+            session = new SSLSession(runtime).initializeImpl(this);
         }
         return session;
     }
@@ -1257,28 +1261,34 @@ public class SSLSocket extends RubyObject {
 
     @JRubyMethod(name = "session=")
     public IRubyObject set_session(final ThreadContext context, IRubyObject session) {
-        // NOTE: we can not fully support this without the SSL provider internals
-        // but we can assume setting a session= is meant as a forced session re-use
-        if ( session instanceof SSLSession ) {
+        if (session instanceof SSLSession) {
             setSession = (SSLSession) session;
-            if ( engine != null ) copySessionSetupIfSet(context);
+            if (engine != null) tryResumeSessionIfSet(context);
+            return session;
         }
-        //warn(context, "WARNING: SSLSocket#session= has not effect");
+
+        Object javaSession = JavaUtil.unwrapJavaValue(session);
+        if (javaSession instanceof javax.net.ssl.SSLSession) {
+            setSession = new SSLSession(context.runtime, (javax.net.ssl.SSLSession) javaSession);
+            if (engine != null) tryResumeSessionIfSet(context);
+            return session;
+        }
+
         return context.nil;
     }
 
-    @Deprecated
-    public IRubyObject set_session(IRubyObject session) {
-        return set_session(getRuntime().getCurrentContext(), session);
-    }
+    private void tryResumeSessionIfSet(final ThreadContext context) {
+        if (setSession == null) return;
 
-    private void copySessionSetupIfSet(final ThreadContext context) {
-        if ( setSession != null ) {
-            if ( reusableSSLEngine() ) {
-                engine.setEnableSessionCreation(false);
-                if ( ! setSession.equals( getSession(context.runtime) ) ) {
-                    getSession(context.runtime).set_timeout(context, setSession.timeout(context));
-                }
+        if (BCSSLSupport.setBCSessionToResume(engine, setSession.sslSession())) return;
+
+        // can not support this without the (BC) SSL provider internals (e.g. on SunJSSE)
+        // but we can assume setting a session= is meant to be a *forced* session re-use:
+        if (reusableSSLEngine()) {
+            engine.setEnableSessionCreation(false);
+            final SSLSession session = getSession(context.runtime);
+            if (!setSession.equals(session)) {
+                session.set_timeout(context, setSession.timeout(context));
             }
         }
     }

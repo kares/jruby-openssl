@@ -67,6 +67,11 @@ public class SSLSession extends RubyObject {
         this(runtime, (RubyClass) _SSL(runtime).getConstantAt("Session"));
     }
 
+    SSLSession(Ruby runtime, javax.net.ssl.SSLSession session) {
+        this(runtime);
+        this.sslSession = session;
+    }
+
     @JRubyMethod(name = "initialize", visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, final IRubyObject arg) {
         final Ruby runtime = context.runtime;

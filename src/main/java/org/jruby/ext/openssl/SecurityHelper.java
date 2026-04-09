@@ -142,6 +142,7 @@ public abstract class SecurityHelper {
     private static final int FIPS_MODE_FALSE = -1;
 
     public static boolean isFipsMode() {
+        assert FIPS_MODE.get() != 0;
         return FIPS_MODE.get() == FIPS_MODE_TRUE;
     }
 

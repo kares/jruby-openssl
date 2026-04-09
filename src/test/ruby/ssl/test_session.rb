@@ -98,6 +98,49 @@ class TestSSLSession < TestCase
     end
   end
 
+  def test_session_to_der_and_to_pem
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |_server, port|
+      sock = TCPSocket.new('127.0.0.1', port)
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+
+      session = ssl.session
+      pem = session.to_pem
+      der = session.to_der
+
+      assert_match(/\A-----BEGIN SSL SESSION PARAMETERS-----/, pem)
+      assert_match(/-----END SSL SESSION PARAMETERS-----\n?\Z/, pem)
+
+      body = pem.gsub(/-----(BEGIN|END) SSL SESSION PARAMETERS-----/, '').gsub(/[\r\n]+/m, '')
+      assert_equal der, body.unpack1('m')
+      assert der.bytesize > 0
+
+      ssl.close
+    end
+  end
+
+  def test_session_to_text
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |_server, port|
+      sock = TCPSocket.new('127.0.0.1', port)
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+
+      text = ssl.session.to_text
+
+      assert_match(/\ASSL-Session:\n/, text)
+      assert_match(/Protocol\s+: /, text)
+      assert_match(/Session-ID: [0-9A-F]+\n/, text)
+      assert_match(/Time\s+: /, text)
+      assert_match(/Timeout\s+: \d+ \(sec\)/, text)
+
+      ssl.close
+    end
+  end
+
   def test_exposes_session_error
     OpenSSL::SSL::Session::SessionError
   end

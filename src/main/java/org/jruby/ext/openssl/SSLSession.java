@@ -23,9 +23,16 @@
  */
 package org.jruby.ext.openssl;
 
+import java.io.IOException;
 import java.util.Arrays;
+import java.util.Base64;
 import javax.net.ssl.SSLSessionContext;
 
+import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.DERTaggedObject;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
@@ -38,8 +45,8 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
-import org.jruby.util.ByteList;
 
+import static org.jruby.ext.openssl.OpenSSL.debug;
 import static org.jruby.ext.openssl.OpenSSL.warn;
 import static org.jruby.ext.openssl.SSL._SSL;
 
@@ -49,6 +56,12 @@ import static org.jruby.ext.openssl.SSL._SSL;
  * @author kares
  */
 public class SSLSession extends RubyObject {
+
+    // 24h default in BCJSSE as well as SunJSSE (default in OpenSSL is 300)
+    static final int DEFAULT_SESSION_TIMEOUT = 86400;
+
+    private static final String PEM_BEGIN = "-----BEGIN SSL SESSION PARAMETERS-----";
+    private static final String PEM_END = "-----END SSL SESSION PARAMETERS-----";
 
     static void createSession(final Ruby runtime, final RubyModule SSL, final RubyClass OpenSSLError) { // OpenSSL::SSL
         RubyClass Session = SSL.defineClassUnder("Session", runtime.getObject(), (r, klass) -> new SSLSession(r, klass));
@@ -74,13 +87,20 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "initialize", visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, final IRubyObject arg) {
-        final Ruby runtime = context.runtime;
-
-        if ( arg instanceof SSLSocket ) {
+        if (arg instanceof SSLSocket) {
             return initializeImpl((SSLSocket) arg);
         }
+        throw context.runtime.newNotImplementedError("OpenSSL::SSL::Session#initialize with non-SSL socket");
+    }
 
-        throw runtime.newNotImplementedError("Session#initialize with " + arg.getMetaClass().getName());
+    @JRubyMethod(name = "initialize_copy", visibility = Visibility.PRIVATE)
+    public IRubyObject initialize_copy(final ThreadContext context, final IRubyObject other) {
+        if (!(other instanceof SSLSession)) {
+            throw context.runtime.newTypeError(other, getMetaClass());
+        }
+        final SSLSession that = (SSLSession) other;
+        this.sslSession = that.sslSession;
+        return this;
     }
 
     SSLSession initializeImpl(final SSLSocket socket) {
@@ -99,20 +119,22 @@ public class SSLSession extends RubyObject {
 
     @Override
     public boolean equals(final Object other) {
-        if ( other instanceof SSLSession ) {
+        if (other instanceof SSLSession) {
             final SSLSession that = (SSLSession) other;
-            if ( this.sslSession.getProtocol().equals( that.sslSession.getProtocol() ) ) {
-                if ( Arrays.equals( this.sslSession.getId(), that.sslSession.getId() ) ) {
-                    return true;
-                }
-            }
+            final String thisProtocol = this.getProtocol();
+            final String thatProtocol = that.getProtocol();
+            if (thisProtocol == null || thatProtocol == null) return false;
+            return thisProtocol.equals(thatProtocol) && Arrays.equals(getIdBytes(), that.getIdBytes());
         }
         return false;
     }
 
     @Override
     public final int hashCode() {
-        return 17 * sslSession.hashCode();
+        int hash = Arrays.hashCode(getIdBytes());
+        final String proto = getProtocol();
+        hash = 31 * hash + (proto == null ? 0 : proto.hashCode());
+        return hash;
     }
 
     @Override
@@ -122,8 +144,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "id")
     public RubyString id(final ThreadContext context) {
-        final byte[] id = sslSession().getId();
-        return context.runtime.newString( new ByteList(id) );
+        return StringHelper.newString(context.runtime, getIdBytes());
     }
 
     @JRubyMethod(name = "id=")
@@ -146,27 +167,58 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "timeout")
     public IRubyObject timeout(final ThreadContext context) {
-        final SSLSessionContext sessionContext = sslSession().getSessionContext();
-        if (sessionContext == null) {
-            // JDK's default is 24h (default in OpenSSL is 300)
-            return context.runtime.newFixnum(86400);
-        }
-        return context.runtime.newFixnum(sessionContext.getSessionTimeout());
+        return context.runtime.newFixnum(getTimeout());
+    }
+
+    private int getTimeout() {
+        final SSLSessionContext sessionContext = sslSession.getSessionContext();
+        if (sessionContext == null) return DEFAULT_SESSION_TIMEOUT;
+        return sessionContext.getSessionTimeout();
     }
 
     @JRubyMethod(name = "timeout=")
     public IRubyObject set_timeout(final ThreadContext context, IRubyObject timeout) {
         final SSLSessionContext sessionContext = sslSession().getSessionContext();
-        if ( sessionContext == null ) {
-            warn(context, "WARNING: can not set OpenSSL::SSL::Session#timeout=("+ timeout +") no session context");
-            return context.nil;
-        }
+        if (sessionContext == null) return context.nil;
+
         try {
             sessionContext.setSessionTimeout(RubyNumeric.fix2int(timeout)); // in seconds as well
         } catch (IllegalArgumentException e) {
             throw context.runtime.newArgumentError(e.getMessage());
         }
-        return timeout;
+        return timeout(context);
+    }
+
+    @JRubyMethod(name = "to_der")
+    public RubyString to_der(final ThreadContext context) {
+        try {
+            return StringHelper.newString(context.runtime, buildDERSequence().getEncoded());
+        } catch (IOException e) {
+            throw context.runtime.newRuntimeError(e.getMessage());
+        }
+    }
+
+    @JRubyMethod(name = "to_pem")
+    public RubyString to_pem(final ThreadContext context) {
+        final byte[] derBytes;
+        try {
+            derBytes = buildDERSequence().getEncoded();
+        } catch (IOException e) {
+            throw context.runtime.newRuntimeError(e.getMessage());
+        }
+        final String base64 = Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(derBytes);
+        return StringHelper.newString(context.runtime, PEM_BEGIN + "\n" + base64 + "\n" + PEM_END);
+    }
+
+    @JRubyMethod(name = "to_text")
+    public RubyString to_text(final ThreadContext context) {
+        final StringBuilder text = new StringBuilder(192);
+        text.append("SSL-Session:\n");
+        text.append("    Protocol  : ").append(getProtocol()).append('\n');
+        text.append("    Session-ID: ").append(toHex(getIdBytes())).append('\n');
+        text.append("    Time      : ").append(getTimeInSeconds()).append('\n');
+        text.append("    Timeout   : ").append(getTimeout()).append(" (sec)\n");
+        return StringHelper.newString(context.runtime, text);
     }
 
     @Override
@@ -175,6 +227,52 @@ public class SSLSession extends RubyObject {
             return sslSession;
         }
         return super.toJava(target);
+    }
+
+    private byte[] getIdBytes() {
+        if (sslSession != null) return sslSession.getId();
+        return new byte[0];
+    }
+
+    private String getProtocol() {
+        if (sslSession != null) return sslSession.getProtocol();
+        return null;
+    }
+
+    private long getTimeInSeconds() {
+        return sslSession.getCreationTime() / 1000;
+    }
+
+    private DERSequence buildDERSequence() {
+        final ASN1EncodableVector v = new ASN1EncodableVector();
+        v.add(new ASN1Integer(1));
+        v.add(new ASN1Integer(versionFromProtocol(getProtocol())));
+        v.add(new DEROctetString(new byte[] { 0x00, 0x00 }));
+        v.add(new DEROctetString(getIdBytes()));
+        v.add(new DEROctetString(new byte[0]));
+
+        final long time = getTimeInSeconds();
+        v.add(new DERTaggedObject(true, 1, new ASN1Integer(time)));
+        v.add(new DERTaggedObject(true, 2, new ASN1Integer(getTimeout())));
+        return new DERSequence(v);
+    }
+
+    private static int versionFromProtocol(final String protocol) {
+        if ("SSLv3".equals(protocol)) return 0x0300;
+        if ("TLSv1".equals(protocol)) return 0x0301;
+        if ("TLSv1.1".equals(protocol)) return 0x0302;
+        if ("TLSv1.3".equals(protocol)) return 0x0304;
+        return 0x0303; // MRI assumes "TLSv1.2" default
+    }
+
+    private static StringBuilder toHex(final byte[] bytes) {
+        final StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            final int v = b & 0xFF;
+            if (v < 16) hex.append('0');
+            hex.append(Integer.toHexString(v).toUpperCase());
+        }
+        return hex;
     }
 
 }

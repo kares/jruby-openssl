@@ -23,7 +23,6 @@
  */
 package org.jruby.ext.openssl;
 
-import java.lang.reflect.Constructor;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
@@ -64,7 +63,9 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 public abstract class SecurityHelper {
 
     static final String BC_PROVIDER_CLASS = "org.bouncycastle.jce.provider.BouncyCastleProvider";
+    static final String BC_PROVIDER_NAME = "BC";
     static final String BC_FIPS_PROVIDER_CLASS = "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider";
+    static final String BC_FIPS_PROVIDER_NAME = "BCFIPS";
 
     static volatile boolean initSecurityProvider = true;
     static volatile Provider securityProvider; // 'BC' (or 'BCFIPS') provider
@@ -81,23 +82,36 @@ public abstract class SecurityHelper {
     public static Provider getSecurityProvider() {
         Provider provider = securityProvider;
         if (provider == null && initSecurityProvider) {
-            provider = initSecurityProvider(isFipsMode() ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS);
+            provider = initSecurityProvider();
             if (provider != null) doRegisterProvider(provider);
         }
         return provider;
     }
 
-    private static synchronized Provider initSecurityProvider(final String className) {
+    private static synchronized Provider initSecurityProvider() {
         Provider provider = securityProvider;
         if (provider == null && initSecurityProvider) {
-            provider = setBouncyCastleProvider(className);
+            final String providerName = isFipsMode() ? BC_FIPS_PROVIDER_NAME : BC_PROVIDER_NAME;
+            // reuse when provider already registered (e.g. via java.security configuration)
+            provider = Security.getProvider(providerName);
+            if (provider != null) {
+                debug("[JOpenSSL] reusing registered (security) provider: " + providerName);
+                setSecurityProvider(provider, false);
+            } else {
+                final String className = isFipsMode() ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS;
+                provider = setBouncyCastleProvider(className);
+            }
             initSecurityProvider = false;
         }
         return provider;
     }
 
     public static synchronized void setSecurityProvider(final Provider provider) {
-        if (provider != null) debug("[JOpenSSL] using (security) provider: " + provider);
+        setSecurityProvider(provider, true);
+    }
+
+    private static synchronized void setSecurityProvider(final Provider provider, final boolean log) {
+        if (provider != null && log) debug("[JOpenSSL] using (security) provider: " + provider);
         securityProvider = provider;
     }
 
@@ -112,26 +126,25 @@ public abstract class SecurityHelper {
      */
     static Provider getJsseProvider() {
         Provider provider = jsseProvider;
-        if (provider == null && initJsseProvider) {
-            provider = initJsseProvider(sslProviderName);
-        }
+        if (provider == null && initJsseProvider) provider = initJsseProvider(sslProviderName);
         return provider;
     }
 
     private static synchronized Provider initJsseProvider(final String name) {
         Provider provider = jsseProvider;
         if (provider == null && initJsseProvider) {
-            try {
+            if (name != null) {
                 provider = Security.getProvider(name);
-            } catch (Exception ex) {
-                debug("[JOpenSSL] failed to get provider: " + name, ex);
+                if (provider != null) {
+                    debug("[JOpenSSL] reusing registered ssl provider: " + name);
+                }
             }
             if (provider == null && "BCJSSE".equals(name)) {
                 provider = newBouncyCastleJsseProvider();
-            } else {
+            } else if (provider == null && name != null) {
                 debug("[JOpenSSL] unknown ssl provider name: " + name);
             }
-            jsseProvider = provider;
+            jsseProvider = provider; // even if null - we can operate without jsse provider
             initJsseProvider = false;
         }
         return provider;
@@ -139,17 +152,20 @@ public abstract class SecurityHelper {
 
     private static Provider newBouncyCastleJsseProvider() {
         try {
+            final Class<? extends Provider> providerClass =
+                    (Class<? extends Provider>) Class.forName(BC_JSSE_PROVIDER_CLASS);
             final Provider cryptoProvider = getSecurityProvider();
-            // Default JDK security provider lack certain algorithms that BCJSSE's TLS 1.3 implementation
-            // requires for key exchange - e.g. EC operations needed for the TLS 1.3 key_share extension
+            // default JDK providers lack algorithms BCJSSE's TLS 1.3 needs (e.g. X25519)
             if (cryptoProvider != null) {
-                Constructor<?> init = Class.forName(BC_JSSE_PROVIDER_CLASS).getConstructor(Provider.class);
-                return (Provider) init.newInstance(cryptoProvider); // new BouncyCastleJsseProvider(Provider)
+                if (isFipsMode()) { // fipsMode: true so BCJSSE operates with FIPS constraints
+                    return providerClass.getConstructor(boolean.class, Provider.class)
+                            .newInstance(true, cryptoProvider);
+                }
+                return providerClass.getConstructor(Provider.class).newInstance(cryptoProvider);
             } else {
-                final Object provider = Class.forName(BC_JSSE_PROVIDER_CLASS).newInstance();
-                debug("[JOpenSSL] instantiated JSSE provider without default BC provider " +
+                debug("[JOpenSSL] instantiating ssl provider without BC crypto provider " +
                         "(features such as TLS key_share extension will be limited)");
-                return (Provider) provider;
+                return providerClass.newInstance();
             }
         } catch (ReflectiveOperationException ex) {
             debug("[JOpenSSL] WARN: can not instantiate JSSE provider (" + BC_JSSE_PROVIDER_CLASS + ")", ex);

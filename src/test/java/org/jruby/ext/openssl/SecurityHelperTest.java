@@ -457,6 +457,65 @@ public class SecurityHelperTest {
         }
     }
 
+    // pre-registered provider detection tests
+
+    @Test
+    public void reusesPreRegisteredBCProvider() {
+        // simulate BC pre-registered via java.security
+        Provider preRegistered = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Security.addProvider(preRegistered);
+        try {
+            // SecurityHelper state is clean (resetState in @AfterEach)
+            Provider resolved = SecurityHelper.getSecurityProvider();
+            assertNotNull(resolved);
+            // should be the exact same instance, not a newly created one
+            assertSame(preRegistered, resolved, "should reuse the pre-registered BC provider");
+        }
+        finally {
+            Security.removeProvider("BC");
+        }
+    }
+
+    @Test
+    public void createsNewBCProviderWhenNonePreRegistered() {
+        // no provider pre-registered (clean state from @AfterEach)
+        assertNull(Security.getProvider("BC"));
+        assertNull(Security.getProvider("BCFIPS"));
+
+        Provider resolved = SecurityHelper.getSecurityProvider();
+        assertNotNull(resolved);
+        assertEquals("BC", resolved.getName());
+        // should NOT be globally registered (default registerProvider is false)
+        assertNull(Security.getProvider("BC"));
+    }
+
+    @Test
+    public void reusesPreRegisteredBCJSSEProvider() {
+        // simulate BCJSSE pre-registered via java.security
+        Provider bcProv = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Provider preRegisteredJsse = new org.bouncycastle.jsse.provider.BouncyCastleJsseProvider(bcProv);
+        Security.addProvider(preRegisteredJsse);
+        try {
+            Provider resolved = SecurityHelper.getJsseProvider();
+            assertNotNull(resolved);
+            assertSame(preRegisteredJsse, resolved, "should reuse pre-registered BCJSSE provider");
+        }
+        finally {
+            Security.removeProvider("BCJSSE");
+        }
+    }
+
+    @Test
+    public void createsBCJSSEWhenNonePreRegistered() {
+        assertNull(Security.getProvider("BCJSSE"));
+
+        Provider resolved = SecurityHelper.getJsseProvider();
+        assertNotNull(resolved);
+        assertEquals("BCJSSE", resolved.getName());
+        // should NOT be globally registered
+        assertNull(Security.getProvider("BCJSSE"));
+    }
+
     @Test
     public void testCertificateFactoryProviderStaysConstant() throws Exception {
         Provider[] registeredProviders = Security.getProviders();

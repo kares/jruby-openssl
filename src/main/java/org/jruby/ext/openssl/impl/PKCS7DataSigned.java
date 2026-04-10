@@ -30,6 +30,7 @@ package org.jruby.ext.openssl.impl;
 import java.security.cert.X509CRL;
 import java.util.Collection;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.DEROctetString;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 
 /**
@@ -59,8 +60,13 @@ public class PKCS7DataSigned extends PKCS7Data {
         switch(cmd) {
         case PKCS7.OP_SET_DETACHED_SIGNATURE:
             ret = ((Integer)v).intValue();
-            if(ret != 0 && sign.contents.isData()) {
-                sign.contents.setData(null);
+            if (sign.contents != null && sign.contents.isData()) {
+                if (ret != 0) {
+                    sign.contents.setData(null);
+                }
+                else if (sign.contents.getData() == null) {
+                    sign.contents.setData(new DEROctetString(new byte[0]));
+                }
             }
             break;
         case PKCS7.OP_GET_DETACHED_SIGNATURE:

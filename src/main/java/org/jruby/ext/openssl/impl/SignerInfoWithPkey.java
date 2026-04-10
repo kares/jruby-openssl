@@ -98,7 +98,7 @@ public class SignerInfoWithPkey implements ASN1Encodable {
         return copy;
     }
 
-    SignerInfoWithPkey() {
+    public SignerInfoWithPkey() {
     }
 
     public SignerInfoWithPkey(ASN1Integer version,

@@ -8,8 +8,26 @@ class TestNSSPKI < TestCase
         'r/7iJNroWlSzSMtTiQTEB+ADWHGj9u1xrUrOilq/o2cuQxIfZcNZkYAkWP4DubqW' \
         'i0//rgBvmco='
 
+  def test_build_data
+    key1 = Fixtures.pkey('rsa1024')
+    key2 = Fixtures.pkey('rsa2048')
+    spki = OpenSSL::Netscape::SPKI.new
+    spki.challenge = 'RandomChallenge'
+    spki.public_key = key1
+    spki.sign(key1, OpenSSL::Digest.new('SHA256'))
+    assert spki.verify(key1)
+    assert !spki.verify(key2)
+    assert_not_nil spki.to_text
+    assert_not_nil spki.to_der
+  end
+
   def test_decode_data
     spki = OpenSSL::Netscape::SPKI.new(B64)
+    assert_equal 'MozillaIsMyFriend', spki.challenge
+    assert_instance_of OpenSSL::PKey::RSA, spki.public_key
+
+    # also accepts DER input
+    spki = OpenSSL::Netscape::SPKI.new(B64.unpack1('m'))
     assert_equal 'MozillaIsMyFriend', spki.challenge
     assert_instance_of OpenSSL::PKey::RSA, spki.public_key
   end
@@ -23,7 +41,20 @@ class TestNSSPKI < TestCase
     assert_match(/Public Key Algorithm: /, text)
     assert_match(/Challenge String: MozillaIsMyFriend/, text)
     assert_match(/Signature Algorithm: /, text)
-    # signature hex bytes with : separators
+    assert_match(/[0-9a-f]{2}(:[0-9a-f]{2})+/, text)
+  end
+
+  def test_to_text_after_sign
+    key = Fixtures.pkey('rsa1024')
+    spki = OpenSSL::Netscape::SPKI.new
+    spki.challenge = 'MyChallenge'
+    spki.public_key = key
+    spki.sign(key, OpenSSL::Digest.new('SHA256'))
+
+    text = spki.to_text
+    assert_match(/\ANetscape SPKI:\n/, text)
+    assert_match(/Challenge String: MyChallenge/, text)
+    assert_match(/Signature Algorithm: /, text)
     assert_match(/[0-9a-f]{2}(:[0-9a-f]{2})+/, text)
   end
 end

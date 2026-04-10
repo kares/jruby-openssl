@@ -53,6 +53,7 @@ import org.jruby.RubyArray;
 import org.jruby.RubyClass;
 import org.jruby.RubyModule;
 import org.jruby.RubyObject;
+import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
@@ -252,8 +253,66 @@ public class X509Request extends RubyObject {
 
     @JRubyMethod
     public IRubyObject to_text(final ThreadContext context) {
-        warn(context, "WARNING: unimplemented method called: OpenSSL::X509::Request#to_text");
-        return context.nil;
+        final Ruby runtime = context.runtime;
+
+        final char[] S20 = StringHelper.S20;
+        final StringBuilder text = new StringBuilder(512);
+
+        text.append("Certificate Request:\n");
+        text.append(S20, 0, 4).append("Data:\n");
+
+        final int version;
+        if (request != null && request.getVersion() != null) {
+            version = request.getVersion().intValue();
+        } else {
+            version = this.version == null ? 0 : RubyNumeric.fix2int(this.version);
+        }
+        text.append(S20, 0, 8)
+                .append("Version: ").append(version + 1)
+                .append(" (0x").append(Integer.toString(version, 16)).append(")\n");
+
+        text.append(S20, 0, 8).append("Subject: ").append(subject()).append('\n');
+
+        text.append(S20, 0, 8).append("Subject Public Key Info:\n");
+        final PublicKey publicKey = public_key == null ? null : public_key.getPublicKey();
+        if (publicKey != null) {
+            text.append(S20, 0, 12).append("Public Key Algorithm: ").append(publicKey.getAlgorithm()).append('\n');
+            if (public_key != null) {
+                try {
+                    final RubyString keyText = public_key.to_text();
+                    for (CharSequence line : StringHelper.split(keyText, '\n')) {
+                        text.append(S20, 0, 16).append(line).append('\n');
+                    }
+                } catch (Exception e) {
+                    text.append(S20, 0, 16).append("Unable to print public key\n");
+                }
+            }
+        }
+
+        text.append(S20, 0, 8).append("Attributes:\n");
+        if (attributes.isEmpty()) {
+            text.append(S20, 0, 12).append("(none)\n");
+        } else {
+            for (final X509Attribute attr : attributes) {
+                text.append(S20, 0, 12).append(attr.oid());
+                // pad to column 25 after indent, then value
+                text.append(S20, 0, 4).append(':');
+                final IRubyObject val = attr.value();
+                if (!val.isNil()) text.append(val);
+                text.append('\n');
+            }
+        }
+
+        text.append(S20, 0, 4).append("Signature Algorithm: ").append(getSignatureAlgorithm()).append('\n');
+
+        if (request != null) {
+            final byte[] sig = request.getSignatureBytes();
+            if (sig != null) { // signature hex dump
+                StringHelper.appendLowerHexValue(text, sig, 9, 54);
+            }
+        }
+
+        return StringHelper.newString(runtime, text);
     }
 
     @JRubyMethod
@@ -292,10 +351,14 @@ public class X509Request extends RubyObject {
 
     @JRubyMethod
     public IRubyObject signature_algorithm(final ThreadContext context) {
+        return context.runtime.newString(getSignatureAlgorithm());
+    }
+
+    private String getSignatureAlgorithm() {
         AlgorithmIdentifier signatureAlgId = request == null ? null : request.getSignatureAlgorithm();
-        if (signatureAlgId == null) return context.runtime.newString("NULL");
+        if (signatureAlgId == null) return "NULL";
         final String name = ASN1Registry.o2a(signatureAlgId.getAlgorithm());
-        return context.runtime.newString(name == null ? "" : name);
+        return name == null ? "" : name;
     }
 
     @JRubyMethod

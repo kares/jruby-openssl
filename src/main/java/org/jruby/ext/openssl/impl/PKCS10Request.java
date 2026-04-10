@@ -286,6 +286,11 @@ public class PKCS10Request {
         return signedRequest.getSignatureAlgorithm();
     }
 
+    public byte[] getSignatureBytes() {
+        if ( signedRequest == null ) return null;
+        return signedRequest.toASN1Structure().getSignature().getOctets();
+    }
+
     private static class PKCS10Signer implements ContentSigner {
 
         final AlgorithmIdentifier signatureAlg;

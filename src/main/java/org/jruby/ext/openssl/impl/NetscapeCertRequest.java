@@ -202,6 +202,11 @@ public class NetscapeCertRequest // extends ASN1Object
         keyAlg = value;
     }
 
+    public byte[] getSignatureBits()
+    {
+        return signatureBits;
+    }
+
     public PublicKey getPublicKey()
     {
         return publicKey;

@@ -45,6 +45,7 @@ import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyModule;
 import org.jruby.RubyObject;
+import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.impl.Base64;
@@ -163,9 +164,63 @@ public class NetscapeSPKI extends RubyObject {
     }
 
     @JRubyMethod
-    public IRubyObject to_text() {
-        warn(getRuntime().getCurrentContext(), "WARNING: unimplemented method called: Netscape::SPKI#to_text");
-        return getRuntime().getNil();
+    public IRubyObject to_text(ThreadContext context) {
+        final Ruby runtime = context.runtime;
+
+        final StringBuilder text = new StringBuilder(256);
+        text.append("Netscape SPKI:\n");
+
+        final NetscapeCertRequest cert = (NetscapeCertRequest) this.cert;
+        if (cert == null) return StringHelper.newString(runtime, text);
+
+        // public key algorithm
+        final AlgorithmIdentifier keyAlg = cert.getKeyAlgorithm();
+        final String keyAlgName = resolveAlgorithmName(runtime, keyAlg);
+        text.append("  Public Key Algorithm: ").append(keyAlgName).append('\n');
+
+        if (public_key instanceof PKey) {
+            try {
+                final RubyString keyText = ((PKey) public_key).to_text();
+                for (CharSequence line : StringHelper.split(keyText, '\n')) {
+                    text.append("    ").append(line).append('\n');
+                }
+            } catch (Exception e) {
+                text.append("    Unable to load public key\n");
+            }
+        }
+
+        final String challenge = cert.getChallenge();
+        if (challenge != null && !challenge.isEmpty()) {
+            text.append("  Challenge String: ").append(challenge).append('\n');
+        }
+
+        final AlgorithmIdentifier sigAlg = cert.getSigningAlgorithm();
+        final String sigAlgName = resolveAlgorithmName(runtime, sigAlg);
+        text.append("  Signature Algorithm: ").append(sigAlgName);
+
+        // signature bytes as hex with : separators, 18 bytes per line
+        final byte[] sig = cert.getSignatureBits();
+        if (sig != null) {
+            for (int i = 0; i < sig.length; i++) {
+                if (i % 18 == 0) text.append("\n      ");
+                text.append(String.format("%02x", sig[i] & 0xFF));
+                if (i + 1 < sig.length) text.append(':');
+            }
+        }
+        text.append('\n');
+
+        return StringHelper.newString(runtime, text);
+    }
+
+    private static String resolveAlgorithmName(final Ruby runtime, final AlgorithmIdentifier algId) {
+        if (algId == null) return null;
+        try {
+            final String name = ASN1.oid2name(runtime, algId.getAlgorithm(), true);
+            if (name != null) return name;
+        } catch (RuntimeException e) {
+            debug("Failed to resolve algorithm name: " + algId, e);
+        }
+        return algId.getAlgorithm().getId();
     }
 
     @JRubyMethod

@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.description = 'JRuby-OpenSSL is an add-on gem for JRuby that emulates the Ruby OpenSSL native library.'
   s.licenses = [ 'EPL-1.0', 'GPL-2.0', 'LGPL-2.1' ]
 
-  s.require_paths = ['lib', 'vendor']
+  s.require_paths = ['lib']
 
   s.files = `git ls-files`.split("\n").
     select { |f| f =~ /^(lib)/ ||

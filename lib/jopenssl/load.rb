@@ -15,10 +15,11 @@ if ENV_JAVA['jruby.openssl.load.jars'] != 'false' &&
     false
   end
   unless bc_jars
-    load "org/bouncycastle/bcprov-jdk18on/#{version}/bcprov-jdk18on-#{version}.jar"
-    load "org/bouncycastle/bcpkix-jdk18on/#{version}/bcpkix-jdk18on-#{version}.jar"
-    load "org/bouncycastle/bcutil-jdk18on/#{version}/bcutil-jdk18on-#{version}.jar"
-    load "org/bouncycastle/bctls-jdk18on/#{version}/bctls-jdk18on-#{version}.jar"
+    vendor = File.expand_path('../../vendor', __dir__)
+    load "#{vendor}/org/bouncycastle/bcprov-jdk18on/#{version}/bcprov-jdk18on-#{version}.jar"
+    load "#{vendor}/org/bouncycastle/bcpkix-jdk18on/#{version}/bcpkix-jdk18on-#{version}.jar"
+    load "#{vendor}/org/bouncycastle/bcutil-jdk18on/#{version}/bcutil-jdk18on-#{version}.jar"
+    load "#{vendor}/org/bouncycastle/bctls-jdk18on/#{version}/bctls-jdk18on-#{version}.jar"
   end
 end
 

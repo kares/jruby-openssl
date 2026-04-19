@@ -154,11 +154,9 @@ public class OCSPRequest extends RubyObject {
     }
 
     @JRubyMethod(name = "add_nonce", rest = true)
-    public IRubyObject add_nonce(IRubyObject[] args) {
-        Ruby runtime = getRuntime();
-        
-        if ( Arity.checkArgumentCount(runtime, args, 0, 1) == 0 ) {
-            nonce = generateNonce(runtime);
+    public IRubyObject add_nonce(ThreadContext context, IRubyObject[] args) {
+        if ( Arity.checkArgumentCount(context.runtime, args, 0, 1) == 0 ) {
+            nonce = generateNonce(context);
         }
         else {
             RubyString input = (RubyString) args[0];

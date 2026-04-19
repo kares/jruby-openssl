@@ -228,7 +228,7 @@ public abstract class PKey extends RubyObject {
                 return PKeyHMAC.newInstance(runtime, key);
             }
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
-                return PKeyEdDSA.generate(runtime, algorithm);
+                return PKeyEdDSA.generate(context, algorithm);
             }
             if ( "RSA".equalsIgnoreCase(algorithm) ) {
                 return generateRSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
@@ -302,7 +302,7 @@ public abstract class PKey extends RubyObject {
             final Ruby runtime = context.runtime;
             final PKeyDSA generated;
             try {
-                generated = PKeyDSA.generateImpl(runtime, new PKeyDSA(runtime), bits);
+                generated = PKeyDSA.generateImpl(context, new PKeyDSA(runtime), bits);
             }
             catch (NoSuchAlgorithmException e) {
                 throw newPKeyError(runtime, e.getMessage());
@@ -335,7 +335,7 @@ public abstract class PKey extends RubyObject {
 
             final Ruby runtime = context.runtime;
             final BigInteger exponent = pubexp == null || pubexp.isNil() ? RSAKeyGenParameterSpec.F4 : BN.getBigInteger(pubexp);
-            return PKeyRSA.rsaGenerate(runtime, new PKeyRSA(runtime, PKeyRSA._RSA(runtime)), bits, exponent);
+            return PKeyRSA.rsaGenerate(context, new PKeyRSA(runtime, PKeyRSA._RSA(runtime)), bits, exponent);
         }
 
         private static IRubyObject generateDSAKey(final ThreadContext context, final IRubyObject options) {
@@ -653,8 +653,8 @@ public abstract class PKey extends RubyObject {
         return signature.verify(sign.getUnsafeBytes(), sign.getBegin(), sign.getRealSize());
     }
 
-    static SecureRandom getSecureRandom(final Ruby runtime) {
-        return OpenSSL.getSecureRandom(runtime);
+    static SecureRandom getSecureRandom(final ThreadContext context) {
+        return OpenSSL.getSecureRandom(context);
     }
 
     // shared Helpers for PKeyRSA / PKeyDSA :

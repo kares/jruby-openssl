@@ -198,7 +198,7 @@ public class PKeyRSA extends PKey {
     public String getAlgorithm() { return "RSA"; }
 
     @JRubyMethod(name = "generate", meta = true, rest = true)
-    public static IRubyObject generate(IRubyObject self, IRubyObject[] args) {
+    public static IRubyObject generate(ThreadContext context, IRubyObject self, IRubyObject[] args) {
         final Ruby runtime = self.getRuntime();
         BigInteger exp = RSAKeyGenParameterSpec.F4;
         if ( Arity.checkArgumentCount(runtime, args, 1, 2) == 2 ) {
@@ -209,16 +209,16 @@ public class PKeyRSA extends PKey {
             }
         }
         final int keySize = RubyNumeric.fix2int(args[0]);
-        return rsaGenerate(runtime, new PKeyRSA(runtime, (RubyClass) self), keySize, exp);
+        return rsaGenerate(context, new PKeyRSA(runtime, (RubyClass) self), keySize, exp);
     }
 
-    static PKeyRSA generateImpl(final Ruby runtime, PKeyRSA rsa, int keySize, BigInteger exp)
+    static PKeyRSA generateImpl(final ThreadContext context, PKeyRSA rsa, int keySize, BigInteger exp)
         throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
         KeyPairGenerator gen = SecurityHelper.getKeyPairGenerator("RSA");
         if ( "IBMJCEFIPS".equals( gen.getProvider().getName() ) ) {
             gen.initialize(keySize); // IBMJCEFIPS does not support parameters
         } else {
-            gen.initialize(new RSAKeyGenParameterSpec(keySize, exp), getSecureRandom(runtime));
+            gen.initialize(new RSAKeyGenParameterSpec(keySize, exp), getSecureRandom(context));
         }
         KeyPair pair = gen.generateKeyPair();
         rsa.privateKey = (RSAPrivateCrtKey) pair.getPrivate();
@@ -229,15 +229,15 @@ public class PKeyRSA extends PKey {
     /*
      * c: rsa_generate
      */
-    static PKeyRSA rsaGenerate(final Ruby runtime, PKeyRSA rsa, int keySize, BigInteger exp) throws RaiseException {
+    static PKeyRSA rsaGenerate(final ThreadContext context, PKeyRSA rsa, int keySize, BigInteger exp) throws RaiseException {
         try {
-            return generateImpl(runtime, rsa, keySize, exp);
+            return generateImpl(context, rsa, keySize, exp);
         }
         catch (NoSuchAlgorithmException|InvalidAlgorithmParameterException e) {
-            throw newRSAError(runtime, e.getMessage());
+            throw newRSAError(context.runtime, e.getMessage());
         }
         catch (RuntimeException e) {
-            throw newRSAError(runtime, e);
+            throw newRSAError(context.runtime, e);
         }
     }
 
@@ -258,7 +258,7 @@ public class PKeyRSA extends PKey {
             if (arg1 != null && !arg1.isNil()) {
                 exp = BigInteger.valueOf(RubyNumeric.num2long(arg1));
             }
-            return rsaGenerate(runtime, this, keySize, exp);
+            return rsaGenerate(context, this, keySize, exp);
         }
 
         final char[] passwd = password(context, arg1, block);
@@ -1030,7 +1030,7 @@ public class PKeyRSA extends PKey {
         if (emLen < hLen + saltLen + 2) throw new IllegalArgumentException("encoding error");
 
         final byte[] salt = new byte[saltLen];
-        getSecureRandom(getRuntime()).nextBytes(salt);
+        getSecureRandom(getRuntime().getCurrentContext()).nextBytes(salt);
 
         final byte[] h = pssHash(hashBytes, salt, digestAlg);
         final int dbLen = emLen - hLen - 1;
@@ -1144,7 +1144,7 @@ public class PKeyRSA extends PKey {
         if (javaDigestAlg.equals(javaMgf1Alg)) {
             Signature signer = SecurityHelper.getSignature("RSASSA-PSS");
             signer.setParameter(buildPSSParameterSpec(javaDigestAlg, javaMgf1Alg, saltLen));
-            signer.initSign(privateKey, getSecureRandom(runtime));
+            signer.initSign(privateKey, getSecureRandom(runtime.getCurrentContext()));
             signer.update(dataBytes.unsafeBytes(), dataBytes.getBegin(), dataBytes.getRealSize());
             return signer.sign();
         }

@@ -75,18 +75,18 @@ public class PKeyEdDSA extends PKey {
         return new PKeyEdDSA(runtime, publicKey, privateKey);
     }
 
-    static PKeyEdDSA generate(final Ruby runtime, final String algorithm) {
+    static PKeyEdDSA generate(final ThreadContext context, final String algorithm) {
         try {
             KeyPairGenerator gen = SecurityHelper.getKeyPairGenerator(algorithm);
-            gen.initialize(256, OpenSSL.getSecureRandom(runtime));
-            return newInstance(runtime, gen.generateKeyPair());
+            gen.initialize(256, OpenSSL.getSecureRandom(context));
+            return newInstance(context.runtime, gen.generateKeyPair());
         }
         catch (NoSuchAlgorithmException e) {
-            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+            throw newPKeyError(context.runtime, "unsupported algorithm: " + algorithm);
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
-            throw newPKeyError(runtime, e.getMessage());
+            debugStackTrace(context.runtime, e);
+            throw newPKeyError(context.runtime, e.getMessage());
         }
     }
 

@@ -159,12 +159,10 @@ public class OCSPBasicResponse extends RubyObject {
     }
     
     @JRubyMethod(name = "add_nonce", rest = true)
-    public OCSPBasicResponse add_nonce(IRubyObject[] args) {
-        Ruby runtime = getRuntime();
-                
+    public OCSPBasicResponse add_nonce(ThreadContext context, IRubyObject... args) {
         byte[] tmpNonce;
-        if ( Arity.checkArgumentCount(runtime, args, 0, 1) == 0 ) {
-            tmpNonce = generateNonce(runtime);
+        if ( Arity.checkArgumentCount(context.runtime, args, 0, 1) == 0 ) {
+            tmpNonce = generateNonce(context);
         }
         else {
             RubyString input = (RubyString) args[0];
@@ -228,8 +226,8 @@ public class OCSPBasicResponse extends RubyObject {
     
     @JRubyMethod(name = "copy_nonce")
     public IRubyObject copy_nonce(final ThreadContext context, IRubyObject request) {
-        add_nonce(new IRubyObject[] {RubyString.newString(getRuntime(), ((OCSPRequest)request).getNonce())});
-        return RubyFixnum.one(context.getRuntime());
+        add_nonce(context, RubyString.newString(context.runtime, ((OCSPRequest) request).getNonce()));
+        return RubyFixnum.one(context.runtime);
     }
     
     @JRubyMethod(name = "find_response")

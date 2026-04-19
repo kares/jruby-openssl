@@ -150,12 +150,12 @@ public class PKeyDSA extends PKey {
     @JRubyMethod(name = "generate", meta = true)
     public static IRubyObject generate(ThreadContext context, IRubyObject self, IRubyObject arg) {
         final int keySize = RubyNumeric.fix2int(arg);
-        return dsaGenerate(context.runtime, new PKeyDSA(context.runtime, (RubyClass) self), keySize);
+        return dsaGenerate(context, new PKeyDSA(context.runtime, (RubyClass) self), keySize);
     }
 
-    static PKeyDSA generateImpl(final Ruby runtime, PKeyDSA dsa, int keySize) throws NoSuchAlgorithmException {
+    static PKeyDSA generateImpl(final ThreadContext context, PKeyDSA dsa, int keySize) throws NoSuchAlgorithmException {
         KeyPairGenerator gen = SecurityHelper.getKeyPairGenerator("DSA");
-        gen.initialize(keySize, getSecureRandom(runtime));
+        gen.initialize(keySize, getSecureRandom(context));
         KeyPair pair = gen.generateKeyPair();
         dsa.privateKey = (DSAPrivateKey) pair.getPrivate();
         dsa.publicKey = (DSAPublicKey) pair.getPublic();
@@ -165,15 +165,15 @@ public class PKeyDSA extends PKey {
     /*
      * c: dsa_generate
      */
-    private static PKeyDSA dsaGenerate(final Ruby runtime, PKeyDSA dsa, int keySize) throws RaiseException {
+    private static PKeyDSA dsaGenerate(ThreadContext context, PKeyDSA dsa, int keySize) throws RaiseException {
         try {
-            return generateImpl(runtime, dsa, keySize);
+            return generateImpl(context, dsa, keySize);
         }
         catch (NoSuchAlgorithmException e) {
-            throw newDSAError(runtime, e.getMessage());
+            throw newDSAError(context.runtime, e.getMessage());
         }
         catch (RuntimeException e) {
-            throw newDSAError(runtime, e.getMessage(), e);
+            throw newDSAError(context.runtime, e.getMessage(), e);
         }
     }
 
@@ -190,7 +190,7 @@ public class PKeyDSA extends PKey {
 
         if ( arg instanceof RubyFixnum ) {
             int keySize = RubyNumeric.fix2int((RubyFixnum) arg);
-            return dsaGenerate(context.runtime, this, keySize);
+            return dsaGenerate(context, this, keySize);
         }
 
         final char[] passwd = password(context, arg1, block);
@@ -646,7 +646,7 @@ public class PKeyDSA extends PKey {
 
         BigInteger x;
         do {
-            x = new BigInteger(q.bitLength(), getSecureRandom(context.runtime));
+            x = new BigInteger(q.bitLength(), getSecureRandom(context));
         } while (x.signum() <= 0 || x.compareTo(q) >= 0);
 
         this.dsa_x = x;

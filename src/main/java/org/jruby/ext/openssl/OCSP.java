@@ -44,6 +44,7 @@ import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyModule;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
 /**
@@ -212,13 +213,13 @@ public class OCSP {
         return (RubyModule) runtime.getModule("OpenSSL").getConstant("OCSP");
     }
 
-    static byte[] generateNonce(final Ruby runtime) {
+    static byte[] generateNonce(final ThreadContext context) {
         // OSSL currently generates 16 byte nonce by default
-        return generateNonce(runtime, new byte[16]);
+        return generateNonce(context, new byte[16]);
     }
 
-    static byte[] generateNonce(final Ruby runtime, byte[] bytes) {
-        OpenSSL.getSecureRandom(runtime).nextBytes(bytes);
+    static byte[] generateNonce(final ThreadContext context, byte[] bytes) {
+        OpenSSL.getSecureRandom(context).nextBytes(bytes);
         return bytes;
     }
 

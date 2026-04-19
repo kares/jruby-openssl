@@ -11,12 +11,12 @@ else
   base_dir = File.expand_path('../../..', File.dirname(__FILE__))
 
   jar = File.join(base_dir, 'lib/jopenssl.jar')
-  raise "jopenssl.jar jar not found" unless jar; $CLASSPATH << jar
+  raise "jopenssl.jar jar not found" unless jar; # $CLASSPATH << jar
 
-  jar = Dir[File.join(base_dir, 'lib/org/bouncycastle/**/bcprov-*.jar')].first
-  raise "bcprov jar not found" unless jar; $CLASSPATH << jar
-  jar = Dir[File.join(base_dir, 'lib/org/bouncycastle/**/bcpkix-*.jar')].first
-  raise "bcpkix jar not found" unless jar; $CLASSPATH << jar
+  # jar = Dir[File.join(base_dir, 'vendor/org/bouncycastle/**/bcprov-*.jar')].first
+  # raise "bcprov jar not found" unless jar; $CLASSPATH << jar
+  # jar = Dir[File.join(base_dir, 'vendor/org/bouncycastle/**/bcpkix-*.jar')].first
+  # raise "bcpkix jar not found" unless jar; $CLASSPATH << jar
 end if defined? JRUBY_VERSION
 
 begin

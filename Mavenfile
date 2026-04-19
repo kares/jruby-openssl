@@ -1,6 +1,6 @@
 #-*- mode: ruby -*-
 
-gemspec :jar => 'jopenssl', :include_jars => true
+gemspec :jar => 'jopenssl'
 
 distribution_management do
   snapshot_repository :id => :ossrh, :url => 'https://oss.sonatype.org/content/repositories/snapshots'
@@ -76,7 +76,7 @@ plugin :clean do
   execute_goals( 'clean', :id => 'default-clean', :phase => 'clean',
                  'filesets' => [
                     { :directory => 'lib', :includes => [ 'jopenssl.jar' ] },
-                    { :directory => 'lib/org' },
+                    { :directory => 'vendor' },
                     { :directory => 'target', :includes => [ '*' ] }
                  ],
                  'failOnError' =>  'false' )
@@ -127,16 +127,13 @@ properties( 'jruby.plugins.version' => '3.0.6',
             # dump pom.xml when running 'rmvn'
             'polyglot.dump.pom' => 'pom.xml', 'polyglot.dump.readonly' => false )
 
-# make sure we have the embedded jars in place before we run runit plugin
 plugin! :dependency do
   execute_goal 'copy-dependencies',
                :phase => 'generate-test-resources',
-               :outputDirectory => '${basedir}/lib',
+               :outputDirectory => '${basedir}/vendor',
                :useRepositoryLayout => true,
                :includeGroupIds => 'org.bouncycastle'
 end
-
-jruby_plugin(:runit) { execute_goal( :test, :runitDirectory => '${runit.dir}' ) }
 
 invoker_run_options = {
     :id => 'tests-with-different-bc-versions',

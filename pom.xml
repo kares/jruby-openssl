@@ -173,21 +173,6 @@ DO NOT MODIFY - GENERATED CODE
         </configuration>
       </plugin>
       <plugin>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-          <execution>
-            <phase>generate-test-resources</phase>
-            <goals>
-              <goal>copy-dependencies</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>lib</outputDirectory>
-              <useRepositoryLayout>true</useRepositoryLayout>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
         <groupId>org.jruby.maven</groupId>
         <artifactId>gem-maven-plugin</artifactId>
         <version>${jruby.plugins.version}</version>
@@ -208,8 +193,6 @@ DO NOT MODIFY - GENERATED CODE
         </executions>
         <configuration>
           <gemspec>jruby-openssl.gemspec</gemspec>
-          <includeDependencies>true</includeDependencies>
-          <useRepositoryLayout>true</useRepositoryLayout>
         </configuration>
       </plugin>
       <plugin>
@@ -313,7 +296,7 @@ DO NOT MODIFY - GENERATED CODE
                   </includes>
                 </fileset>
                 <fileset>
-                  <directory>lib/org</directory>
+                  <directory>vendor</directory>
                 </fileset>
                 <fileset>
                   <directory>target</directory>
@@ -354,24 +337,9 @@ DO NOT MODIFY - GENERATED CODE
               <goal>copy-dependencies</goal>
             </goals>
             <configuration>
-              <outputDirectory>${basedir}/lib</outputDirectory>
+              <outputDirectory>${basedir}/vendor</outputDirectory>
               <useRepositoryLayout>true</useRepositoryLayout>
               <includeGroupIds>org.bouncycastle</includeGroupIds>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.jruby.maven</groupId>
-        <artifactId>runit-maven-plugin</artifactId>
-        <version>${jruby.plugins.version}</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>test</goal>
-            </goals>
-            <configuration>
-              <runitDirectory>${runit.dir}</runitDirectory>
             </configuration>
           </execution>
         </executions>

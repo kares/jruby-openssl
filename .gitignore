@@ -7,3 +7,4 @@ build.log
 *.iml
 *.lock
 lib/org
+vendor

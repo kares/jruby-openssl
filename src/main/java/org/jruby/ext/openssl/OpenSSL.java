@@ -306,11 +306,15 @@ public final class OpenSSL {
     private static boolean tryContextSecureRandom = true;
 
     static SecureRandom getSecureRandom(final ThreadContext context) {
-        if ( tryContextSecureRandom ) {
-            SecureRandom random = getSecureRandomFrom(context);
-            if ( random != null ) return random;
+        if (tryContextSecureRandom) {
+            if (SecurityHelper.isFipsMode()) { // in FIPS mode BC rejects non-approved RNGs
+                tryContextSecureRandom = false;
+            } else {
+                SecureRandom random = getSecureRandomFrom(context);
+                if (random != null) return random;
+            }
         }
-        return new SecureRandom();
+        return SecurityHelper.getSecureRandom();
     }
 
     private static SecureRandom getSecureRandomFrom(final ThreadContext context) {

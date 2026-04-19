@@ -29,6 +29,7 @@ public class SecurityHelperTest {
     @AfterAll
     public static void resetProvidersState() {
         Security.removeProvider("BC");
+        Security.removeProvider("BCFIPS");
         Security.removeProvider("BCJSSE");
         SecurityHelper.securityProvider = null;
         SecurityHelper.initSecurityProvider = true;
@@ -45,10 +46,6 @@ public class SecurityHelperTest {
     public void disableSecurityProvider() {
         SecurityHelper.securityProvider = null;
         SecurityHelper.initSecurityProvider = false;
-    }
-
-    private static Provider getProvider() {
-        return SecurityHelper.getSecurityProvider();
     }
 
     @Test
@@ -76,8 +73,8 @@ public class SecurityHelperTest {
     @Test
     public void doesNotRegisterBouncyCastleSecurityProviderByDefault() {
         SecurityHelper.getSecurityProvider();
-        assertNull(java.security.Security.getProvider("BC"));
-        assertFalse(SecurityHelper.isProviderRegistered());
+        assertNotNull(SecurityHelper.securityProvider);
+        assertNull(java.security.Security.getProvider(getProviderName()));
     }
 
     @Test
@@ -85,8 +82,8 @@ public class SecurityHelperTest {
         SecurityHelper.setRegisterProvider(true);
         try {
             SecurityHelper.getSecurityProvider();
-            assertNotNull(java.security.Security.getProvider("BC"));
-            assertTrue(SecurityHelper.isProviderRegistered());
+            assertNotNull(SecurityHelper.securityProvider);
+            assertNotNull(java.security.Security.getProvider(getProviderName()));
         }
         finally {
             java.security.Security.removeProvider("BC");
@@ -103,11 +100,10 @@ public class SecurityHelperTest {
             SecurityHelper.checkAndRegisterProviderOnce();
             assertNotNull(SecurityHelper.getSecurityProvider()); // trigger
             assertNotNull(SecurityHelper.securityProvider);
-            assertTrue(SecurityHelper.isProviderRegistered());
-            assertNotNull(java.security.Security.getProvider("BC"));
+            assertTrue(isProviderRegistered());
         }
         finally {
-            java.security.Security.removeProvider("BC");
+            java.security.Security.removeProvider(getProviderName());
             SecurityHelper.setRegisterProvider(false);
             if (register == null) {
                 System.clearProperty("jruby.openssl.provider.register");
@@ -125,11 +121,10 @@ public class SecurityHelperTest {
         System.setProperty("jruby.openssl.provider.register", "true");
         try {
             SecurityHelper.setRegisterProvider(true);
-            assertTrue(SecurityHelper.isProviderRegistered());
-            assertNotNull(java.security.Security.getProvider("BC"));
+            assertTrue(isProviderRegistered());
         }
         finally {
-            java.security.Security.removeProvider("BC");
+            java.security.Security.removeProvider(getProviderName());
             SecurityHelper.setRegisterProvider(false);
             if (register == null) {
                 System.clearProperty("jruby.openssl.provider.register");
@@ -537,4 +532,16 @@ public class SecurityHelperTest {
         }
     }
 
+    private static Provider getProvider() {
+        return SecurityHelper.getSecurityProvider();
+    }
+
+    private static String getProviderName() {
+        return SecurityHelper.securityProvider.getName();
+    }
+
+    private static boolean isProviderRegistered() {
+        if (SecurityHelper.securityProvider == null) return false;
+        return Security.getProvider(getProviderName()) != null;
+    }
 }

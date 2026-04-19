@@ -492,7 +492,7 @@ public final class PKeyEC extends PKey {
 
     private static String getCurveNameObjectIdFromKey(final Ruby runtime, final ECPublicKey key) {
         try {
-            AlgorithmParameters algParams = AlgorithmParameters.getInstance("EC");
+            AlgorithmParameters algParams = SecurityHelper.getAlgorithmParameters("EC");
             algParams.init(key.getParams());
             return algParams.getParameterSpec(ECGenParameterSpec.class).getName();
         }
@@ -632,7 +632,7 @@ public final class PKeyEC extends PKey {
                 final ECPoint ecPoint = ((Point) point).asECPoint();
                 final String name = getCurveName();
 
-                KeyFactory keyFactory = KeyFactory.getInstance("EC"); // "BC"
+                KeyFactory keyFactory = SecurityHelper.getKeyFactory("EC");
                 ECParameterSpec spec = getParamSpec(name);
                 ECPublicKey ecPublicKey = (ECPublicKey) keyFactory.generatePublic(new ECPublicKeySpec(ecPoint, spec));
                 agreement.doPhase(ecPublicKey, true);

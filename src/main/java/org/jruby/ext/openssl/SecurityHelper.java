@@ -23,6 +23,7 @@
  */
 package org.jruby.ext.openssl;
 
+import java.security.AlgorithmParameters;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
@@ -215,15 +216,6 @@ public abstract class SecurityHelper {
         if (provider != null) doRegisterProvider(provider);
     }
 
-    static boolean isProviderAvailable(final String name) {
-        return Security.getProvider(name) != null;
-    }
-
-    static boolean isProviderRegistered() {
-        if (securityProvider == null) return false;
-        return isProviderAvailable(securityProvider.getName());
-    }
-
     private static void doRegisterProvider(final Provider securityProvider) {
         if (registerProvider != null) {
             synchronized(SecurityHelper.class) {
@@ -265,6 +257,15 @@ public abstract class SecurityHelper {
     static KeyFactory getKeyFactory(final String algorithm, final Provider provider)
         throws NoSuchAlgorithmException {
         return KeyFactory.getInstance(algorithm, provider);
+    }
+
+    public static AlgorithmParameters getAlgorithmParameters(final String algorithm) throws NoSuchAlgorithmException {
+        try {
+            final Provider provider = getSecurityProvider();
+            if (provider != null) return AlgorithmParameters.getInstance(algorithm, provider);
+        }
+        catch (NoSuchAlgorithmException e) { debug("getAlgorithmParameters", e); }
+        return AlgorithmParameters.getInstance(algorithm);
     }
 
     public static KeyPairGenerator getKeyPairGenerator(final String algorithm)

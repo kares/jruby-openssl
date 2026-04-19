@@ -223,24 +223,15 @@ public class OCSP {
     }
 
     static JcaContentSignerBuilder newJcaContentSignerBuilder(String alg) {
-        JcaContentSignerBuilder builder = new JcaContentSignerBuilder(alg);
-        if (SecurityHelper.isProviderAvailable("BC")) builder.setProvider("BC");
-        else builder.setProvider( SecurityHelper.getSecurityProvider() );
-        return builder;
+        return new JcaContentSignerBuilder(alg).setProvider(SecurityHelper.getSecurityProvider());
     }
 
     static JcaContentVerifierProviderBuilder newJcaContentVerifierProviderBuilder() {
-        JcaContentVerifierProviderBuilder builder = new JcaContentVerifierProviderBuilder();
-        if (SecurityHelper.isProviderAvailable("BC")) builder.setProvider("BC");
-        else builder.setProvider( SecurityHelper.getSecurityProvider() );
-        return builder;
+        return new JcaContentVerifierProviderBuilder().setProvider(SecurityHelper.getSecurityProvider());
     }
 
     static JcaDigestCalculatorProviderBuilder newJcaDigestCalculatorProviderBuilder() {
-        JcaDigestCalculatorProviderBuilder builder = new JcaDigestCalculatorProviderBuilder();
-        if (SecurityHelper.isProviderAvailable("BC")) builder.setProvider("BC");
-        else builder.setProvider( SecurityHelper.getSecurityProvider() );
-        return builder;
+        return new JcaDigestCalculatorProviderBuilder().setProvider(SecurityHelper.getSecurityProvider());
     }
 
 }

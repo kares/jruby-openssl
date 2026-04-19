@@ -320,30 +320,14 @@ public abstract class SecurityHelper {
     public static SecureRandom getSecureRandom() {
         try {
             final Provider provider = getSecurityProvider();
-            if (provider != null) {
-                final String algorithm = getSecureRandomAlgorithm(provider);
-                if (algorithm != null) return getSecureRandom(algorithm, provider);
+            if (provider != null) { // "DEFAULT" supported by BC providers
+                return SecureRandom.getInstance("DEFAULT", provider);
             }
         }
         catch (NoSuchAlgorithmException e) { debug("getSecureRandom", e); }
         return new SecureRandom();
     }
 
-    private static SecureRandom getSecureRandom(final String algorithm, final Provider provider)
-        throws NoSuchAlgorithmException {
-        return SecureRandom.getInstance(algorithm, provider);
-    }
-
-    private static String getSecureRandomAlgorithm(final Provider provider) {
-        for (Provider.Service service : provider.getServices()) {
-            if ("SecureRandom".equals(service.getType())) return service.getAlgorithm();
-        }
-        return null;
-    }
-
-    /**
-     * @note code calling this should not assume BC provider internals !
-     */
     public static Cipher getCipher(final String transformation)
         throws NoSuchAlgorithmException, NoSuchPaddingException {
         try {
@@ -373,9 +357,6 @@ public abstract class SecurityHelper {
         return Signature.getInstance(algorithm, provider);
     }
 
-    /**
-     * @note code calling this should not assume BC provider internals !
-     */
     public static Mac getMac(final String algorithm) throws NoSuchAlgorithmException {
         Mac mac = null;
         final Provider provider = getSecurityProvider();

@@ -72,15 +72,13 @@ plugin( :compiler, '3.15.0', compiler_configuration) do
                :compilerArgs => [ '', '-XDignore.symbol.file=true' ]
 end
 
-plugin :clean do
-  execute_goals( 'clean', :id => 'default-clean', :phase => 'clean',
-                 'filesets' => [
-                    { :directory => 'lib', :includes => [ 'jopenssl.jar' ] },
-                    { :directory => 'vendor' },
-                    { :directory => 'target', :includes => [ '*' ] }
-                 ],
-                 'failOnError' =>  'false' )
-end
+plugin! :clean, '2.4',
+        'filesets' => [
+          { :directory => 'lib', :includes => [ 'jopenssl.jar' ] },
+          { :directory => 'vendor' },
+          { :directory => 'target', :includes => [ '*' ] }
+        ],
+        'failOnError' => 'false'
 
 jruby_compile_compat = '9.2.1.0'
 jar 'org.jruby:jruby-core', jruby_compile_compat, :scope => :provided

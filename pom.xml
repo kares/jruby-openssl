@@ -166,10 +166,19 @@ DO NOT MODIFY - GENERATED CODE
               <directory>lib</directory>
               <includes>
                 <include>jopenssl.jar</include>
-                <include>*/**/*.jar</include>
+              </includes>
+            </fileset>
+            <fileset>
+              <directory>vendor</directory>
+            </fileset>
+            <fileset>
+              <directory>target</directory>
+              <includes>
+                <include>*</include>
               </includes>
             </fileset>
           </filesets>
+          <failOnError>false</failOnError>
         </configuration>
       </plugin>
       <plugin>
@@ -277,38 +286,6 @@ DO NOT MODIFY - GENERATED CODE
             <annotationProcessor>org.jruby.anno.AnnotationBinder</annotationProcessor>
           </annotationProcessors>
         </configuration>
-      </plugin>
-      <plugin>
-        <artifactId>maven-clean-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>default-clean</id>
-            <phase>clean</phase>
-            <goals>
-              <goal>clean</goal>
-            </goals>
-            <configuration>
-              <filesets>
-                <fileset>
-                  <directory>lib</directory>
-                  <includes>
-                    <include>jopenssl.jar</include>
-                  </includes>
-                </fileset>
-                <fileset>
-                  <directory>vendor</directory>
-                </fileset>
-                <fileset>
-                  <directory>target</directory>
-                  <includes>
-                    <include>*</include>
-                  </includes>
-                </fileset>
-              </filesets>
-              <failOnError>false</failOnError>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>

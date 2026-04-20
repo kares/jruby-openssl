@@ -54,7 +54,10 @@ public final class OpenSSL {
     }
 
     public static void createOpenSSL(final Ruby runtime) {
-        SecurityHelper.setRegisterProvider( SafePropertyAccessor.getBoolean("jruby.openssl.provider.register") );
+        final String registerProperty = SafePropertyAccessor.getProperty("jruby.openssl.provider.register");
+        SecurityHelper.setRegisterProvider(
+            registerProperty == null ? SecurityHelper.isFipsMode() : Boolean.parseBoolean(registerProperty)
+        );
 
         final RubyModule _OpenSSL = runtime.getOrCreateModule("OpenSSL");
 
@@ -114,7 +117,7 @@ public final class OpenSSL {
         _OpenSSL.setConstant("OPENSSL_VERSION_NUMBER", runtime.newFixnum(OPENSSL_VERSION_NUMBER));
         // MRI 2.3 tests do: /\AOpenSSL +0\./ !~ OpenSSL::OPENSSL_LIBRARY_VERSION
         _OpenSSL.setConstant("OPENSSL_LIBRARY_VERSION", VERSION);
-        _OpenSSL.setConstant("OPENSSL_FIPS", runtime.getFalse());
+        _OpenSSL.setConstant("OPENSSL_FIPS", runtime.newBoolean(SecurityHelper.isFipsMode()));
     }
 
     static RubyClass _OpenSSLError(final Ruby runtime) {
@@ -185,28 +188,20 @@ public final class OpenSSL {
 
     @JRubyMethod(name = "fips_mode", meta = true)
     public static IRubyObject get_fips_mode(ThreadContext context, IRubyObject self) {
-        warn(context, "FIPS mode not implemented on JRuby-OpenSSL");
-        return context.nil;
+        return context.runtime.newBoolean(SecurityHelper.isFipsMode());
     }
 
     @JRubyMethod(name = "fips_mode=", meta = true)
     public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject value) {
-        if ( value.isTrue() ) {
-            warn(context, "FIPS mode not implemented on JRuby-OpenSSL");
+        final boolean requested = value.isTrue();
+        if (requested != SecurityHelper.isFipsMode()) {
+            throw context.runtime.newNotImplementedError("FIPS mode is a boot-time setting; " +
+                    "use -Djruby.openssl.provider.fips=" + requested);
         }
-        return value;
+        return get_fips_mode(context, self);
     }
 
     // internal (package-level) helpers :
-
-    /**
-     * @deprecated
-     */
-    @JRubyMethod(name = "_disable_security_restrictions!", visibility = Visibility.PRIVATE, meta = true)
-    public static IRubyObject _disable_security_restrictions(ThreadContext context, IRubyObject self) {
-        warnDeprecated(context, "OpenSSL._disable_security_restrictions! is deprecated for removal");
-        return context.nil;
-    }
 
     private static boolean debug;
 

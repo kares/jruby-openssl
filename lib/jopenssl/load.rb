@@ -1,18 +1,17 @@
-require 'jopenssl/version'
+require_relative 'version'
 
-# NOTE: assuming user does pull in BC .jars from somewhere else on the CP
+# NOTE: assuming user does pull in BC .jars from somewhere else on the class-path
 unless ENV_JAVA['jruby.openssl.load.jars'].eql?('false')
   version = JOpenSSL::BOUNCY_CASTLE_VERSION
-  begin
-    require 'jar-dependencies'
-    # if we have jar-dependencies we let it track the jars
+  bc_jars = begin
+    require 'jar_dependencies' unless respond_to?(:require_jar, true)
     require_jar 'org.bouncycastle', 'bcprov-jdk18on', version
     require_jar 'org.bouncycastle', 'bcpkix-jdk18on', version
     require_jar 'org.bouncycastle', 'bcutil-jdk18on', version
     require_jar 'org.bouncycastle', 'bctls-jdk18on',  version
-    bc_jars = true
+    true
   rescue LoadError, RuntimeError
-    bc_jars = false
+    false
   end
   unless bc_jars
     load "org/bouncycastle/bcprov-jdk18on/#{version}/bcprov-jdk18on-#{version}.jar"

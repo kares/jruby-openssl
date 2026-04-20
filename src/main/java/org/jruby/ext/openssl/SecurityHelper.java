@@ -61,7 +61,11 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  */
 public abstract class SecurityHelper {
 
-    private static String BC_PROVIDER_CLASS = "org.bouncycastle.jce.provider.BouncyCastleProvider";
+    static final boolean FIPS_MODE = SafePropertyAccessor.getBoolean("jruby.openssl.provider.fips");
+
+    private static final String BC_PROVIDER_CLASS = FIPS_MODE ?
+        "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider" :
+        "org.bouncycastle.jce.provider.BouncyCastleProvider";
     static boolean setBouncyCastleProvider = true; // (package access for tests)
     static volatile Provider securityProvider; // 'BC' provider (package access for tests)
     private static volatile Boolean registerProvider = null;
@@ -83,6 +87,10 @@ public abstract class SecurityHelper {
         }
         doRegisterProvider(provider);
         return provider;
+    }
+
+    public static boolean isFipsMode() {
+        return FIPS_MODE;
     }
 
     private static Provider getJsseProvider(final String name) {

@@ -569,8 +569,18 @@ public class SSLSocket extends RubyObject {
         }
     }
 
-    private static final int READ_WOULD_BLOCK_RESULT = Integer.MIN_VALUE + 1;
-    private static final int WRITE_WOULD_BLOCK_RESULT = Integer.MIN_VALUE + 2;
+    // return values are -1 (EOF) and >= 0 (byte counts), so any value < -1 is safe to use
+    private static final int READ_WOULD_BLOCK_RESULT  = -2;
+    private static final int WRITE_WOULD_BLOCK_RESULT = -3;
+
+    private static boolean isWouldBlockResult(final int result) {
+        return result < -1;
+    }
+
+    private RubySymbol wouldBlockSymbol(final int result) {
+        assert isWouldBlockResult(result) : "unexpected result: " + result;
+        return getRuntime().newSymbol(result == READ_WOULD_BLOCK_RESULT ? "wait_readable" : "wait_writable");
+    }
 
     private static void readWouldBlock(final Ruby runtime, final boolean exception, final int[] result) {
         if ( exception ) throw newSSLErrorWaitReadable(runtime, "read would block");
@@ -603,7 +613,9 @@ public class SSLSocket extends RubyObject {
                 doTasks();
                 break;
             case NEED_UNWRAP:
-                if (readAndUnwrap(blocking, exception) == -1 && handshakeStatus != SSLEngineResult.HandshakeStatus.FINISHED) {
+                int unwrapResult = readAndUnwrap(blocking, exception);
+                if (isWouldBlockResult(unwrapResult)) return wouldBlockSymbol(unwrapResult);
+                if (unwrapResult == -1 && handshakeStatus != SSLEngineResult.HandshakeStatus.FINISHED) {
                     throw new SSLHandshakeException("Socket closed");
                 }
                 // during initialHandshake, calling readAndUnwrap that results UNDERFLOW does not mean writable.
@@ -739,8 +751,8 @@ public class SSLSocket extends RubyObject {
         if ( engine.isInboundDone() ) return -1;
 
         if ( ! appReadData.hasRemaining() ) {
-            int appBytesProduced = readAndUnwrap(blocking, exception);
-            if (appBytesProduced == -1 || appBytesProduced == 0) {
+            final int appBytesProduced = readAndUnwrap(blocking, exception);
+            if (appBytesProduced == -1 || appBytesProduced == 0 || isWouldBlockResult(appBytesProduced)) {
                 return appBytesProduced;
             }
         }
@@ -798,7 +810,13 @@ public class SSLSocket extends RubyObject {
                 handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK ||
                 handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_WRAP ||
                 handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED ) ) {
-            doHandshake(blocking, exception);
+            IRubyObject wouldBlock = doHandshake(blocking, exception);
+            if ( wouldBlock != null ) {
+                if ("wait_writable".equals(wouldBlock.asJavaString())) {
+                    return WRITE_WOULD_BLOCK_RESULT;
+                }
+                return READ_WOULD_BLOCK_RESULT;
+            }
         }
         return appReadData.remaining();
     }
@@ -889,6 +907,9 @@ public class SSLSocket extends RubyObject {
                     if ( exception ) throw runtime.newEOFError();
                     return context.nil;
                 }
+
+                // post-handshake processing (e.g. TLS 1.3 NewSessionTicket) signaled would-block
+                if ( isWouldBlockResult(read) ) return wouldBlockSymbol(read);
 
                 if ( read == 0 && status == SSLEngineResult.Status.BUFFER_UNDERFLOW ) {
                     // If we didn't get any data back because we only read in a partial TLS record,

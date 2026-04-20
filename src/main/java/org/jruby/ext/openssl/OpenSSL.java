@@ -48,6 +48,7 @@ public final class OpenSSL {
         final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
         SecurityHelper.setFipsMode(fipsMode);
         SecurityHelper.checkAndRegisterProviderOnce();
+        LoggingSilence.applySilenceOnce();
 
         createOpenSSL(runtime);
     }

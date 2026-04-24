@@ -41,8 +41,6 @@ import java.util.logging.Logger;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.util.SafePropertyAccessor;
 
-import static org.jruby.ext.openssl.OpenSSL.debug;
-
 /**
  * Applies sensible default {@code java.util.logging} (JUL) levels to a handful
  * of known-noisy BouncyCastle / BCJSSE loggers — but only when the user has
@@ -79,7 +77,7 @@ final class LoggingSilence {
         BC_LOGGER_SILENCE_LEVELS = map;
     }
 
-    private static volatile Logger[] silencedLoggers;
+    private static volatile java.util.logging.Logger[] silencedLoggers;
 
     /**
      * Apply default silencing for noisy BC loggers
@@ -90,21 +88,21 @@ final class LoggingSilence {
         if (!SafePropertyAccessor.getBoolean("jruby.openssl.jul.silence", true)) return;
 
         if (userConfiguredJULOrBCLogging()) {
-            silencedLoggers = new Logger[0];
+            silencedLoggers = new java.util.logging.Logger[0];
             return;
         }
 
         try {
             if (updateConfigurationForSilencedLoggers()) {
-                silencedLoggers = new Logger[0];
+                silencedLoggers = new java.util.logging.Logger[0];
                 return;
             }
 
             silencedLoggers = setSilencedLoggerLevels();
         }
         catch (SecurityException ex) {
-            debug("[JOpenSSL] unable to configure BC logging levels", ex);
-            silencedLoggers = new Logger[0];
+            OpenSSL.LOG.debug("unable to configure BC logging levels", ex);
+            silencedLoggers = new java.util.logging.Logger[0];
         }
     }
 
@@ -153,7 +151,7 @@ final class LoggingSilence {
             return true;
         }
         catch (ReflectiveOperationException | IOException ex) {
-            debug("[JOpenSSL] LogManager.updateConfiguration failed; falling back to setLevel", ex);
+            OpenSSL.LOG.debug("LogManager.updateConfiguration failed", ex);
             return false;
         }
     }

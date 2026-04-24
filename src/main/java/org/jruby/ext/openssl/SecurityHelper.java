@@ -51,10 +51,8 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKeyFactory;
 import javax.net.ssl.SSLContext;
 
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.SafePropertyAccessor;
-
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 
 /**
  * Java Security (and JCE) helpers.
@@ -62,6 +60,8 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  * @author kares
  */
 public abstract class SecurityHelper {
+
+    private static final Logger LOG = Logger.getLogger(SecurityHelper.class);
 
     static final String BC_PROVIDER_CLASS = "org.bouncycastle.jce.provider.BouncyCastleProvider";
     static final String BC_PROVIDER_NAME = "BC";
@@ -96,7 +96,7 @@ public abstract class SecurityHelper {
             // reuse when provider already registered (e.g. via java.security configuration)
             provider = Security.getProvider(providerName);
             if (provider != null) {
-                debug("[JOpenSSL] reusing registered (security) provider: " + providerName);
+                LOG.info("reusing registered security provider: " + providerName);
                 setSecurityProvider(provider, false);
             } else {
                 final String className = isFipsMode() ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS;
@@ -112,7 +112,7 @@ public abstract class SecurityHelper {
     }
 
     private static synchronized void setSecurityProvider(final Provider provider, final boolean log) {
-        if (provider != null && log) debug("[JOpenSSL] using (security) provider: " + provider);
+        if (provider != null && log) LOG.info("using security provider: " + provider);
         securityProvider = provider;
     }
 
@@ -137,13 +137,13 @@ public abstract class SecurityHelper {
             if (name != null) {
                 provider = Security.getProvider(name);
                 if (provider != null) {
-                    debug("[JOpenSSL] reusing registered ssl provider: " + name);
+                    LOG.info("reusing registered ssl provider: " + name);
                 }
             }
             if (provider == null && "BCJSSE".equals(name)) {
                 provider = newBouncyCastleJsseProvider();
             } else if (provider == null && name != null) {
-                debug("[JOpenSSL] unknown ssl provider name: " + name);
+                LOG.debug("unknown ssl provider name: " + name);
             }
             jsseProvider = provider; // even if null - we can operate without jsse provider
             initJsseProvider = false;
@@ -164,12 +164,12 @@ public abstract class SecurityHelper {
                 }
                 return providerClass.getConstructor(Provider.class).newInstance(cryptoProvider);
             } else {
-                debug("[JOpenSSL] instantiating ssl provider without BC crypto provider " +
+                LOG.info("instantiating ssl provider without BC crypto provider " +
                         "(features such as TLS key_share extension will be limited)");
                 return providerClass.newInstance();
             }
         } catch (ReflectiveOperationException ex) {
-            debug("[JOpenSSL] WARN: can not instantiate JSSE provider (" + BC_JSSE_PROVIDER_CLASS + ")", ex);
+            LOG.debug("can not instantiate JSSE provider (" + BC_JSSE_PROVIDER_CLASS + ")", ex);
         }
         return null;
     }
@@ -178,7 +178,7 @@ public abstract class SecurityHelper {
         try {
             return (Provider) Class.forName(klass).newInstance();
         } catch (ReflectiveOperationException ex) {
-            debug("[JOpenSSL] WARN: can not instantiate provider (" + klass  + ")", ex);
+            LOG.debug("can not instantiate provider (" + klass  + ")", ex);
         }
         return null;
     }
@@ -236,7 +236,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if ( provider != null ) return getCertificateFactory(type, provider);
         }
-        catch (CertificateException e) { debugStackTrace(e); }
+        catch (CertificateException e) { LOG.debugStack(e); }
         return CertificateFactory.getInstance(type);
     }
 
@@ -250,7 +250,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyFactory(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getKeyFactory", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyFactory", e); }
         return KeyFactory.getInstance(algorithm);
     }
 
@@ -264,7 +264,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return AlgorithmParameters.getInstance(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getAlgorithmParameters", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getAlgorithmParameters", e); }
         return AlgorithmParameters.getInstance(algorithm);
     }
 
@@ -274,7 +274,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyPairGenerator(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getKeyPairGenerator", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyPairGenerator", e); }
         return KeyPairGenerator.getInstance(algorithm);
     }
 
@@ -288,7 +288,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyStore(type, provider);
         }
-        catch (KeyStoreException e) { debug("getKeyStore", e); }
+        catch (KeyStoreException e) { LOG.debug("getKeyStore", e); }
         return KeyStore.getInstance(type);
     }
 
@@ -304,7 +304,7 @@ public abstract class SecurityHelper {
             // try reflective logic
             final Provider provider = getSecurityProvider();
             if (provider != null) {
-                debug("getMessageDigest", e);
+                LOG.debug("getMessageDigest", e);
                 return getMessageDigest(algorithm, provider);
             }
 
@@ -324,7 +324,7 @@ public abstract class SecurityHelper {
                 return SecureRandom.getInstance("DEFAULT", provider);
             }
         }
-        catch (NoSuchAlgorithmException e) { debug("getSecureRandom", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getSecureRandom", e); }
         return new SecureRandom();
     }
 
@@ -334,7 +334,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getCipher(transformation, provider);
         }
-        catch (NoSuchAlgorithmException | NoSuchPaddingException e) { debug("getCipher", e); }
+        catch (NoSuchAlgorithmException | NoSuchPaddingException e) { LOG.debug("getCipher", e); }
         return Cipher.getInstance(transformation);
     }
 
@@ -348,7 +348,7 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getSignature(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getSignature", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getSignature", e); }
         return Signature.getInstance(algorithm);
     }
 
@@ -388,8 +388,8 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyGenerator(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getKeyGenerator", e); }
-        catch (SecurityException e) { debugStackTrace(e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyGenerator", e); }
+        catch (SecurityException e) { LOG.debugStack(e); }
         return KeyGenerator.getInstance(algorithm);
     }
 
@@ -403,8 +403,8 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyAgreement(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getKeyAgreement", e); }
-        catch (SecurityException e) { debugStackTrace(e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyAgreement", e); }
+        catch (SecurityException e) { LOG.debugStack(e); }
         return KeyAgreement.getInstance(algorithm);
     }
 
@@ -418,8 +418,8 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getSecretKeyFactory(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { debug("getSecretKeyFactory", e); }
-        catch (SecurityException e) { debugStackTrace(e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getSecretKeyFactory", e); }
+        catch (SecurityException e) { LOG.debugStack(e); }
         return SecretKeyFactory.getInstance(algorithm);
     }
 
@@ -449,7 +449,7 @@ public abstract class SecurityHelper {
                 if (provider != null) return getSSLContext(protocol, provider);
             }
         }
-        catch (NoSuchAlgorithmException e) { debug("getSSLContext", e); }
+        catch (NoSuchAlgorithmException e) { LOG.debug("getSSLContext", e); }
         return SSLContext.getInstance(protocol); // built-in (SunJSSE) provider
     }
 

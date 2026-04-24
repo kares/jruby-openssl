@@ -35,11 +35,10 @@ import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
-
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 
 /**
  * Wraps EdDSA keys (Ed25519, Ed448) using BouncyCastle's JCA EdDSA provider.
@@ -47,6 +46,8 @@ import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
  * Not exposed — instances appear as OpenSSL::PKey::PKey.
  */
 public class PKeyEdDSA extends PKey {
+
+    private static final Logger LOG = Logger.getLogger(PKeyEdDSA.class);
 
     private PublicKey publicKey;
     private PrivateKey privateKey;
@@ -85,7 +86,7 @@ public class PKeyEdDSA extends PKey {
             throw newPKeyError(context.runtime, "unsupported algorithm: " + algorithm);
         }
         catch (Exception e) {
-            debugStackTrace(context.runtime, e);
+            LOG.debugStack(context.runtime, null, e);
             throw newPKeyError(context.runtime, e.getMessage());
         }
     }
@@ -112,7 +113,7 @@ public class PKeyEdDSA extends PKey {
             throw newPKeyError(runtime, e.getMessage());
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newPKeyError(runtime, e.getMessage());
         }
     }
@@ -133,7 +134,7 @@ public class PKeyEdDSA extends PKey {
             throw newPKeyError(runtime, e.getMessage());
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newPKeyError(runtime, e.getMessage());
         }
     }

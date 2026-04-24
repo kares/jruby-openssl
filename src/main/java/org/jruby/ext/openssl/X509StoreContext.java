@@ -43,13 +43,13 @@ import org.jruby.RubyString;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.*;
 import org.jruby.runtime.builtin.IRubyObject;
 
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 import org.jruby.ext.openssl.x509store.StoreContext;
 
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.X509CRL._CRL;
 import static org.jruby.ext.openssl.X509Cert._Certificate;
@@ -61,6 +61,7 @@ import static org.jruby.ext.openssl.x509store.X509Utils.verifyCertificateErrorSt
  */
 public class X509StoreContext extends RubyObject {
     private static final long serialVersionUID = -4165247923898746888L;
+    private static final Logger LOG = Logger.getLogger(X509StoreContext.class);
 
     public static void createX509StoreContext(final Ruby runtime, final RubyModule X509) {
         RubyClass StoreContext = X509.defineClassUnder("StoreContext", runtime.getObject(),
@@ -169,7 +170,7 @@ public class X509StoreContext extends RubyObject {
             throw e;
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newStoreError(runtime, e);
         }
     }

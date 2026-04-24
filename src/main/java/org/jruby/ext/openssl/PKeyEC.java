@@ -82,14 +82,13 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.component.VariableEntry;
+import org.jruby.ext.openssl.log.Logger;
 
 import org.jruby.ext.openssl.impl.CipherSpec;
 import org.jruby.ext.openssl.impl.ECPrivateKeyWithName;
 
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.impl.PKey.readECPrivateKey;
 
 /**
@@ -98,6 +97,7 @@ import static org.jruby.ext.openssl.impl.PKey.readECPrivateKey;
  * @author kares
  */
 public final class PKeyEC extends PKey {
+    private static final Logger LOG = Logger.getLogger(PKeyEC.class);
 
     private static final long serialVersionUID = 1L;
 
@@ -401,38 +401,38 @@ public final class PKeyEC extends PKey {
             try {
                 key = readPrivateKey(strJava, passwd);
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
             catch (PEMInputOutput.PasswordRequiredException retry) {
                 if ( ttySTDIN(context) ) {
                     try { key = readPrivateKey(str, passwordPrompt(context)); }
-                    catch (Exception e) { debugStackTrace(runtime, e); }
+                    catch (Exception e) { LOG.debugStack(runtime, null, e); }
                 }
             }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) {
             try {
                 key = PEMInputOutput.readECPublicKey(new StringReader(strJava), passwd);
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) {
             try {
                 key = PEMInputOutput.readECPubKey(new StringReader(strJava));
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) {
             try {
                 key = readECPrivateKey(ecdsaFactory, str.getBytes());
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (InvalidKeySpecException|IOException e) { debug(runtime, "PKeyEC could not read private key", e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (InvalidKeySpecException|IOException e) { LOG.debug(runtime, "could not read private key", e); }
             catch (RuntimeException e) {
-                if ( isKeyGenerationFailure(e) ) debug(runtime, "PKeyEC could not read private key", e);
-                else debugStackTrace(runtime, e);
+                if ( isKeyGenerationFailure(e) ) LOG.debug(runtime, "could not read private key", e);
+                else LOG.debugStack(runtime, null, e);
             }
         }
 
@@ -615,7 +615,7 @@ public final class PKeyEC extends PKey {
             return runtime.newBoolean(verifier.verify(sign.convertToString().getBytes()));
         }
         catch (GeneralSecurityException ex) {
-            debugStackTrace(runtime, ex);
+            LOG.debugStack(runtime, null, ex);
             return runtime.getFalse();
         }
     }

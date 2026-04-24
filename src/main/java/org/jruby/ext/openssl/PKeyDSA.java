@@ -53,6 +53,7 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.impl.CipherSpec;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
@@ -74,6 +75,7 @@ import static org.jruby.ext.openssl.impl.PKey.toDerDSAPublicKey;
  */
 public class PKeyDSA extends PKey {
     private static final long serialVersionUID = 6351851846414049890L;
+    private static final Logger LOG = Logger.getLogger(PKeyDSA.class);
 
     private static final ObjectAllocator ALLOCATOR = new ObjectAllocator() {
         public PKeyDSA allocate(Ruby runtime, RubyClass klass) { return new PKeyDSA(runtime, klass); }
@@ -214,51 +216,51 @@ public class PKeyDSA extends PKey {
             try {
                 key = readPrivateKey(strJava, passwd);
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
             catch (PEMInputOutput.PasswordRequiredException retry) {
                 if ( ttySTDIN(context) ) {
                     try { key = readPrivateKey(strJava, passwordPrompt(context)); }
-                    catch (Exception e) { debugStackTrace(runtime, e); }
+                    catch (Exception e) { LOG.debugStack(runtime, null, e); }
                 }
             }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) { // PEM_read_bio_DSAPublicKey
             try {
                 key = PEMInputOutput.readDSAPublicKey(new StringReader(strJava), passwd);
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) { // PEM_read_bio_DSA_PUBKEY
             try {
                 key = PEMInputOutput.readDSAPubKey(new StringReader(strJava));
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (Exception e) { debugStackTrace(runtime, e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (Exception e) { LOG.debugStack(runtime, null, e); }
         }
         if ( key == null && ! noClassDef ) { // d2i_DSAPrivateKey_bio
             try {
                 key = readDSAPrivateKey(dsaFactory, str.getBytes());
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (InvalidKeySpecException e) { debug(runtime, "PKeyDSA could not read private key", e); }
-            catch (IOException e) { debugStackTrace(runtime, "PKeyDSA could not read private key", e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (InvalidKeySpecException e) { LOG.debug(runtime, "could not read private key", e); }
+            catch (IOException e) { LOG.debugStack(runtime, "could not read private key", e); }
             catch (RuntimeException e) {
-                if ( isKeyGenerationFailure(e) ) debug(runtime, "PKeyDSA could not read private key", e);
-                else debugStackTrace(runtime, e);
+                if ( isKeyGenerationFailure(e) ) LOG.debug(runtime, "could not read private key", e);
+                else LOG.debugStack(runtime, null, e);
             }
         }
         if ( key == null && ! noClassDef ) { // d2i_DSA_PUBKEY_bio
             try {
                 key = readDSAPublicKey(dsaFactory, str.getBytes());
             }
-            catch (NoClassDefFoundError e) { noClassDef = true; debugStackTrace(runtime, e); }
-            catch (InvalidKeySpecException e) { debug(runtime, "PKeyDSA could not read public key", e); }
-            catch (IOException e) { debugStackTrace(runtime, "PKeyDSA could not read public key", e); }
+            catch (NoClassDefFoundError e) { noClassDef = true; LOG.debugStack(runtime, null, e); }
+            catch (InvalidKeySpecException e) { LOG.debug(runtime, "could not read public key", e); }
+            catch (IOException e) { LOG.debugStack(runtime, "could not read public key", e); }
             catch (RuntimeException e) {
-                if ( isKeyGenerationFailure(e) ) debug(runtime, "PKeyDSA could not read public key", e);
-                else debugStackTrace(runtime, e);
+                if ( isKeyGenerationFailure(e) ) LOG.debug(runtime, "could not read public key", e);
+                else LOG.debugStack(runtime, null, e);
             }
         }
 

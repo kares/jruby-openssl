@@ -35,6 +35,7 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
 
@@ -48,6 +49,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class Random {
+
+    private static final Logger LOG = Logger.getLogger(Random.class);
 
     // thread-local (default), shared, strong
     static final String HOLDER_TYPE = SafePropertyAccessor.getProperty("jruby.openssl.random", "");
@@ -189,7 +192,7 @@ public class Random {
                 }
                 catch (Exception e) {
                     tryPreferredPRNG = false;
-                    OpenSSL.debug("SecureRandom '"+ PREFERRED_PRNG +"' failed:", e);
+                    LOG.debug("SecureRandom '"+ PREFERRED_PRNG +"' failed", e);
                 }
             }
 
@@ -211,7 +214,7 @@ public class Random {
                 try {
                     method = java.security.SecureRandom.class.getMethod("getInstanceStrong");
                 }
-                catch (NoSuchMethodException ex) { OpenSSL.debugStackTrace(ex); }
+                catch (NoSuchMethodException ex) { LOG.debugStack(ex); }
             }
             getInstanceStrong = method;
         }

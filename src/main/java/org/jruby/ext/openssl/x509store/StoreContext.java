@@ -56,9 +56,9 @@ import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
 import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
 import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.SafePropertyAccessor;
 
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.x509store.X509Error.addError;
 import static org.jruby.ext.openssl.x509store.X509Utils.*;
 
@@ -68,6 +68,8 @@ import static org.jruby.ext.openssl.x509store.X509Utils.*;
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class StoreContext {
+
+    private static final Logger LOG = Logger.getLogger(StoreContext.class);
 
     private static final Integer ZERO = 0;
 
@@ -1177,7 +1179,7 @@ public class StoreContext {
                      */
                     if ((search & S_DOALTERNATE) != 0) {
                         if (!(num > i && i > 0 && ss == false)) { // ossl_assert
-                            OpenSSL.debug(this + " assert failure (num > i && i > 0 && ss == false)");
+                            LOG.debug("assert failure (num > i && i > 0 && ss == false); context=" + this);
                             addError(ERR_R_INTERNAL_ERROR);
                             trust = X509_TRUST_REJECTED;
                             this.error = V_ERR_UNSPECIFIED;
@@ -1227,7 +1229,7 @@ public class StoreContext {
                      */
                     if (ok != 0) {
                         if (!(num_untrusted <= num)) { // ossl_assert
-                            OpenSSL.debug(this + " assert failure (num_untrusted <= num)");
+                            LOG.debug("assert failure (num_untrusted <= num); context=" + this);
                             addError(ERR_R_INTERNAL_ERROR);
                             trust = X509_TRUST_REJECTED;
                             this.error = V_ERR_UNSPECIFIED;
@@ -1271,7 +1273,7 @@ public class StoreContext {
             if ((search & S_DOUNTRUSTED) != 0) {
                 num = chain.size();
                 if (!(num == num_untrusted)) { // ossl_assert
-                    OpenSSL.debug(this + " assert failure (num == num_untrusted)");
+                    LOG.debug("assert failure (num == num_untrusted); context=" + this);
                     addError(ERR_R_INTERNAL_ERROR);
                     trust = X509_TRUST_REJECTED;
                     this.error = V_ERR_UNSPECIFIED;
@@ -1444,7 +1446,7 @@ public class StoreContext {
                         }
                     }
                 } catch (NameConstraintValidatorException e) {
-                    debugStackTrace(e);
+                    LOG.debugStack(e);
                     int err = e.getMessage() != null && e.getMessage().contains("excluded")
                             ? V_ERR_EXCLUDED_VIOLATION : V_ERR_PERMITTED_VIOLATION;
                     if (verify_cb_cert(x, i, err) == 0) return 0;

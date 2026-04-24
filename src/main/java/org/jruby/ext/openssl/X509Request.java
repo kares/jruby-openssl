@@ -57,6 +57,7 @@ import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.impl.ASN1Registry;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.runtime.Arity;
@@ -76,6 +77,7 @@ import static org.jruby.ext.openssl.PKey.supportedSignatureAlgorithm;
  */
 public class X509Request extends RubyObject {
     private static final long serialVersionUID = -2886532636278901502L;
+    private static final Logger LOG = Logger.getLogger(X509Request.class);
 
     public static void createRequest(final Ruby runtime, final RubyModule X509, final RubyClass OpenSSLError) {
         RubyClass _Request = X509.defineClassUnder("Request", runtime.getObject(), (r, klass) -> new X509Request(r, klass));
@@ -109,7 +111,7 @@ public class X509Request extends RubyObject {
             request = new PKCS10Request( StringHelper.readX509PEM(context, args[0]) );
         }
         catch (RuntimeException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newRequestError(runtime, "invalid certificate request data", e);
         }
 
@@ -329,7 +331,7 @@ public class X509Request extends RubyObject {
 
     @JRubyMethod(name="version=")
     public IRubyObject set_version(final ThreadContext context, IRubyObject version) {
-        warn(context, "OpenSSL::X509::Request#version= has no effect on certification request");
+        LOG.warnWithCaller(context.runtime, "version= has no effect on certification request");
         return this.version = version;
     }
 
@@ -397,11 +399,11 @@ public class X509Request extends RubyObject {
             }
         }
         catch (InvalidKeyException e) {
-            debug(runtime, "X509Request#sign invalid key:", e);
+            LOG.debug(runtime, "sign invalid key", e);
             throw newRequestError(runtime, e);
         }
         catch (Exception e) {
-            debugStackTrace(runtime, "X509Request#sign", e);
+            LOG.debugStack(runtime, "sign", e);
             throw newRequestError(runtime, e);
         }
         return this;
@@ -433,11 +435,11 @@ public class X509Request extends RubyObject {
             return runtime.newBoolean(signatureValid);
         }
         catch (InvalidKeyException e) {
-            debug(runtime, "X509Request#verify invalid key:", e);
+            LOG.debug(runtime, "verify invalid key", e);
             throw newRequestError(runtime, "invalid key supplied", e);
         }
         catch (RuntimeException e) {
-            debugStackTrace(runtime, "X509Request#verify", e);
+            LOG.debugStack(runtime, "verify", e);
             return context.nil;
         }
     }

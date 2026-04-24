@@ -27,11 +27,6 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl;
 
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
-import static org.jruby.ext.openssl.OpenSSL.warn;
-import static org.jruby.ext.openssl.X509._X509;
-import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
-
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
@@ -41,6 +36,7 @@ import org.jruby.RubyTime;
 import org.jruby.RubyObject;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.x509store.Store;
 import org.jruby.ext.openssl.x509store.StoreContext;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
@@ -52,10 +48,15 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.X509._X509;
+import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
+
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class X509Store extends RubyObject {
+
+    private static final Logger LOG = Logger.getLogger(X509Store.class);
 
     private static final long serialVersionUID = -2969708892287379665L;
 
@@ -177,7 +178,7 @@ public class X509Store extends RubyObject {
             throw e;
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newStoreError(runtime, "loading path failed: ", e);
         }
         return this;
@@ -196,7 +197,7 @@ public class X509Store extends RubyObject {
             throw e;
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newStoreError(runtime, "loading file failed: ", e);
         }
         return this;
@@ -209,7 +210,7 @@ public class X509Store extends RubyObject {
             store.setDefaultPaths(runtime);
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newStoreError(runtime, "setting default path failed: ", e);
         }
         return runtime.getNil();

@@ -42,7 +42,7 @@ import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
 
 import org.jruby.Ruby;
-import org.jruby.ext.openssl.OpenSSL;
+import org.jruby.ext.openssl.log.Logger;
 
 /**
  * c: X509_STORE
@@ -50,6 +50,8 @@ import org.jruby.ext.openssl.OpenSSL;
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class Store implements X509TrustManager {
+
+    private static final Logger LOG = Logger.getLogger(Store.class);
 
     public interface VerifyFunction extends Function1<StoreContext> { }
 
@@ -331,7 +333,7 @@ public class Store implements X509TrustManager {
             if (!e.getClass().getSimpleName().equals("NotFound")) {
                 throw e;
             }
-            OpenSSL.debugStackTrace(runtime, "add X509_CERT_FILER_CTX (to default paths)", e);
+            LOG.debugStack(runtime, "setDefaultPaths add cert file lookup", e);
         }
 
         lookup = addLookup(runtime, Lookup.hashDirLookup());
@@ -346,7 +348,7 @@ public class Store implements X509TrustManager {
             if (!e.getClass().getSimpleName().equals("NotFound")) {
                 throw e;
             }
-            OpenSSL.debugStackTrace(runtime, "add X509_HASH_DIR_CTX (to default paths)", e);
+            LOG.debugStack(runtime, "setDefaultPaths add hash dir lookup", e);
         }
 
         X509Error.clearErrors();

@@ -27,7 +27,6 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl;
 
-import java.io.PrintStream;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -66,16 +65,17 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 import org.jruby.util.TypeConverter;
+import org.jruby.ext.openssl.log.Logger;
 
 import static javax.crypto.Cipher.DECRYPT_MODE;
 import static javax.crypto.Cipher.ENCRYPT_MODE;
-import static org.jruby.ext.openssl.OpenSSL.*;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class Cipher extends RubyObject {
     private static final long serialVersionUID = -5390983669951165103L;
+    private static final Logger LOG = Logger.getLogger(Cipher.class);
 
     static void createCipher(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         final RubyClass Cipher = OpenSSL.defineClassUnder("Cipher", runtime.getObject(), (r, klass) -> new Cipher(r, klass));
@@ -156,7 +156,7 @@ public class Cipher extends RubyObject {
         }
         //
         final Algorithm alg = Algorithm.osslToJava(osslName);
-        if ( isDebug() ) debug("isSupportedCipher( "+ name +" ) try new cipher = " + alg.getRealName());
+        if ( LOG.isDebug(null) ) LOG.debug("isSupportedCipher( "+ name +" ) try new cipher = " + alg.getRealName());
         try {
             return getCipherInstance(alg.getRealName(), true) != null;
         }
@@ -725,8 +725,8 @@ public class Cipher extends RubyObject {
     private byte[] orgIV;
     private String padding;
 
-    private void dumpVars(final PrintStream out, final String header) {
-        out.println(this.toString() + ' ' + header +
+    private void dumpVars(final String header) {
+        LOG.debug(header +
                     "\n" +
                     " name = " + name +
                     " cryptoBase = " + cryptoBase +
@@ -756,7 +756,7 @@ public class Cipher extends RubyObject {
         //    throw newCipherError(runtime, "unsupported cipher algorithm ("+ name +")");
         //}
         if ( cipher != null ) {
-            throw runtime.newRuntimeError("Cipher already inititalized!");
+            throw runtime.newRuntimeError("Cipher already initialized");
         }
         updateCipher(name, padding);
     }
@@ -833,7 +833,7 @@ public class Cipher extends RubyObject {
         }
         catch (Exception e) {
             final Ruby runtime = context.runtime;
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCipherError(runtime, e);
         }
         if ( keyBytes.getRealSize() < keyLength ) {
@@ -855,7 +855,7 @@ public class Cipher extends RubyObject {
         }
         catch (Exception e) {
             final Ruby runtime = context.runtime;
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCipherError(runtime, e);
         }
         if ( ivBytes.getRealSize() < ivLength ) {
@@ -1034,9 +1034,8 @@ public class Cipher extends RubyObject {
     }
 
     private void doInitCipher(final Ruby runtime) {
-        if ( isDebug(runtime) ) {
-            dumpVars( runtime.getOut(), "doInitCipher()" );
-        }
+        if (LOG.isDebug(runtime)) dumpVars("doInitCipher");
+
         checkCipherNotNull(runtime);
         if ( key == null ) { //key = emptyKey(keyLength);
             throw newCipherError(runtime, "key not specified");
@@ -1087,7 +1086,7 @@ public class Cipher extends RubyObject {
             throw newCipherError(runtime, e + "\n possibly you need to install Java Cryptography Extension (JCE) Unlimited Strength Jurisdiction Policy Files for your JRE");
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
         }
         cipherInited = true;
@@ -1112,7 +1111,7 @@ public class Cipher extends RubyObject {
                     updateBufferPos = 0;
                 }
                 catch (GeneralSecurityException e) { // fall back to default behavior if NoPadding variant unavailable
-                    debugStackTrace(runtime, e);
+                    LOG.debugStack(runtime, null, e);
                     updateBuffer = null;
                 }
             }
@@ -1138,7 +1137,7 @@ public class Cipher extends RubyObject {
     public IRubyObject update(final ThreadContext context, final IRubyObject arg, IRubyObject buffer) {
         final Ruby runtime = context.runtime;
 
-        if ( isDebug(runtime) ) dumpVars( runtime.getOut(), "update()" );
+        if (LOG.isDebug(runtime)) dumpVars("update");
 
         checkCipherNotNull(runtime);
         checkAuthTag(runtime);
@@ -1177,7 +1176,7 @@ public class Cipher extends RubyObject {
             processedDataBytes += length;
         }
         catch (Exception e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
         }
 
@@ -1271,11 +1270,11 @@ public class Cipher extends RubyObject {
             }
         }
         catch (GeneralSecurityException e) { // cipher.doFinal
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCipherError(runtime, e);
         }
         catch (RuntimeException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
         }
         return RubyString.newString(runtime, str);

@@ -31,6 +31,7 @@ import org.jruby.*;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
 import org.jruby.common.IRubyWarnings;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
@@ -43,6 +44,12 @@ import org.jruby.util.SafePropertyAccessor;
  */
 @JRubyModule(name = "OpenSSL")
 public final class OpenSSL {
+
+    static {
+        // TODO bootstrap logging
+    }
+
+    static final Logger LOG = Logger.getLogger(OpenSSL.class);
 
     public static void load(final Ruby runtime) {
         final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
@@ -181,13 +188,13 @@ public final class OpenSSL {
     public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject mode) {
         final Ruby runtime = context.runtime;
         if (mode.isTrue() && !SecurityHelper.isFipsMode()) {
-            throw runtime.newNotImplementedError("[JOpenSSL] FIPS mode requires a different gem version");
+            throw runtime.newNotImplementedError("FIPS mode requires a different gem version");
         }
         if (mode == runtime.getFalse() && SecurityHelper.isFipsMode()) {
-            throw runtime.newSecurityError("[JOpenSSL] FIPS mode can not be disabled at runtime");
+            throw runtime.newSecurityError("FIPS mode can not be disabled at runtime");
         }
         if (mode.isNil() && SecurityHelper.isFipsMode()) {
-            OpenSSL.warn(context, "[JOpenSSL] FIPS mode enabled while requested fips_mode = nil");
+            LOG.warn(runtime, "FIPS mode enabled while requested fips_mode = nil");
         }
         return get_fips_mode(context, self);
     }
@@ -199,45 +206,11 @@ public final class OpenSSL {
     // on by default, warnings can be disabled using -Djruby.openssl.warn=false
     private static boolean warn = true;
 
-    static boolean isDebug() { return debug; }
+    public static boolean isDebug() { return debug; }
 
-    public static void debugStackTrace(final Throwable e) {
-        if ( isDebug() ) e.printStackTrace(System.out);
-    }
+    public static boolean isWarn() { return warn; }
 
-    public static void debug(final String msg) {
-        if ( isDebug() ) System.out.println(msg);
-    }
-
-    public static void debug(final String msg, final Throwable e) {
-        if ( isDebug() ) System.out.println(msg + ' ' + e);
-    }
-
-    static boolean isDebug(final Ruby runtime) {
-        return debug;
-    }
-
-    static void debugStackTrace(final Ruby runtime, final Throwable e) {
-        if ( isDebug(runtime) ) e.printStackTrace(runtime.getOut());
-    }
-
-    public static void debug(final Ruby runtime, final CharSequence msg) {
-        if ( isDebug(runtime) ) runtime.getOut().println(msg.toString());
-    }
-
-    public static void debug(final Ruby runtime, final CharSequence msg, final Throwable e) {
-        if ( isDebug(runtime) ) runtime.getOut().println(msg.toString() + ' ' + e);
-    }
-
-    public static void debugStackTrace(final Ruby runtime, final CharSequence msg, final Throwable e) {
-        if ( isDebug(runtime) ) {
-            synchronized (runtime.getOut()) {
-                runtime.getOut().print(msg.toString() + ' ');
-                e.printStackTrace(runtime.getOut());
-            }
-        }
-    }
-    static void warn(final ThreadContext context, final CharSequence msg) {
+    public static void warn(final ThreadContext context, final CharSequence msg) {
         if ( warn ) warn(context, RubyString.newString(context.runtime, msg));
     }
 
@@ -324,7 +297,7 @@ public final class OpenSSL {
         }
         catch (Throwable ex) {
             tryContextSecureRandom = false;
-            debug(context.runtime, "JRuby-OpenSSL failed to retrieve secure random from thread-context", ex);
+            LOG.debug(context.runtime, "failed to retrieve secure random from thread-context", ex);
         }
         return null;
     }
@@ -340,7 +313,7 @@ public final class OpenSSL {
     //
 
     static String bcExceptionMessage(Throwable ex) {
-        return "You need to configure JVM/classpath to enable BouncyCastle Security Provider: " + ex;
+        return "You need to configure JVM/classpath to enable BouncyCastle security provider: " + ex;
     }
 
 }

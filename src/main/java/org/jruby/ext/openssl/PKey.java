@@ -53,6 +53,7 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -71,6 +72,7 @@ import static org.jruby.ext.openssl.Cipher._Cipher;
  */
 public abstract class PKey extends RubyObject {
     private static final long serialVersionUID = 6114668087816965720L;
+    private static final Logger LOG = Logger.getLogger(PKey.class);
 
     static void createPKey(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         final RubyModule PKey = OpenSSL.defineModuleUnder("PKey");
@@ -136,7 +138,7 @@ public abstract class PKey extends RubyObject {
             try {
                 keyPair = readPrivateKey(str, pass);
             } catch (IOException e) {
-                debugStackTrace(runtime, "PKey readPrivateKey", e); /* ignore */
+                LOG.debugStack(runtime, "readPrivateKey", e); /* ignore */
                 keyPair = null;
             }
             // DER-encoded PKCS#8 PrivateKeyInfo or EncryptedPrivateKeyInfo
@@ -145,7 +147,7 @@ public abstract class PKey extends RubyObject {
                     final byte[] derInput = str.getBytes();
                     keyPair = PEMInputOutput.readPrivateKeyFromDER(derInput, pass);
                 } catch (IOException e) {
-                    debugStackTrace(runtime, "PKey readPrivateKeyFromDER", e); /* ignore */
+                    LOG.debugStack(runtime, "readPrivateKeyFromDER", e); /* ignore */
                 }
             }
             // PEM_read_bio_PrivateKey
@@ -163,7 +165,7 @@ public abstract class PKey extends RubyObject {
                 if ( PKeyEdDSA.isEdDSAAlgorithm(alg) ) {
                     return PKeyEdDSA.newInstance(runtime, keyPair);
                 }
-                debug(runtime, "PKey readPrivateKey unexpected key pair algorithm: " + alg);
+                LOG.debug(runtime, "readPrivateKey unexpected key pair algorithm: " + alg);
             }
 
             PublicKey pubKey = null;
@@ -171,13 +173,13 @@ public abstract class PKey extends RubyObject {
                 pubKey = PEMInputOutput.readRSAPublicKey(new StringReader(str.toString()), null);
                 if (pubKey != null) return new PKeyRSA(runtime, (RSAPublicKey) pubKey);
             } catch (IOException e) {
-                debugStackTrace(runtime, "PKey readRSAPublicKey", e); /* ignore */
+                LOG.debugStack(runtime, "readRSAPublicKey", e); /* ignore */
             }
             try {
                 pubKey = PEMInputOutput.readDSAPublicKey(new StringReader(str.toString()), null);
                 if (pubKey != null) return new PKeyDSA(runtime, (DSAPublicKey) pubKey);
             } catch (IOException e) {
-                debugStackTrace(runtime, "PKey readDSAPublicKey", e); /* ignore */
+                LOG.debugStack(runtime, "readDSAPublicKey", e); /* ignore */
             }
 
             final byte[] input = StringHelper.readX509PEM(context, str);
@@ -185,14 +187,14 @@ public abstract class PKey extends RubyObject {
             try {
                 pubKey = org.jruby.ext.openssl.impl.PKey.readPublicKey(input);
             } catch (IOException e) {
-                debugStackTrace(runtime, "PKey readPublicKey", e); /* ignore */
+                LOG.debugStack(runtime, "readPublicKey", e); /* ignore */
             }
             // PEM_read_bio_PUBKEY
             if (pubKey == null) {
                 try {
                     pubKey = PEMInputOutput.readPubKey(new StringReader(str.toString()));
                 } catch (IOException e) {
-                    debugStackTrace(runtime, "PKey readPubKey", e); /* ignore */
+                    LOG.debugStack(runtime, "readPubKey", e); /* ignore */
                 }
             }
 
@@ -664,17 +666,17 @@ public abstract class PKey extends RubyObject {
             return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(encodedKey));
         }
         catch (InvalidKeySpecException e) {
-            if ( isDebug(runtime) ) {
-                debug(runtime, getClass().getSimpleName() + " could not generate (PKCS8) private key", e);
+            if ( LOG.isDebug(runtime) ) {
+                LOG.debug(runtime, "tryPKCS8EncodedKey could not generate private key", e);
             }
         }
         catch (RuntimeException e) {
             if ( isKeyGenerationFailure(e) ) {
-                if( isDebug(runtime) ) {
-                    debug(runtime, getClass().getSimpleName() + " could not generate (PKCS8) private key", e);
+                if( LOG.isDebug(runtime) ) {
+                    LOG.debug(runtime, "tryPKCS8EncodedKey could not generate private key", e);
                 }
             }
-            else debugStackTrace(runtime, e);
+            else LOG.debugStack(runtime, null, e);
         }
         return null;
     }
@@ -702,17 +704,17 @@ public abstract class PKey extends RubyObject {
             return keyFactory.generatePublic(new X509EncodedKeySpec(encodedKey));
         }
         catch (InvalidKeySpecException e) {
-            if ( isDebug(runtime) ) {
-                debug(runtime, getClass().getSimpleName() + " could not generate (X509) public key", e);
+            if ( LOG.isDebug(runtime) ) {
+                LOG.debug(runtime, "tryX509EncodedKey could not generate public key", e);
             }
         }
         catch (RuntimeException e) {
             if ( isKeyGenerationFailure(e) ) { // NOTE: not (yet) detected with X.509
-                if( isDebug(runtime) ) {
-                    debug(runtime, getClass().getSimpleName() + " could not generate (X509) public key", e);
+                if( LOG.isDebug(runtime) ) {
+                    LOG.debug(runtime, "tryX509EncodedKey could not generate public key", e);
                 }
             }
-            else debugStackTrace(runtime, e);
+            else LOG.debugStack(runtime, null, e);
         }
         return null;
     }

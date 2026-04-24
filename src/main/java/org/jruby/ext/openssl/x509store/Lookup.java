@@ -47,8 +47,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.jruby.Ruby;
-import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.util.Cache;
 import org.jruby.util.JRubyFile;
 import org.jruby.util.SafePropertyAccessor;
@@ -61,6 +61,8 @@ import static org.jruby.ext.openssl.x509store.X509Utils.*;
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class Lookup {
+
+    private static final Logger LOG = Logger.getLogger(Lookup.class);
 
     boolean skip = false;
 
@@ -470,7 +472,7 @@ public class Lookup {
                         file = ctx.envEntry(X509_CERT_FILE_EVP); // ENV['SSL_CERT_FILE']
                     }
                     catch (RuntimeException e) {
-                        OpenSSL.debugStackTrace(ctx.runtime, "failed to read env " + X509_CERT_FILE_EVP, e);
+                        LOG.debugStack(ctx.runtime, "failed to read env " + X509_CERT_FILE_EVP, e);
                     }
                     if (file == null) {
                         file = X509_CERT_FILE.replace('/', File.separatorChar);

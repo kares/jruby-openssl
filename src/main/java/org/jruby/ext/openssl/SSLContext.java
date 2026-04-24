@@ -72,6 +72,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
+import org.jruby.ext.openssl.log.Logger;
 
 import org.jruby.ext.openssl.x509store.Certificate;
 import org.jruby.ext.openssl.x509store.Name;
@@ -86,9 +87,6 @@ import static org.jruby.ext.openssl.StringHelper.*;
 import static org.jruby.ext.openssl.SSL.*;
 import static org.jruby.ext.openssl.X509Cert._Certificate;
 import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
-import static org.jruby.ext.openssl.OpenSSL.warn;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -96,6 +94,7 @@ import static org.jruby.ext.openssl.OpenSSL.warn;
 public class SSLContext extends RubyObject {
 
     private static final long serialVersionUID = -6955774230685920773L;
+    private static final Logger LOG = Logger.getLogger(SSLContext.class);
 
     // Mapping table for OpenSSL's SSL_METHOD -> JSSE's SSLContext algorithm.
     private static final HashMap<String, String> SSL_VERSION_OSSL2JSSE;
@@ -431,11 +430,11 @@ public class SSLContext extends RubyObject {
         if (caFile != null || caPath != null) {
             try {
                 if (store.loadLocations(runtime, caFile, caPath) == 0) {
-                    runtime.getWarnings().warn(ID.MISCELLANEOUS, "can't set verify locations");
+                    LOG.warn(runtime, "can't set verify locations");
                 }
             }
             catch (Exception e) {
-                if ( e instanceof RuntimeException ) debugStackTrace(runtime, e);
+                if ( e instanceof RuntimeException ) LOG.debugStack(runtime, null, e);
                 throw newSSLError(runtime, e);
             }
         }
@@ -705,7 +704,7 @@ public class SSLContext extends RubyObject {
 
     @JRubyMethod(name = "security_level=")
     public IRubyObject set_security_level(ThreadContext context, IRubyObject level) {
-        debug(context.runtime, "OpenSSL::SSL::SSLContext#security_level= has no effect");
+        LOG.debug(context.runtime, "security_level= has no effect");
         return context.nil;
     }
 
@@ -1162,11 +1161,11 @@ public class SSLContext extends RubyObject {
                         x = ((Certificate) s_obj[0]).cert;
                     }
                     catch (RuntimeException e) {
-                        debugStackTrace(e);
+                        LOG.debugStack(e);
                         break;
                     }
                     catch (Exception e) {
-                        debug("KeyManagerImpl bySubject failed", e);
+                        LOG.debug("KeyManagerImpl bySubject failed", e);
                         break;
                     }
                 }

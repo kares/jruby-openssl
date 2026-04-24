@@ -72,6 +72,7 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -88,6 +89,7 @@ import static org.jruby.ext.openssl.OpenSSL.*;
  */
 public class X509Extension extends RubyObject {
     private static final long serialVersionUID = 6463713017143658305L;
+    private static final Logger LOG = Logger.getLogger(X509Extension.class);
 
     static void createX509Extension(final Ruby runtime, final RubyModule X509, final RubyClass OpenSSLError) { // OpenSSL::X509
         X509.defineClassUnder("ExtensionError", OpenSSLError, OpenSSLError.getAllocator());
@@ -119,7 +121,7 @@ public class X509Extension extends RubyObject {
         final byte[] extValue = ext.getExtensionValue(oid); // DER encoded
         // TODO: wired. J9 returns null for an OID given in getNonCriticalExtensionOIDs()
         if ( extValue == null ) {
-            warn(context, ext + " getExtensionValue returns null for '"+ oid +"'");
+            LOG.warn(context.runtime, "getExtensionValue returns null for '"+ oid +"'");
             return null;
         }
 
@@ -527,7 +529,7 @@ public class X509Extension extends RubyObject {
                     return runtime.newString( val );
                 }
                 catch (IllegalArgumentException e) {
-                    debugStackTrace(runtime, e);
+                    LOG.debugStack(runtime, null, e);
                     return rawValueAsString(context);
                 }
             }
@@ -609,7 +611,7 @@ public class X509Extension extends RubyObject {
                     return runtime.newString( val );
                 }
                 catch (IllegalArgumentException e) {
-                    debugStackTrace(runtime, e);
+                    LOG.debugStack(runtime, null, e);
                     return rawValueAsString(context);
                 }
             }
@@ -638,7 +640,7 @@ public class X509Extension extends RubyObject {
                     return runtime.newString( val );
                 }
                 catch (IllegalArgumentException e) {
-                    debugStackTrace(runtime, e);
+                    LOG.debugStack(runtime, null, e);
                     return rawValueAsString(context);
                 }
             }
@@ -646,7 +648,7 @@ public class X509Extension extends RubyObject {
             return rawValueAsString(context);
         }
         catch (IOException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newExtensionError(runtime, e);
         }
     }
@@ -661,7 +663,7 @@ public class X509Extension extends RubyObject {
             // a generic extension may be syntactically valid DER but still fail when we try
             // to map its payload into ASN.1 object model (e.g. because of unsupported nested tags).
             // MRI/OpenSSL still renders the raw extension bytes in to_text instead of raising.
-            debugStackTrace(runtime, "X509Extension.rawValueAsString", e);
+            LOG.debugStack(runtime, "rawValueAsString", e);
             return StringHelper.newString(runtime, getRealValueEncoded());
         }
         if ( value instanceof RubyArray ) {
@@ -868,13 +870,13 @@ public class X509Extension extends RubyObject {
             return (Hashtable) field.get(null);
         }
         catch (NoSuchFieldException ex) {
-            debug("getDefaultSymbols", ex);
+            LOG.debug("getDefaultSymbols", ex);
         }
         catch (SecurityException ex) {
-            debug("getDefaultSymbols", ex);
+            LOG.debug("getDefaultSymbols", ex);
         }
         catch (IllegalAccessException ex) {
-            debug("getDefaultSymbols", ex);
+            LOG.debug("getDefaultSymbols", ex);
         }
         return new Hashtable();
     }

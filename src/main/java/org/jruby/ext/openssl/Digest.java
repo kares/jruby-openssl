@@ -38,6 +38,7 @@ import org.jruby.RubyModule;
 import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -51,6 +52,7 @@ import static org.jruby.ext.openssl.OpenSSL.*;
  */
 public class Digest extends RubyObject {
     private static final long serialVersionUID = 7409857414064319518L;
+    private static final Logger LOG = Logger.getLogger(Digest.class);
 
     static void createDigest(Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         runtime.getLoadService().require("digest");
@@ -119,7 +121,7 @@ public class Digest extends RubyObject {
             return SecurityHelper.getMessageDigest(algorithm);
         }
         catch (NoSuchAlgorithmException e) {
-            debug(runtime, "getMessageDigest failed: " + e);
+            LOG.debug(runtime, "getDigest", e);
             throw runtime.newNotImplementedError("Unsupported digest algorithm (" + name + ")");
         }
     }
@@ -185,7 +187,7 @@ public class Digest extends RubyObject {
         }
         catch (CloneNotSupportedException e) {
             final Ruby runtime = getRuntime();
-            debug(runtime, "MessageDigest.clone() failed: " + e);
+            LOG.debug(runtime, "MessageDigest.clone() failed: " + e);
             throw runtime.newTypeError("Could not initialize copy of digest (" + name + ")");
         }
         return this;
@@ -381,4 +383,3 @@ public class Digest extends RubyObject {
     }
 
 }
-

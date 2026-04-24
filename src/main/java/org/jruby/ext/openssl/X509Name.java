@@ -85,6 +85,7 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -103,6 +104,7 @@ import static org.jruby.ext.openssl.StringHelper.newString;
  */
 public class X509Name extends RubyObject {
     private static final long serialVersionUID = -226196051911335103L;
+    private static final Logger LOG = Logger.getLogger(X509Name.class);
 
     static void createX509Name(final Ruby runtime, final RubyModule X509, final RubyClass OpenSSLError) {
         RubyClass _Name = X509.defineClassUnder("Name", runtime.getObject(), (r, klass) -> new X509Name(r, klass));
@@ -244,7 +246,8 @@ public class X509Name extends RubyObject {
             this.values.add( value );
         }
         else {
-            warn(getRuntime().getCurrentContext(), this + " addValue() value not an ASN1 string = '" + value + "' (" + ( value == null ? "" : value.getClass().getName()) + ")");
+            LOG.warn(getRuntime(), "addValue value is not an ASN1 string = '" +
+                    value + "' (" + ( value == null ? "" : value.getClass().getName()) + ")");
             this.values.add( value ); // TODO should not happen?!
         }
     }
@@ -254,7 +257,7 @@ public class X509Name extends RubyObject {
         this.canonicalName = null;
         final Integer type = ASN1.typeId(value);
         if (type == null) {
-            warn(runtime.getCurrentContext(), this + " addType() could not resolve type for: " +
+            LOG.warn(runtime, "addType could not resolve type for: " +
                  value + " (" + (value == null ? "" : value.getClass().getName()) + ")");
         }
         this.types.add(type);
@@ -439,7 +442,7 @@ public class X509Name extends RubyObject {
             addEntry(objectId, value.asString(), typeInt);
         }
         catch (RuntimeException | IOException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             String msg = e.getMessage(); // X509DefaultEntryConverted: "can't recode value for oid " + oid.getId()
             throw newNameError(runtime, msg == null ? "invalid value" : msg, e);
         }
@@ -679,10 +682,10 @@ public class X509Name extends RubyObject {
             return (int) Name.hash( getCanonicalX500Name() );
         }
         catch (IOException e) {
-            debugStackTrace(getRuntime(), e); return 0;
+            LOG.debugStack(getRuntime(), null, e); return 0;
         }
         catch (RuntimeException e) {
-            debugStackTrace(getRuntime(), e); return 0;
+            LOG.debugStack(getRuntime(), null, e); return 0;
         }
     }
 
@@ -705,10 +708,10 @@ public class X509Name extends RubyObject {
             hash = Name.hash( getCanonicalX500Name() );
         }
         catch (IOException e) {
-            debugStackTrace(getRuntime(), e); hash = 0;
+            LOG.debugStack(getRuntime(), null, e); hash = 0;
         }
         catch (RuntimeException e) {
-            debugStackTrace(getRuntime(), e); hash = 0;
+            LOG.debugStack(getRuntime(), null, e); hash = 0;
         }
         return getRuntime().newFixnum(hash);
     }
@@ -720,10 +723,10 @@ public class X509Name extends RubyObject {
             hash = Name.hashOld( getX500Name() );
         }
         catch (IOException e) {
-            debugStackTrace(getRuntime(), e); hash = 0;
+            LOG.debugStack(getRuntime(), null, e); hash = 0;
         }
         catch (RuntimeException e) {
-            debugStackTrace(getRuntime(), e); hash = 0;
+            LOG.debugStack(getRuntime(), null, e); hash = 0;
         }
         return getRuntime().newFixnum( hash );
     }
@@ -790,7 +793,7 @@ public class X509Name extends RubyObject {
             throw newNameError(getRuntime(), e);
         }
         catch (Exception e) {
-            debugStackTrace(getRuntime(), e);
+            LOG.debugStack(getRuntime(), null, e);
             throw newNameError(getRuntime(), e);
         }
     }

@@ -60,6 +60,8 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.runtime.Visibility;
 
+import org.jruby.ext.openssl.log.Logger;
+
 import static org.jruby.ext.openssl.OpenSSL.bcExceptionMessage;
 
 /**
@@ -69,6 +71,7 @@ import static org.jruby.ext.openssl.OpenSSL.bcExceptionMessage;
  */
 public class PKeyDH extends PKey {
 
+    private static final Logger LOG = Logger.getLogger(PKeyDH.class);
     private static final long serialVersionUID = -1893518804744046740L;
 
     private static final BigInteger TWO = BN.TWO;
@@ -441,7 +444,7 @@ public class PKeyDH extends PKey {
     public IRubyObject set_pqg(final ThreadContext context, IRubyObject p, IRubyObject q, IRubyObject g) {
         set_p(p);
         if (!q.isNil()) {
-            OpenSSL.warn(context, "JRuby-OpenSSL does not support setting q param on " + inspect());
+            LOG.warnWithCaller(context.runtime, "set_pqg setting q param is not supported");
         }
         set_g(g);
         return this;

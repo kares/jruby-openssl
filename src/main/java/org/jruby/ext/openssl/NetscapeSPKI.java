@@ -49,6 +49,7 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.impl.Base64;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
@@ -64,6 +65,7 @@ import static org.jruby.ext.openssl.OpenSSL.*;
  */
 public class NetscapeSPKI extends RubyObject {
     private static final long serialVersionUID = 3211242351810109432L;
+    private static final Logger LOG = Logger.getLogger(NetscapeSPKI.class);
 
     static void createNetscapeSPKI(Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         RubyModule Netscape = OpenSSL.defineModuleUnder("Netscape");
@@ -218,7 +220,7 @@ public class NetscapeSPKI extends RubyObject {
             final String name = ASN1.oid2name(runtime, algId.getAlgorithm(), true);
             if (name != null) return name;
         } catch (RuntimeException e) {
-            debug("Failed to resolve algorithm name: " + algId, e);
+            LOG.debug(runtime, "Failed to resolve algorithm name: " + algId, e);
         }
         return algId.getAlgorithm().getId();
     }
@@ -247,7 +249,7 @@ public class NetscapeSPKI extends RubyObject {
             cert.sign( ((PKey) key).getPrivateKey() );
         }
         catch (NoSuchAlgorithmException e) {
-            debugStackTrace(getRuntime(), e);
+            LOG.debugStack(getRuntime(), null, e);
             throw newSPKIError(e);
         }
         catch (GeneralSecurityException e) {
@@ -265,7 +267,7 @@ public class NetscapeSPKI extends RubyObject {
             return getRuntime().newBoolean(result);
         }
         catch (NoSuchAlgorithmException e) {
-            debugStackTrace(getRuntime(), e);
+            LOG.debugStack(getRuntime(), null, e);
             throw newSPKIError(e);
         }
         catch (GeneralSecurityException e) {

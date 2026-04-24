@@ -40,13 +40,13 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.runtime.Visibility;
-
-import static org.jruby.ext.openssl.OpenSSL.isDebug;
+import org.jruby.ext.openssl.log.Logger;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class HMAC extends RubyObject {
+    private static final Logger LOG = Logger.getLogger(HMAC.class);
     private static final long serialVersionUID = 7602535792884680307L;
 
     static void createHMAC(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
@@ -87,7 +87,7 @@ public class HMAC extends RubyObject {
             throw runtime.newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
         }
         catch (GeneralSecurityException e) {
-            if ( isDebug(runtime) ) e.printStackTrace(runtime.getOut());
+            LOG.debugStack(runtime, "digest", e);
             throw runtime.newNotImplementedError(e.getMessage());
         }
     }
@@ -108,7 +108,7 @@ public class HMAC extends RubyObject {
             throw runtime.newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
         }
         catch (GeneralSecurityException e) {
-            if ( isDebug(runtime) ) e.printStackTrace(runtime.getOut());
+            LOG.debugStack(runtime, "hexdigest", e);
             throw runtime.newNotImplementedError(e.getMessage());
         }
     }
@@ -133,7 +133,7 @@ public class HMAC extends RubyObject {
             throw getRuntime().newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
         }
         catch (GeneralSecurityException e) {
-            if ( isDebug(getRuntime()) ) e.printStackTrace(getRuntime().getOut());
+            LOG.debugStack(getRuntime(), "initialize", e);
             throw getRuntime().newNotImplementedError(e.getMessage());
         }
         return this;
@@ -157,7 +157,7 @@ public class HMAC extends RubyObject {
             throw getRuntime().newNotImplementedError("Unsupported MAC algorithm (" + algName + ")");
         }
         catch (GeneralSecurityException e) {
-            if ( isDebug(getRuntime()) ) e.printStackTrace(getRuntime().getOut());
+            LOG.debugStack(getRuntime(), "initialize_copy", e);
             throw getRuntime().newNotImplementedError(e.getMessage());
         }
 

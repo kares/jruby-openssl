@@ -54,6 +54,7 @@ import org.jruby.RubySymbol;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -70,6 +71,8 @@ import org.jruby.ext.openssl.util.ByteArrayOutputStream;
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class ASN1 {
+
+    private static final Logger LOG = Logger.getLogger(ASN1.class);
 
     private static Map<Ruby, Map<String, ASN1ObjectIdentifier>> SYM_TO_OID = new WeakHashMap<Ruby, Map<String, ASN1ObjectIdentifier>>(8);
     private static Map<Ruby, Map<ASN1ObjectIdentifier, String>> OID_TO_SYM = new WeakHashMap<Ruby, Map<ASN1ObjectIdentifier, String>>(8);
@@ -1110,12 +1113,12 @@ public class ASN1 {
             throw newASN1Error(context.runtime, e);
         }
         catch (IllegalArgumentException e) {
-            debugStackTrace(context.runtime, e);
+            LOG.debugStack(context.runtime, null, e);
             throw (RaiseException) context.runtime.newArgumentError(e.getMessage()).initCause(e);
         }
         catch (RuntimeException e) {
 
-            debugStackTrace(context.runtime, e);
+            LOG.debugStack(context.runtime, null, e);
             throw Utils.newRuntimeError(context.runtime, e);
         }
     }
@@ -1232,7 +1235,7 @@ public class ASN1 {
                 throw newASN1Error(context.runtime, e);
             }
             catch (IllegalArgumentException e) {
-                debugStackTrace(context.runtime, e);
+                LOG.debugStack(context.runtime, null, e);
                 throw context.runtime.newArgumentError(e.getMessage());
             }
         }
@@ -2095,9 +2098,7 @@ public class ASN1 {
                 return new DERGraphicString( val.asString().getBytes() );
             }
 
-            if (isDebug(context.runtime)) {
-                debug(this + " toASN1() could not handle class " + getMetaClass() + " and value: " + val.inspect() + " (" + val.getMetaClass() + ")");
-            }
+            LOG.debug(context.runtime, "toASN1Primitive could not handle class " + getMetaClass() + " and value: " + val.inspect() + " (" + val.getMetaClass() + ")");
             throw new UnsupportedOperationException("OpenSSL::ASN1Data#toASN1 (" + type + ") not implemented"); // should not happen
         }
 

@@ -38,12 +38,15 @@ import org.jruby.internal.runtime.methods.DynamicMethod;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.SafePropertyAccessor;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class SSL {
+
+    private static final Logger LOG = Logger.getLogger(SSL.class);
 
     public static final int VERIFY_NONE =                                   0x00;
     public static final int VERIFY_PEER =                                   0x01;
@@ -107,7 +110,7 @@ public class SSL {
                 }
             }
             catch (SecurityException ex) {
-                OpenSSL.debug("setting " + JSSE_TLS_ephemeralDHKeySize + " failed: " + ex);
+                LOG.debug("setting " + JSSE_TLS_ephemeralDHKeySize + " failed", ex);
             }
         }
     }

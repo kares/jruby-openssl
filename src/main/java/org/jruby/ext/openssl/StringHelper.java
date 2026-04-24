@@ -155,10 +155,6 @@ abstract class StringHelper {
         return text;
     }
 
-    //static StringBuilder lowerHexBytes(final BigInteger bytes) {
-    //    return lowerHexBytes(bytes.toByteArray(), 1); // skip the sign bit
-    //}
-
     static StringBuilder lowerHexBytes(final byte[] bytes, final int offset) {
         final int len = bytes.length;
         final StringBuilder hex = new StringBuilder(len * 3);

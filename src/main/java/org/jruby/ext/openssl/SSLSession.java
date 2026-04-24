@@ -42,12 +42,11 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.warn;
 import static org.jruby.ext.openssl.SSL._SSL;
 
 /**
@@ -56,6 +55,8 @@ import static org.jruby.ext.openssl.SSL._SSL;
  * @author kares
  */
 public class SSLSession extends RubyObject {
+
+    private static final Logger LOG = Logger.getLogger(SSLSession.class);
 
     // 24h default in BCJSSE as well as SunJSSE (default in OpenSSL is 300)
     static final int DEFAULT_SESSION_TIMEOUT = 86400;
@@ -149,7 +150,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "id=")
     public IRubyObject set_id(final ThreadContext context, IRubyObject id) {
-        warn(context, "OpenSSL::SSL::Session#id= is not supported (read-only)");
+        LOG.debug(context.runtime, "OpenSSL::SSL::Session#id= is not supported");
         return context.nil;
     }
 
@@ -161,7 +162,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "time=")
     public IRubyObject set_time(final ThreadContext context, IRubyObject time) {
-        warn(context, "OpenSSL::SSL::Session#time= is not supported (read-only)");
+        LOG.debug(context.runtime, "OpenSSL::SSL::Session#time= is not supported");
         return context.nil;
     }
 
@@ -222,10 +223,9 @@ public class SSLSession extends RubyObject {
     }
 
     @Override
-    public Object toJava(Class target) {
-        if ( javax.net.ssl.SSLSession.class == target || target.isInstance(sslSession) ) {
-            return sslSession;
-        }
+    public <T> T toJava(final Class<T> target) {
+        if (target.isAssignableFrom(getClass())) return (T) this;
+        if (target.isInstance(sslSession) ) return (T) sslSession;
         return super.toJava(target);
     }
 

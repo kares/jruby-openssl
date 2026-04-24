@@ -55,6 +55,7 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.Helpers;
@@ -64,7 +65,6 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.ASN1Registry;
-import static org.jruby.ext.openssl.OpenSSL.debug;
 import static org.jruby.ext.openssl.X509Extension.*;
 
 /**
@@ -73,6 +73,7 @@ import static org.jruby.ext.openssl.X509Extension.*;
  */
 public class X509ExtensionFactory extends RubyObject {
     private static final long serialVersionUID = 3180447029639456500L;
+    private static final Logger LOG = Logger.getLogger(X509ExtensionFactory.class);
 
     static void createX509ExtensionFactory(final Ruby runtime, final RubyModule _X509) { // OpenSSL::X509
         final RubyClass _ExtensionFactory = _X509.defineClassUnder("ExtensionFactory",
@@ -172,7 +173,7 @@ public class X509ExtensionFactory extends RubyObject {
         try {
             objectId = ASN1.getObjectID(runtime, oid);
         } catch (IllegalArgumentException e) {
-            debug(runtime, "ASN1.getObjectIdentifier() at ExtensionFactory.create_ext", e);
+            LOG.debug(runtime, "create_ext getObjectID failed", e);
             throw newExtensionError(runtime, "unknown OID `" + oid + "'");
         }
         final String critical_ = "critical,";
@@ -224,7 +225,7 @@ public class X509ExtensionFactory extends RubyObject {
             }
         }
         catch (IOException e) {
-            OpenSSL.debugStackTrace(e);
+            LOG.debugStack(runtime, null, e);
             throw newExtensionError(runtime, "Unable to create extension: " + e.getMessage());
         }
         return newExtension(runtime, objectId, value, critical.isNil() ? null : critical.isTrue());

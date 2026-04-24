@@ -87,6 +87,7 @@ import org.jruby.RubyString;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.impl.ASN1Registry;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
@@ -104,14 +105,12 @@ import static org.jruby.ext.openssl.X509CRL.extensions_to_text;
 import static org.jruby.ext.openssl.StringHelper.appendGMTDateTime;
 import static org.jruby.ext.openssl.StringHelper.appendLowerHexValue;
 import static org.jruby.ext.openssl.StringHelper.lowerHexBytes;
-import static org.jruby.ext.openssl.OpenSSL.debug;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
-
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
 public class X509Cert extends RubyObject {
     private static final long serialVersionUID = -6524431607032364369L;
+    private static final Logger LOG = Logger.getLogger(X509Cert.class);
 
     static void createX509Cert(final Ruby runtime, final RubyModule X509, final RubyClass OpenSSLError) {
         RubyClass Certificate = X509.defineClassUnder("Certificate", runtime.getObject(), (r, klass) -> new X509Cert(r, klass));
@@ -792,15 +791,15 @@ public class X509Cert extends RubyObject {
             return runtime.getTrue();
         }
         catch (CertificateException e) {
-            debugStackTrace(runtime, "X509Cert#verify", e);
+            LOG.debugStack(runtime, "verify", e);
             throw newCertificateError(runtime, e);
         }
         catch (NoSuchProviderException|NoSuchAlgorithmException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCertificateError(runtime, e);
         }
         catch (SignatureException|InvalidKeyException e) {
-            debug(runtime, "X509Cert#verify failed", e);
+            LOG.debug(runtime, "verify failed", e);
             return runtime.getFalse();
         }
     }

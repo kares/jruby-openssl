@@ -73,6 +73,7 @@ import org.jruby.RubyString;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
@@ -93,6 +94,7 @@ import static org.jruby.ext.openssl.StringHelper.appendLowerHexValue;
  */
 public class X509CRL extends RubyObject {
     private static final long serialVersionUID = -2463300006179688577L;
+    private static final Logger LOG = Logger.getLogger(X509CRL.class);
 
     static void createX509CRL(final Ruby runtime, final RubyModule X509, final RubyClass OpenSSLError) {
         RubyClass CRL = X509.defineClassUnder("CRL", runtime.getObject(), (r, klass) -> new X509CRL(r, klass));
@@ -205,11 +207,11 @@ public class X509CRL extends RubyObject {
             }
         }
         catch (IOException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCRLError(runtime, e);
         }
         catch (GeneralSecurityException e) {
-            debugStackTrace(runtime, e);
+            LOG.debugStack(runtime, null, e);
             throw newCRLError(runtime, e);
         }
 
@@ -617,10 +619,10 @@ public class X509CRL extends RubyObject {
             this.crlHolder = generator.build( signer ); this.crl = null;
         }
         catch (IllegalStateException e) {
-            debugStackTrace(e); throw newCRLError(runtime, e);
+            LOG.debugStack(runtime, null, e); throw newCRLError(runtime, e);
         }
         catch (Exception e) {
-            debugStackTrace(e); throw newCRLError(runtime, e.getMessage());
+            LOG.debugStack(runtime, null, e); throw newCRLError(runtime, e.getMessage());
         }
 
         final ASN1Primitive crlVal = getCRLValue(runtime);
@@ -695,7 +697,7 @@ public class X509CRL extends RubyObject {
             return context.runtime.newBoolean(valid);
         }
         catch (GeneralSecurityException e) {
-            debug("CRL#verify() failed:", e);
+            LOG.debug(context.runtime, "verify failed", e);
             return context.runtime.getFalse();
         }
     }

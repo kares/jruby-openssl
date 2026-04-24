@@ -35,7 +35,6 @@ package org.jruby.ext.openssl;
 import static org.jruby.ext.openssl.Digest._Digest;
 import static org.jruby.ext.openssl.OCSP._OCSP;
 import static org.jruby.ext.openssl.OCSP.newOCSPError;
-import static org.jruby.ext.openssl.OpenSSL.debugStackTrace;
 import static org.jruby.ext.openssl.X509._X509;
 
 import java.io.IOException;
@@ -47,6 +46,8 @@ import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
+
+import org.jruby.ext.openssl.log.Logger;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
@@ -96,6 +97,7 @@ import static org.jruby.ext.openssl.OCSP.*;
  * @author lampad
  */
 public class OCSPRequest extends RubyObject {
+    private static final Logger LOG = Logger.getLogger(OCSPRequest.class);
     private static final long serialVersionUID = -4020616730425816999L;
     
     public OCSPRequest(Ruby runtime, RubyClass metaClass) {
@@ -372,7 +374,7 @@ public class OCSPRequest extends RubyObject {
            }
         }
         catch (Exception e) {
-            debugStackTrace(e);
+            LOG.debugStack(runtime, null, e);
             throw newOCSPError(runtime, e);
         }
         

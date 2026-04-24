@@ -58,6 +58,7 @@ import org.jruby.RubyTime;
 import org.jruby.anno.JRubyClass;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
@@ -88,6 +89,7 @@ import static org.jruby.ext.openssl.OpenSSL.*;
 @JRubyClass(name = "OpenSSL::PKCS7")
 public class PKCS7 extends RubyObject {
     private static final long serialVersionUID = -3925104500966826973L;
+    private static final Logger LOG = Logger.getLogger(PKCS7.class);
 
     private static ObjectAllocator PKCS7_ALLOCATOR = new ObjectAllocator() {
         public IRubyObject allocate(Ruby runtime, RubyClass klass) {
@@ -705,7 +707,7 @@ public class PKCS7 extends RubyObject {
             // result = false;
         }
         catch (PKCS7Exception ex) {
-            OpenSSL.debugStackTrace(ex);
+            LOG.debugStack(runtime, null, ex);
         }
 
         IRubyObject data = membio2str(runtime, out, true);
@@ -734,7 +736,7 @@ public class PKCS7 extends RubyObject {
             p7.decrypt(privKey, auxCert, out, flg);
         }
         catch (PKCS7Exception ex) {
-            OpenSSL.debugStackTrace(ex);
+            LOG.debugStack(context.runtime, null, ex);
             throw newPKCS7Error(context.runtime, ex);
         }
         return membio2str(context.runtime, out, true);
@@ -747,7 +749,7 @@ public class PKCS7 extends RubyObject {
             PEMInputOutput.writePKCS7(writer, p7.toASN1());
         }
         catch (IOException ex) {
-            OpenSSL.debugStackTrace(ex);
+            LOG.debugStack(getRuntime(), null, ex);
             throw getRuntime().newIOErrorFromException(ex);
         }
         return StringHelper.newUTF8String(getRuntime(), writer.getBuffer());

@@ -108,10 +108,6 @@ final class Utils {
 
     // reinvented parts of org.jruby.runtime.Helpers for compatibility with "older" JRuby :
 
-    static IRubyObject invoke(ThreadContext context, IRubyObject self, String name, Block block) {
-        return self.getMetaClass().finvoke(context, self, name, block);
-    }
-
     static IRubyObject invokeSuper(ThreadContext context, IRubyObject self, IRubyObject[] args, Block block) {
         return invokeSuper(context, self, context.getFrameKlazz(), context.getFrameName(), args, block);
     }

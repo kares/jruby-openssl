@@ -82,6 +82,8 @@ import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 import org.jruby.ext.openssl.x509store.X509Object;
 import org.jruby.ext.openssl.x509store.X509Utils;
 
+import org.jruby.runtime.callsite.FunctionalCachingCallSite;
+
 import static org.jruby.ext.openssl.CipherStrings.SuiteToOSSL;
 import static org.jruby.ext.openssl.StringHelper.*;
 import static org.jruby.ext.openssl.SSL.*;
@@ -95,6 +97,7 @@ public class SSLContext extends RubyObject {
 
     private static final long serialVersionUID = -6955774230685920773L;
     private static final Logger LOG = Logger.getLogger(SSLContext.class);
+    private static final FunctionalCachingCallSite EACH_CALL_SITE = new FunctionalCachingCallSite("each");
 
     // Mapping table for OpenSSL's SSL_METHOD -> JSSE's SSLContext algorithm.
     private static final HashMap<String, String> SSL_VERSION_OSSL2JSSE;
@@ -956,8 +959,8 @@ public class SSLContext extends RubyObject {
             return result;
         }
         // else :
-        final ArrayList<X509AuxCertificate> result = new ArrayList<X509AuxCertificate>();
-        Utils.invoke(context, value, "each",
+        final ArrayList<X509AuxCertificate> result = new ArrayList<>();
+        EACH_CALL_SITE.call(context, value, value,
             CallBlock.newCallClosure(value, SSLContext, Arity.NO_ARGUMENTS, (ctx, args, block) -> {
                 result.add( assureCertificate(ctx, Certificate, args[0]).getAuxCert() );
                 return ctx.nil;

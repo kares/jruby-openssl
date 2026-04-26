@@ -34,6 +34,7 @@ import org.jruby.common.IRubyWarnings;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.jruby.runtime.callsite.FunctionalCachingCallSite;
 import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
 
@@ -50,6 +51,7 @@ public final class OpenSSL {
     }
 
     static final Logger LOG = Logger.getLogger(OpenSSL.class);
+    private static final FunctionalCachingCallSite WARN_CALL_SITE = new FunctionalCachingCallSite("warn");
 
     public static void load(final Ruby runtime) {
         final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
@@ -211,21 +213,12 @@ public final class OpenSSL {
     public static boolean isWarn() { return warn; }
 
     public static void warn(final ThreadContext context, final CharSequence msg) {
-        if ( warn ) warn(context, RubyString.newString(context.runtime, msg));
+        warn(context, (IRubyObject) RubyString.newString(context.runtime, msg));
     }
 
-    static void warn(final ThreadContext context, final RubyString msg) {
-        warn(context, (IRubyObject) msg);
-    }
-
-    static void warn(final ThreadContext context, final IRubyObject msg) {
-        if ( warn ) context.runtime.getModule("OpenSSL").callMethod(context, "warn", msg);
-    }
-
-    public static void warnDeprecated(final ThreadContext context, final CharSequence msg) {
-        if ( warn ) {
-            context.runtime.getWarnings().warn(IRubyWarnings.ID.DEPRECATED_METHOD, msg.toString());
-        }
+    private static void warn(final ThreadContext context, final IRubyObject msg) {
+        final RubyModule openssl = context.runtime.getModule("OpenSSL");
+        WARN_CALL_SITE.call(context, openssl, openssl, msg);
     }
 
     private static String javaVersion(final String def, final int len) {

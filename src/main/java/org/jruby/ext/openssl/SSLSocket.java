@@ -70,19 +70,15 @@ public class SSLSocket extends RubyObject {
     private static final Logger LOG = Logger.getLogger(SSLSocket.class);
 
     private enum CallSiteIndex {
-
         // self
         //hostname("hostname"),
-        //sync_close("sync_close"),
-        //sync_close_w("sync_close="),
+        verify_certificate_identity_internal("verify_certificate_identity_internal"),
         // io
         _respond_to_nonblock_w("nonblock="),
         nonblock_w("nonblock="),
         sync("sync"),
         sync_w("sync="),
         flush("flush"),
-        //close("close"),
-        //closed_p("closed?"),
         // ssl_context
         verify_mode("verify_mode");
 
@@ -95,7 +91,7 @@ public class SSLSocket extends RubyObject {
     public static void createSSLSocket(final Ruby runtime, final RubyModule SSL) { // OpenSSL::SSL
         CallSiteIndex[] values = CallSiteIndex.values();
         CallSite[] extraCallSites = new CallSite[values.length];
-        for (int i=0; i<values.length; i++) {
+        for (int i = 0; i < values.length; i++) {
             if (values[i].name().startsWith("_respond_to")) {
                 extraCallSites[i] = new RespondToCallSite();
             }
@@ -440,8 +436,8 @@ public class SSLSocket extends RubyObject {
         if (serverName == null) return;
 
         final Ruby runtime = context.runtime;
-        IRubyObject ret = callback.callMethod(context, "call",
-                runtime.newArray(this, runtime.newString(serverName)));
+        final IRubyObject args = runtime.newArray(this, runtime.newString(serverName));
+        final IRubyObject ret = callback.callMethod(context, "call", args);
 
         if (ret instanceof SSLContext) { // MRI stores returned context as @context
             // mostly useless: cannot switch engine's SSL context post-handshake
@@ -461,8 +457,11 @@ public class SSLSocket extends RubyObject {
         if (hostname == null || hostname.isNil()) return;
 
         // CRuby calls verify_certificate_identity inside the OpenSSL verify
-        // callback and sets V_ERR_HOSTNAME_MISMATCH only when it returns false.
-        IRubyObject result = callMethod(context, "verify_certificate_identity_internal", hostname);
+        // callback and sets V_ERR_HOSTNAME_MISMATCH only when it returns false
+        final CallSite[] sites = getMetaClass().getExtraCallSites();
+        final IRubyObject result = sites == null
+                ? callMethod(context, "verify_certificate_identity_internal", hostname)
+                : callSite(sites, CallSiteIndex.verify_certificate_identity_internal).call(context, this, this, hostname);
 
         if (result.isTrue()) {
             // stash verified hostname so a subsequent explicit post_connection_check

@@ -34,7 +34,7 @@ import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
-import static org.jruby.ext.openssl.Utils.extractKeywordArgs;
+import static org.jruby.ext.openssl.util.RubySupport.extractKeywordArgs;
 
 /**
  * Provides functionality of various KDFs (key derivation function).

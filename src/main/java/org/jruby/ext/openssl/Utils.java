@@ -28,8 +28,6 @@
 package org.jruby.ext.openssl;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.HashSet;
 import java.util.function.Function;
 
 import org.jruby.*;
@@ -157,84 +155,6 @@ final class Utils {
 
     private static <T extends Throwable> void throwsUnchecked(Throwable t) throws T {
         throw (T) t;
-    }
-
-    // from JRuby's ArgsUtil :
-
-    static IRubyObject[] extractKeywordArgs(final ThreadContext context, RubyHash options, String... validKeys) {
-        return extractKeywordArgs(context, options, validKeys, 0);
-    }
-
-    static IRubyObject[] extractKeywordArgs(final ThreadContext context, RubyHash options, String[] validKeys, int offset) {
-        final IRubyObject[] ret = new IRubyObject[offset + validKeys.length];
-
-        final HashSet<RubySymbol> validKeySet = new HashSet<>(ret.length);
-
-        // Build the return values
-        for (int i=0; i<validKeys.length; i++) {
-            final String key = validKeys[i];
-            RubySymbol keySym = context.runtime.newSymbol(key);
-            IRubyObject val = options.fastARef(keySym);
-            ret[offset + i] = val != null ? val : RubyBasicObject.UNDEF;
-            validKeySet.add(keySym);
-        }
-
-        // Check for any unknown keys
-        options.visitAll(new RubyHash.Visitor() {
-            public void visit(IRubyObject key, IRubyObject value) {
-                if (!validKeySet.contains(key)) {
-                    throw context.runtime.newArgumentError("unknown keyword: " + key);
-                }
-            }
-        });
-
-        return ret;
-    }
-
-    static String extractStringOpt(ThreadContext context, IRubyObject opts, String key) {
-        return extractStringOpt(context, opts, key, false);
-    }
-
-    static String extractStringOpt(ThreadContext context, IRubyObject opts,
-                                   String key, boolean tryStringKey) {
-        final IRubyObject val = extractOpt(context, opts, key, tryStringKey);
-        return val == null ? null : val.convertToString().asJavaString();
-    }
-
-    static RubyString extractRubyStringOpt(ThreadContext context, IRubyObject opts,
-                                           String key, boolean tryStringKey) {
-        final IRubyObject val = extractOpt(context, opts, key, tryStringKey);
-        return val == null ? null : val.convertToString();
-    }
-
-    static int extractIntOpt(ThreadContext context, IRubyObject opts,
-                             String key, int defaultVal, boolean tryStringKey) {
-        if (!(opts instanceof RubyHash)) return defaultVal;
-        RubyHash hash = (RubyHash) opts;
-        // OpenSSL option hashes may use string or symbol keys — try both.
-        IRubyObject val = hash.fastARef(context.runtime.newSymbol(key));
-        if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
-        if (val == null || val.isNil()) return defaultVal;
-        return RubyNumeric.fix2int(val);
-    }
-
-    static IRubyObject extractOpt(ThreadContext context, IRubyObject opts,
-                                  String key, boolean tryStringKey) {
-        if (!(opts instanceof RubyHash)) return null;
-        RubyHash hash = (RubyHash) opts;
-        // OpenSSL option hashes may use string or symbol keys — try both.
-        IRubyObject val = hash.fastARef(context.runtime.newSymbol(key));
-        if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
-        if (val == null || val.isNil()) return null;
-        return val;
-    }
-
-    static ByteBuffer ensureCapacity(final ByteBuffer buffer, final int size) {
-        if (size <= buffer.capacity()) return buffer;
-        buffer.flip();
-        ByteBuffer newBuffer = ByteBuffer.allocate(size);
-        newBuffer.put(buffer);
-        return newBuffer;
     }
 
 }// Utils

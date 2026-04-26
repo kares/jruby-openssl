@@ -62,6 +62,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.CipherSpec;
+import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
@@ -225,7 +226,7 @@ public abstract class PKey extends RubyObject {
             final String algorithm = arg.asJavaString();
             if ( "HMAC".equalsIgnoreCase(algorithm) ) {
                 if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
-                final RubyString key = Utils.extractRubyStringOpt(context, args[1], "key", true);
+                final RubyString key = RubySupport.extractRubyStringOpt(context, args[1], "key", true);
                 if (key == null) throw newPKeyError(runtime, "missing key parameter");
                 return PKeyHMAC.newInstance(runtime, key);
             }
@@ -291,7 +292,7 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateECParameters(final ThreadContext context, final IRubyObject options) {
-            final String curve = Utils.extractStringOpt(context, options, "ec_paramgen_curve", true);
+            final String curve = RubySupport.extractStringOpt(context, options, "ec_paramgen_curve", true);
 
             final Ruby runtime = context.runtime;
             if (curve == null) throw newPKeyError(runtime, "missing ec_paramgen_curve parameter");
@@ -299,7 +300,7 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateDSAParameters(final ThreadContext context, final IRubyObject options) {
-            final int bits = Utils.extractIntOpt(context, options, "dsa_paramgen_bits", 2048, true);
+            final int bits = RubySupport.extractIntOpt(context, options, "dsa_paramgen_bits", 2048, true);
 
             final Ruby runtime = context.runtime;
             final PKeyDSA generated;
@@ -316,8 +317,8 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateDHParameters(final ThreadContext context, final IRubyObject options) {
-            final int bits = Utils.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
-            final int generator = Utils.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
+            final int bits = RubySupport.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
+            final int generator = RubySupport.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
 
             final Ruby runtime = context.runtime;
             final PKeyDH params = new PKeyDH(runtime);
@@ -332,8 +333,8 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateRSAKey(final ThreadContext context, final IRubyObject options) {
-            final int bits = Utils.extractIntOpt(context, options, "rsa_keygen_bits", 2048, true);
-            final IRubyObject pubexp = Utils.extractOpt(context, options, "rsa_keygen_pubexp", true);
+            final int bits = RubySupport.extractIntOpt(context, options, "rsa_keygen_bits", 2048, true);
+            final IRubyObject pubexp = RubySupport.extractOpt(context, options, "rsa_keygen_pubexp", true);
 
             final Ruby runtime = context.runtime;
             final BigInteger exponent = pubexp == null || pubexp.isNil() ? RSAKeyGenParameterSpec.F4 : BN.getBigInteger(pubexp);
@@ -341,7 +342,7 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateDSAKey(final ThreadContext context, final IRubyObject options) {
-            final IRubyObject bits = Utils.extractOpt(context, options, "dsa_paramgen_bits", true);
+            final IRubyObject bits = RubySupport.extractOpt(context, options, "dsa_paramgen_bits", true);
 
             final Ruby runtime = context.runtime;
             if (bits == null || bits.isNil()) throw newPKeyError(runtime, "missing dsa_paramgen_bits parameter");
@@ -349,7 +350,7 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateECKey(final ThreadContext context, final IRubyObject options) {
-            final RubyString curve = Utils.extractRubyStringOpt(context, options, "ec_paramgen_curve", true);
+            final RubyString curve = RubySupport.extractRubyStringOpt(context, options, "ec_paramgen_curve", true);
 
             final Ruby runtime = context.runtime;
             if (curve == null) throw newPKeyError(runtime, "missing ec_paramgen_curve parameter");
@@ -357,8 +358,8 @@ public abstract class PKey extends RubyObject {
         }
 
         private static IRubyObject generateDHKey(final ThreadContext context, final IRubyObject options) {
-            final int bits = Utils.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
-            final int generator = Utils.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
+            final int bits = RubySupport.extractIntOpt(context, options, "dh_paramgen_prime_len", 2048, true);
+            final int generator = RubySupport.extractIntOpt(context, options, "dh_paramgen_generator", 2, true);
 
             final Ruby runtime = context.runtime;
             return PKeyDH.generate(context, _PKey(runtime).getClass("DH"), runtime.newFixnum(bits), runtime.newFixnum(generator));

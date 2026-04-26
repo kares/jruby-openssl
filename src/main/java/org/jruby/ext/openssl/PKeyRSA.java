@@ -92,6 +92,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.CipherSpec;
+import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.impl.PKey.readRSAPrivateKey;
@@ -702,10 +703,10 @@ public class PKeyRSA extends PKey {
         final IRubyObject opts = args.length > 2 ? args[2] : context.nil;
 
         if (!opts.isNil()) {
-            String paddingMode = Utils.extractStringOpt(context, opts, "rsa_padding_mode", true);
+            String paddingMode = RubySupport.extractStringOpt(context, opts, "rsa_padding_mode", true);
             if ("pss".equalsIgnoreCase(paddingMode)) {
-                int saltLen = Utils.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
-                String mgf1Alg = Utils.extractStringOpt(context, opts, "rsa_mgf1_md", true);
+                int saltLen = RubySupport.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
+                String mgf1Alg = RubySupport.extractStringOpt(context, opts, "rsa_mgf1_md", true);
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
                 try {
@@ -742,10 +743,10 @@ public class PKeyRSA extends PKey {
         IRubyObject opts = args.length > 3 ? args[3] : runtime.getNil();
 
         if (!opts.isNil()) {
-            String paddingMode = Utils.extractStringOpt(context, opts, "rsa_padding_mode", true);
+            String paddingMode = RubySupport.extractStringOpt(context, opts, "rsa_padding_mode", true);
             if ("pss".equalsIgnoreCase(paddingMode)) {
-                int saltLen = Utils.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
-                String mgf1Alg = Utils.extractStringOpt(context, opts, "rsa_mgf1_md", true);
+                int saltLen = RubySupport.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
+                String mgf1Alg = RubySupport.extractStringOpt(context, opts, "rsa_mgf1_md", true);
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
                 // verify_raw: input is already the hash, so verify against the raw EMSA-PSS encoding.
@@ -782,11 +783,11 @@ public class PKeyRSA extends PKey {
         IRubyObject opts   = args.length > 3 ? args[3] : runtime.getNil();
 
         if (!opts.isNil()) {
-            String paddingMode = Utils.extractStringOpt(context, opts, "rsa_padding_mode", true);
+            String paddingMode = RubySupport.extractStringOpt(context, opts, "rsa_padding_mode", true);
             if ("pss".equalsIgnoreCase(paddingMode)) {
                 final String digestAlg = getDigestAlgName(digest);
-                int saltLen = Utils.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
-                String mgf1Alg = Utils.extractStringOpt(context, opts, "rsa_mgf1_md", true);
+                int saltLen = RubySupport.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
+                String mgf1Alg = RubySupport.extractStringOpt(context, opts, "rsa_mgf1_md", true);
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
                 byte[] sigBytes = sign.convertToString().getBytes();
@@ -813,12 +814,12 @@ public class PKeyRSA extends PKey {
 
         if (!opts.isNil()) {
             if (!(opts instanceof RubyHash)) throw runtime.newTypeError("expected Hash");
-            String paddingMode = Utils.extractStringOpt(context, opts, "rsa_padding_mode", true);
+            String paddingMode = RubySupport.extractStringOpt(context, opts, "rsa_padding_mode", true);
             if ("pss".equalsIgnoreCase(paddingMode)) {
                 if (privateKey == null) throw newRSAError(runtime, "Private RSA key needed!");
                 final String digestAlg = getDigestAlgName(digest);
-                int saltLen = Utils.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
-                String mgf1Alg = Utils.extractStringOpt(context, opts, "rsa_mgf1_md", true);
+                int saltLen = RubySupport.extractIntOpt(context, opts, "rsa_pss_saltlen", -1, true);
+                String mgf1Alg = RubySupport.extractStringOpt(context, opts, "rsa_mgf1_md", true);
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = maxPSSSaltLength(digestAlg, privateKey.getModulus().bitLength());
 
@@ -844,7 +845,7 @@ public class PKeyRSA extends PKey {
         final IRubyObject opts  = args.length > 2 ? args[2] : context.nil;
         final int maxSalt = maxPSSSaltLength(digestAlg, privateKey.getModulus().bitLength());
 
-        String mgf1Alg = Utils.extractStringOpt(context, opts, "mgf1_hash");
+        String mgf1Alg = RubySupport.extractStringOpt(context, opts, "mgf1_hash");
         if (mgf1Alg == null) mgf1Alg = digestAlg;
 
         final IRubyObject saltLenArg = opts instanceof RubyHash ?
@@ -880,7 +881,7 @@ public class PKeyRSA extends PKey {
         final byte[] dataBytes = args[2].convertToString().getBytes();
         final IRubyObject opts = args.length > 3 ? args[3] : context.nil;
 
-        String mgf1Alg = Utils.extractStringOpt(context, opts, "mgf1_hash");
+        String mgf1Alg = RubySupport.extractStringOpt(context, opts, "mgf1_hash");
         if (mgf1Alg == null) mgf1Alg = digestAlg;
 
         IRubyObject saltLenArg = opts instanceof RubyHash

@@ -37,14 +37,13 @@ WmsAXd0QV5UChfAJ2+Cz5U1bPszvIJGrzfAIoLxHv5rI5rseQzqZdPaFSe4Oehln
 -----END X509 CRL-----
 CRL
 
-  @@provider = org.bouncycastle.jce.provider.BouncyCastleProvider.new
+  cert_factory = java.security.cert.CertificateFactory.getInstance("X.509")
 
   X509Cert = org.jruby.ext.openssl.x509store.X509AuxCertificate.new(
-      java.security.cert.CertificateFactory.getInstance(
-          "X.509", @@provider
-      ).generateCertificate(java.io.ByteArrayInputStream.new(X509CertString.to_java_bytes)))
+      cert_factory.generateCertificate(
+          java.io.ByteArrayInputStream.new(X509CertString.to_java_bytes)))
 
-  X509CRL = java.security.cert.CertificateFactory.getInstance("X.509", @@provider).
-      generateCRL(java.io.ByteArrayInputStream.new(X509CRLString.to_java_bytes))
+  X509CRL = cert_factory.generateCRL(
+      java.io.ByteArrayInputStream.new(X509CRLString.to_java_bytes))
 
 end

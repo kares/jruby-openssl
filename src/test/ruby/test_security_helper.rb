@@ -9,12 +9,12 @@ class TestSecurityHelper < TestCase
 
   def test_cert_factory_provider_leak # GH-94
     assert provider = org.jruby.ext.openssl.SecurityHelper.getSecurityProvider
-    assert_equal 'BC', provider.name
+    expected_name = provider.name # 'BC' or 'BCFIPS'
     factory1 = org.jruby.ext.openssl.SecurityHelper.getCertificateFactory('X.509')
     factory2 = org.jruby.ext.openssl.SecurityHelper.getCertificateFactory('X.509')
     assert_not_same factory1, factory2
-    assert_equal 'BC', factory1.provider.name
-    assert_equal 'BC', factory2.provider.name
+    assert_equal expected_name, factory1.provider.name
+    assert_equal expected_name, factory2.provider.name
     # assert_same factory1.getProvider, factory2.getProvider
 
     begin

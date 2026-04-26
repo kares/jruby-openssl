@@ -145,7 +145,7 @@ public class Random {
                 try {
                     secureRandomField.set(context, secureRandom);
                 }
-                catch (IllegalAccessException ex) { Utils.throwException(ex); /* should not happen */ }
+                catch (IllegalAccessException ex) { LOG.debugStack(ex);; /* should not happen */ }
             }
         }
 
@@ -180,7 +180,6 @@ public class Random {
         }
 
         private static boolean tryPreferredPRNG = true;
-        private static boolean tryStrongPRNG = false; // NOT-YET-IMPLEMENTED
 
         // copied from JRuby (not available in all 1.7.x) :
         public java.security.SecureRandom getSecureRandomImpl() {
@@ -234,10 +233,12 @@ public class Random {
                 return (java.security.SecureRandom) getInstanceStrong.invoke(null);
             }
             catch (IllegalAccessException ex) {
-                Utils.throwException(ex); return null; // won't happen
+                LOG.debugStack(ex);
+                return null; // won't happen
             }
             catch (InvocationTargetException ex) {
-                Utils.throwException(ex.getTargetException()); return null;
+                LOG.debugStack(ex);
+                return null;
             }
         }
 

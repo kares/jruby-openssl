@@ -1,17 +1,17 @@
 require 'java' if defined? JRUBY_VERSION
 
-if bc_version = ENV['BC_VERSION'] # && respond_to?(:require_jar)
+if bc_version = ENV['BC_VERSION']
   require 'jar-dependencies'
   require_jar 'org.bouncycastle', 'bcpkix-jdk15on', bc_version
   require_jar 'org.bouncycastle', 'bcprov-jdk15on', bc_version
   Jars.freeze_loading if defined? Jars.freeze_loading
 
-  puts Java::OrgBouncycastleJceProvider::BouncyCastleProvider.new.info if $VERBOSE
+  puts org.bouncycastle.jce.provider::BouncyCastleProvider.new.info if $VERBOSE
 else
-  base_dir = File.expand_path('../../..', File.dirname(__FILE__))
-
-  jar = File.join(base_dir, 'lib/jopenssl.jar')
-  raise "jopenssl.jar jar not found" unless jar; # $CLASSPATH << jar
+  # base_dir = File.expand_path('../../..', File.dirname(__FILE__))
+  #
+  # jar = File.join(base_dir, 'lib/jopenssl.jar')
+  # fail("jopenssl.jar jar not found") unless jar # $CLASSPATH << jar
 
   # jar = Dir[File.join(base_dir, 'vendor/org/bouncycastle/**/bcprov-*.jar')].first
   # raise "bcprov jar not found" unless jar; $CLASSPATH << jar
@@ -109,11 +109,14 @@ class TestCase
 
   def self.java_version
     return [] unless defined? JRUBY_VERSION
-    ENV_JAVA[ 'java.specification.version' ].split('.')
+    ENV_JAVA['java.specification.version'].split('.')
   end
 
-  def self.jruby?; !! defined?(JRUBY_VERSION) end
+  def self.jruby?; !!defined?(JRUBY_VERSION) end
   def jruby?; self.class.jruby? end
+
+  def self.fips?; !!defined?(JOpenSSL::BOUNCY_CASTLE_FIPS_VERSIONS) end
+  def fips?; self.class.fips? end
 
   private
 

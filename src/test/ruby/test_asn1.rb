@@ -4,6 +4,8 @@ require File.expand_path('test_helper', File.dirname(__FILE__))
 class TestASN1 < TestCase
 
   def test_decode_x509_certificate
+    skip_fips_unapproved_rsa1024_signing
+
     subj = OpenSSL::X509::Name.parse("/DC=org/DC=ruby-lang/CN=TestCA")
     key = Fixtures.pkey("rsa1024")
     now = Time.at(Time.now.to_i) # suppress usec
@@ -252,6 +254,8 @@ class TestASN1 < TestCase
   end
 
   def test_encode_asn1_data
+    skip_fips_non_context_specific_asn1_encoding
+
     ai = OpenSSL::ASN1::ASN1Data.new(i = "bla", 0, :APPLICATION)
     ai2 = OpenSSL::ASN1.decode(ai.to_der)
     assert_equal :APPLICATION, ai2.tag_class
@@ -514,6 +518,9 @@ class TestASN1 < TestCase
   def test_basic_asn1data
     encode_test B(%w{ 00 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 0, :UNIVERSAL)
     encode_test B(%w{ 01 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :UNIVERSAL)
+
+    skip_fips_non_context_specific_asn1_encoding
+
     encode_decode_test B(%w{ 41 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :APPLICATION)
     encode_decode_test B(%w{ 81 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :CONTEXT_SPECIFIC)
     encode_decode_test B(%w{ C1 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :PRIVATE)
@@ -606,6 +613,9 @@ class TestASN1 < TestCase
   def test_prim_explicit_tagging
     oct_str = OpenSSL::ASN1::OctetString.new("a", 0, :EXPLICIT)
     encode_test B(%w{ A0 03 04 01 61 }), oct_str
+
+    skip_fips_non_context_specific_asn1_encoding
+
     oct_str2 = OpenSSL::ASN1::OctetString.new("a", 1, :EXPLICIT, :APPLICATION)
     encode_test B(%w{ 61 03 04 01 61 }), oct_str2
 
@@ -621,6 +631,9 @@ class TestASN1 < TestCase
   def test_prim_implicit_tagging
     int = OpenSSL::ASN1::Integer.new(1, 0, :IMPLICIT)
     encode_test B(%w{ 80 01 01 }), int
+
+    skip_fips_non_context_specific_asn1_encoding
+
     int2 = OpenSSL::ASN1::Integer.new(1, 1, :IMPLICIT, :APPLICATION)
     encode_test B(%w{ 41 01 01 }), int2
     decoded = OpenSSL::ASN1.decode(int2.to_der)
@@ -637,6 +650,9 @@ class TestASN1 < TestCase
     content = [ OpenSSL::ASN1::PrintableString.new('abc') ]
     seq = OpenSSL::ASN1::Sequence.new(content, 2, :EXPLICIT)
     encode_test B(%w{ A2 07 30 05 13 03 61 62 63 }), seq
+
+    skip_fips_non_context_specific_asn1_encoding
+
     seq2 = OpenSSL::ASN1::Sequence.new(content, 3, :EXPLICIT, :APPLICATION)
     encode_test B(%w{ 63 07 30 05 13 03 61 62 63 }), seq2
 
@@ -651,6 +667,9 @@ class TestASN1 < TestCase
     content = [ OpenSSL::ASN1::Null.new(nil) ]
     seq = OpenSSL::ASN1::Sequence.new(content, 1, :IMPLICIT)
     encode_test B(%w{ A1 02 05 00 }), seq
+
+    skip_fips_non_context_specific_asn1_encoding
+
     seq2 = OpenSSL::ASN1::Sequence.new(content, 1, :IMPLICIT, :APPLICATION)
     encode_test B(%w{ 61 02 05 00 }), seq2
 
@@ -928,6 +947,8 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
   _end_of_pem_
 
   def test_decode
+    skip_fips_unapproved_rsa1024_signing
+
     subj = OpenSSL::X509::Name.parse("/DC=org/DC=ruby-lang/CN=TestCA")
     key = OpenSSL::PKey::RSA.new TEST_KEY_RSA1024
     now = Time.at(Time.now.to_i) # suppress usec
@@ -1317,6 +1338,16 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
     values.each do |v|
       assert_equal(v, OpenSSL::ASN1.decode(type.new(v).to_der).value)
     end
+  end
+
+  # @note revisit with future BC-FIPS API updates
+  def skip_fips_non_context_specific_asn1_encoding
+    skip 'BC-FIPS ASN.1 encoder cannot construct non-CONTEXT_SPECIFIC DERTaggedObject values' if fips?
+  end
+
+  # @note test fixture should be revised to an approved key size
+  def skip_fips_unapproved_rsa1024_signing
+    skip 'BC-FIPS approved-only mode rejects RSA-1024 signing' if fips?
   end
 
 end

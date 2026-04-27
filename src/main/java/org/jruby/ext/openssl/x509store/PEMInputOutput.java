@@ -116,6 +116,7 @@ import org.jruby.ext.openssl.impl.OpenSSLKDF;
 import org.jruby.ext.openssl.impl.PKey.Type;
 import org.jruby.ext.openssl.impl.PKCS10Request;
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 
 /**
@@ -1331,7 +1332,7 @@ public class PEMInputOutput {
                 else trust = Collections.emptyList();
 
                 if ( obj instanceof ASN1TaggedObject && ((ASN1TaggedObject) obj).getTagNo() == 0 ) {
-                    final ASN1Sequence rejectSeq = (ASN1Sequence) ((ASN1TaggedObject) obj).getBaseObject().toASN1Primitive();
+                    final ASN1Sequence rejectSeq = (ASN1Sequence) ASN1Shim.getTaggedObject((ASN1TaggedObject) obj);
                     reject = new ArrayList<>(rejectSeq.size());
                     for( int i = 0; i < rejectSeq.size(); i++ ) {
                         reject.add( ((ASN1ObjectIdentifier) rejectSeq.getObjectAt(i)).getId() );
@@ -1356,7 +1357,7 @@ public class PEMInputOutput {
                 else keyid = null;
 
                 if ( obj instanceof ASN1TaggedObject && ((ASN1TaggedObject) obj).getTagNo() == 1 ) {
-                    final ASN1Sequence otherSeq = (ASN1Sequence) ((ASN1TaggedObject) obj).getBaseObject().toASN1Primitive();
+                    final ASN1Sequence otherSeq = (ASN1Sequence) ASN1Shim.getTaggedObject((ASN1TaggedObject) obj);
                     other = new ArrayList<>(otherSeq.size());
                     for( int i = 0; i < otherSeq.size(); i++ ) {
                         other.add( (ASN1Primitive) otherSeq.getObjectAt(i) );

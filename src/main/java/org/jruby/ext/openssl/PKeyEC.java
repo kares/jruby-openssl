@@ -83,6 +83,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.component.VariableEntry;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.PKeyShim;
 
 import org.jruby.ext.openssl.impl.CipherSpec;
 import org.jruby.ext.openssl.impl.ECPrivateKeyWithName;
@@ -855,7 +856,7 @@ public final class PKeyEC extends PKey {
         }
 
         SubjectPublicKeyInfo info = SubjectPublicKeyInfo.getInstance(ASN1Primitive.fromByteArray(publicKey.getEncoded()));
-        return new org.bouncycastle.asn1.sec.ECPrivateKey(orderBitLength, privateKey.getS(), info.getPublicKeyData(), params);
+        return PKeyShim.newECPrivateKey(orderBitLength, privateKey.getS(), info.getPublicKeyData(), params);
     }
 
     private static PrivateKeyInfo toPrivateKeyInfo(final ECPrivateKey privateKey,

@@ -36,6 +36,7 @@ import org.jruby.RubyClass;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.PKeyShim;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
@@ -250,7 +251,7 @@ public class PKeyEdDSA extends PKey {
         final Ruby runtime = context.runtime;
         if (publicKey == null) throw newPKeyError(runtime, "public key not set");
         if (publicKey instanceof EdDSAPublicKey) {
-            return RubyString.newString(runtime, ((EdDSAPublicKey) publicKey).getPointEncoding());
+            return RubyString.newString(runtime, PKeyShim.getEdDSAPointEncoding(publicKey));
         }
         throw newPKeyError(runtime, "cannot extract raw public key");
     }
@@ -301,7 +302,7 @@ public class PKeyEdDSA extends PKey {
         }
         if (publicKey instanceof EdDSAPublicKey) {
             sb.append("pub:\n");
-            addSplittedAndFormatted(sb, bytesToHex(((EdDSAPublicKey) publicKey).getPointEncoding()));
+            addSplittedAndFormatted(sb, bytesToHex(PKeyShim.getEdDSAPointEncoding(publicKey)));
         }
         return RubyString.newString(getRuntime(), sb);
     }

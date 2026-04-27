@@ -77,6 +77,7 @@ import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
 import org.bouncycastle.openssl.PEMParser;
 
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.shim.PKeyShim;
 
 /**
  *
@@ -344,7 +345,7 @@ public class PKey {
             org.bouncycastle.asn1.sec.ECPrivateKey key = org.bouncycastle.asn1.sec.ECPrivateKey.getInstance(seq);
             AlgorithmIdentifier algId = keyInfo.getPrivateKeyAlgorithm();
             if (algId == null) { // mockPrivateKeyInfo
-                algId = new AlgorithmIdentifier(X9ObjectIdentifiers.id_ecPublicKey, key.getParametersObject().toASN1Primitive());
+                algId = new AlgorithmIdentifier(X9ObjectIdentifiers.id_ecPublicKey, PKeyShim.getECParametersObject(key));
             }
             final PrivateKeyInfo privInfo = new PrivateKeyInfo(algId, key);
             ECPrivateKey privateKey = (ECPrivateKey) keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privInfo.getEncoded()));
@@ -354,7 +355,7 @@ public class PKey {
 
             // The publicKey field in ECPrivateKey DER is optional (RFC 5915).
             // Keys written by older JRuby-OpenSSL may omit it; handle gracefully.
-            final org.bouncycastle.asn1.ASN1BitString pubKeyBits = key.getPublicKey();
+            final org.bouncycastle.asn1.ASN1BitString pubKeyBits = PKeyShim.getECPublicKey(key);
             if (pubKeyBits == null) return new KeyPair(null, privateKey);
             final SubjectPublicKeyInfo pubInfo = new SubjectPublicKeyInfo(algId, pubKeyBits.getBytes());
             return new KeyPair(keyFactory.generatePublic(new X509EncodedKeySpec(pubInfo.getEncoded())), privateKey);

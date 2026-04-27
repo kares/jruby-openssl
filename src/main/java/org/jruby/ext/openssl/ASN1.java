@@ -32,7 +32,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.util.Date;
 import java.util.Enumeration;
@@ -55,6 +54,8 @@ import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.ASN1Shim;
+import org.jruby.ext.openssl.shim.ApplicationSpecific;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -954,56 +955,12 @@ public class ASN1 {
             final Integer typeId = typeId( obj.getClass() );
             String type = typeId == null ? null : (String) ( ASN1_INFO[typeId][2] );
             final ByteList bytes;
-            if ( obj instanceof ASN1UTF8String ) {
-                if ( type == null ) type = "UTF8String";
-                bytes = new ByteList(((ASN1UTF8String) obj).getString().getBytes(StandardCharsets.UTF_8), false);
-            }
-            else if ( obj instanceof ASN1UniversalString ) {
-                if ( type == null ) type = "UniversalString";
-                bytes = new ByteList(((ASN1UniversalString) obj).getOctets(), false);
-            }
-            else if ( obj instanceof ASN1BMPString ) {
-                if ( type == null ) type = "BMPString";
-                final String val = ((ASN1BMPString) obj).getString();
-                final byte[] valBytes = new byte[val.length() * 2];
-                for (int i = 0; i < val.length(); i++) {
-                    char c = val.charAt(i);
-                    valBytes[i * 2] = (byte) ((c >> 8) & 0xff);
-                    valBytes[i * 2 + 1] = (byte) (c & 0xff);
-                }
-                bytes = new ByteList(valBytes, false);
-            }
-            else {
-                if ( type == null ) {
-                    if ( obj instanceof ASN1NumericString ) {
-                        type = "NumericString";
-                    }
-                    else if ( obj instanceof ASN1PrintableString ) {
-                        type = "PrintableString";
-                    }
-                    else if ( obj instanceof ASN1IA5String ) {
-                        type = "IA5String";
-                    }
-                    else if ( obj instanceof ASN1T61String ) {
-                        type = "T61String";
-                    }
-                    else if ( obj instanceof ASN1GeneralString ) {
-                        type = "GeneralString";
-                    }
-                    else if ( obj instanceof ASN1VideotexString ) {
-                        type = "VideotexString";
-                    }
-                    else if ( obj instanceof ASN1VisibleString ) {
-                        type = "ISO64String";
-                    }
-                    else if ( obj instanceof ASN1GraphicString ) {
-                        type = "GraphicString";
-                    }
-                    else {
-                        throw new IllegalArgumentException("could not handle ASN1 string type: " + obj + " (" + obj.getClass().getName() + ")");
-                    }
-                }
-                bytes = ByteList.create(((ASN1String) obj).getString());
+            final Object[] decoded = ASN1Shim.decodeString(obj.toASN1Primitive());
+            if (decoded != null) {
+                if (type == null) type = (String) decoded[0];
+                bytes = new ByteList((byte[]) decoded[1], false);
+            } else {
+                throw new IllegalArgumentException("could not handle ASN1 string type: " + obj + " (" + obj.getClass().getName() + ")");
             }
             return ASN1.getClass(type).newInstance(context, runtime.newString(bytes), Block.NULL_BLOCK);
         }
@@ -1044,18 +1001,21 @@ public class ASN1 {
             return ASN1.getClass("ObjectId").newInstance(context, runtime.newString(objId), Block.NULL_BLOCK);
         }
 
+        final ApplicationSpecific appSpecific = ASN1Shim.getApplicationSpecific(obj.toASN1Primitive());
+        if ( appSpecific != null ) return handleShimApplicationSpecific(context, ASN1, appSpecific);
+
         if (obj instanceof ASN1TaggedObject) {
             final ASN1TaggedObject taggedObj = (ASN1TaggedObject) obj;
             final IRubyObject tag = runtime.newFixnum(taggedObj.getTagNo());
             final IRubyObject tag_class;
-            switch (taggedObj.getTagClass()) {
-                case BERTags.PRIVATE:
+            switch (ASN1Shim.getTagClass(taggedObj)) {
+                case ASN1Shim.TAG_PRIVATE:
                     tag_class = runtime.newSymbol("PRIVATE");
                     break;
-                case BERTags.APPLICATION:
+                case ASN1Shim.TAG_APPLICATION:
                     tag_class = runtime.newSymbol("APPLICATION");
                     break;
-                case BERTags.CONTEXT_SPECIFIC:
+                case ASN1Shim.TAG_CONTEXT_SPECIFIC:
                     tag_class = runtime.newSymbol("CONTEXT_SPECIFIC");
                     break;
                 default:
@@ -1063,15 +1023,16 @@ public class ASN1 {
                     break;
             }
 
-            try {
-                final ASN1Sequence sequence = (ASN1Sequence) taggedObj.getBaseUniversal(false, SEQUENCE);
+            final ASN1Sequence sequence = ASN1Shim.getBaseUniversalSequence(taggedObj);
+            if (sequence != null) {
                 @SuppressWarnings("unchecked")
                 final RubyArray valArr = decodeObjects(context, ASN1, sequence.getObjects());
                 return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { valArr, tag, tag_class }, Block.NULL_BLOCK);
-            } catch (IllegalStateException e) {
-                IRubyObject val = decodeObject(context, ASN1, taggedObj.getBaseObject()).callMethod(context, "value");
-                return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { val, tag, tag_class }, Block.NULL_BLOCK);
             }
+
+            final ASN1Primitive innerObj = ASN1Shim.getTaggedObject(taggedObj);
+            IRubyObject val = decodeObject(context, ASN1, innerObj).callMethod(context, "value");
+            return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { val, tag, tag_class }, Block.NULL_BLOCK);
         }
 
         if ( obj instanceof ASN1Sequence ) {
@@ -1091,6 +1052,37 @@ public class ASN1 {
         }
 
         throw new IllegalArgumentException("unable to decode object: " + obj + " (" + ( obj == null ? "" : obj.getClass().getName() ) + ")");
+    }
+
+    /**
+     * @implNote only relevant with BC-FIPS (using old ASN.1 parsing API) execution
+     */
+    private static IRubyObject handleShimApplicationSpecific(final ThreadContext context,
+                                                             final RubyModule ASN1,
+                                                             final ApplicationSpecific appSpecific) throws IOException {
+        final IRubyObject tag = context.runtime.newFixnum(appSpecific.tag);
+        final IRubyObject tag_class;
+        switch (appSpecific.tagClass) {
+            case ASN1Shim.TAG_PRIVATE:
+                tag_class = context.runtime.newSymbol("PRIVATE");
+                break;
+            case ASN1Shim.TAG_APPLICATION:
+                tag_class = context.runtime.newSymbol("APPLICATION");
+                break;
+            default:
+                tag_class = context.runtime.newSymbol("UNIVERSAL");
+                break;
+        }
+
+        final IRubyObject val;
+        if (appSpecific.isConstructed()) {
+            @SuppressWarnings("unchecked")
+            final RubyArray valArr = decodeObjects(context, ASN1, appSpecific.sequence.getObjects());
+            val = valArr;
+        } else {
+            val = context.runtime.newString(new ByteList(appSpecific.contents, false));
+        }
+        return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { val, tag, tag_class }, Block.NULL_BLOCK);
     }
 
     private static RubyArray decodeObjects(final ThreadContext context, final RubyModule ASN1,
@@ -1347,7 +1339,7 @@ public class ASN1 {
                     available -= inner.read;
                     offset = inner.offset;
 
-                    if (inner.isEoc() && inner.tagClass == BERTags.UNIVERSAL) break;
+                    if (inner.isEoc() && inner.tagClass == ASN1Shim.TAG_UNIVERSAL) break;
                     if (available == 0) {
                         throw newASN1Error(context.runtime, "EOC missing in indefinite length encoding");
                     }
@@ -1379,11 +1371,11 @@ public class ASN1 {
 
     private static IRubyObject tagClassSymbol(final Ruby runtime, final int tagClass) {
         switch (tagClass) {
-            case BERTags.PRIVATE:
+            case ASN1Shim.TAG_PRIVATE:
                 return runtime.newSymbol("PRIVATE");
-            case BERTags.APPLICATION:
+            case ASN1Shim.TAG_APPLICATION:
                 return runtime.newSymbol("APPLICATION");
-            case BERTags.CONTEXT_SPECIFIC:
+            case ASN1Shim.TAG_CONTEXT_SPECIFIC:
                 return runtime.newSymbol("CONTEXT_SPECIFIC");
             default:
                 return runtime.newSymbol("UNIVERSAL");
@@ -1506,7 +1498,7 @@ public class ASN1 {
         }
 
         boolean isUniversal(final ThreadContext context) {
-            return getTagClass(context) == BERTags.UNIVERSAL;
+            return getTagClass(context) == ASN1Shim.TAG_UNIVERSAL;
         }
 
         IRubyObject tagging() {
@@ -1530,15 +1522,15 @@ public class ASN1 {
             if (tag_class instanceof RubySymbol) {
                 switch (((RubySymbol) tag_class).asJavaString()) {
                     case "PRIVATE":
-                        return BERTags.PRIVATE;
+                        return ASN1Shim.TAG_PRIVATE;
                     case "APPLICATION":
-                        return BERTags.APPLICATION;
+                        return ASN1Shim.TAG_APPLICATION;
                     case "CONTEXT_SPECIFIC":
-                        return BERTags.CONTEXT_SPECIFIC;
-                    default: // fallback to BERTags.UNIVERSAL
+                        return ASN1Shim.TAG_CONTEXT_SPECIFIC;
+                    default: // fallback to UNIVERSAL
                 }
             }
-            return BERTags.UNIVERSAL; // 0
+            return ASN1Shim.TAG_UNIVERSAL;
         }
 
         ASN1Encodable toASN1(final ThreadContext context) {
@@ -1574,20 +1566,20 @@ public class ASN1 {
                 }
 
                 if (values.length() > 0) {
-                    return new DERTaggedObject(isExplicitTagging(), tagClass, tag, new DERGeneralString(values.toString()));
+                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, new DERGeneralString(values.toString()));
                 } else {
                     // array of strings as value (default)
-                    return new DERTaggedObject(isExplicitTagging(), tagClass, tag, new BERSequence(vec));
+                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, new BERSequence(vec));
                 }
             } else if (value instanceof ASN1Data) {
-                return new DERTaggedObject(isExplicitTagging(), tagClass, tag, ((ASN1Data) value).toASN1(context));
+                return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, ((ASN1Data) value).toASN1(context));
             } else if (value instanceof RubyObject) {
                 if (isEOC(context)) {
                     return null;
                 }
                 final IRubyObject string = value.checkStringType();
                 if (string instanceof RubyString) {
-                    return new DERTaggedObject(isExplicitTagging(), tagClass, tag,
+                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag,
                             new DERGeneralString(string.asJavaString()));
                 } else {
                     throw context.runtime.newTypeError(
@@ -2011,7 +2003,7 @@ public class ASN1 {
         ASN1Encodable toASN1(final ThreadContext context) {
             final ASN1Encodable primitive = toASN1Primitive(context);
             if (isTagged()) {
-                return new DERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), primitive);
+                return ASN1Shim.newDERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), primitive);
             }
             return primitive;
         }
@@ -2196,14 +2188,14 @@ public class ASN1 {
             if ( isSequence() ) {
                 final ASN1Encodable seq = new DERSequence( toASN1EncodableVector(context) );
                 if ( isTagged() ) {
-                    return new DERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), seq);
+                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), seq);
                 }
                 return seq;
             }
             if ( isSet() ) {
                 final ASN1Encodable set = new DLSet( toASN1EncodableVector(context) );
                 if ( isTagged() ) {
-                    return new DERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), set);
+                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), getTagClass(context), getTag(context), set);
                 }
                 return set;
             }

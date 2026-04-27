@@ -73,6 +73,7 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -432,7 +433,7 @@ public class X509Extension extends RubyObject {
                     for ( int i = 0; i < size; i++ ) {
                         final ASN1Encodable enc = seq.getObjectAt(i);
                         if (enc instanceof ASN1TaggedObject) {
-                            ASN1Primitive obj = ((ASN1TaggedObject) enc).getBaseObject().toASN1Primitive();
+                            ASN1Primitive obj = ASN1Shim.getTaggedObject((ASN1TaggedObject) enc);
                             switch( ((ASN1TaggedObject) enc).getTagNo() ) {
                                 case 0 :
                                     ASN1Primitive keyid = obj.toASN1Primitive();
@@ -685,7 +686,7 @@ public class X509Extension extends RubyObject {
 
     private static byte[] keyidBytes(ASN1Primitive keyid) throws IOException {
         if ( keyid instanceof ASN1TaggedObject ) {
-            keyid = ((ASN1TaggedObject) keyid).getBaseObject().toASN1Primitive();
+            keyid = ASN1Shim.getTaggedObject((ASN1TaggedObject) keyid);
         }
         if ( keyid instanceof ASN1OctetString ) {
             return ((ASN1OctetString) keyid).getOctets();

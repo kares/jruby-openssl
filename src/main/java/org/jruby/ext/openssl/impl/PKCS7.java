@@ -62,6 +62,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.pkcs.PKCSException;
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.ext.openssl.x509store.Name;
 import org.jruby.ext.openssl.x509store.Store;
 import org.jruby.ext.openssl.x509store.StoreContext;
@@ -143,7 +144,7 @@ public class PKCS7 {
                 ASN1Encodable content = size == 1 ? null : ((ASN1Sequence) obj).getObjectAt(1);
 
                 if (content != null && content instanceof ASN1TaggedObject && ((ASN1TaggedObject) content).getTagNo() == 0) {
-                    content = ((ASN1TaggedObject) content).getBaseObject().toASN1Primitive();
+                    content = ASN1Shim.getTaggedObject((ASN1TaggedObject) content);
                 }
                 p7.initiateWith(nid, content);
             }

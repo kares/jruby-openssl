@@ -46,9 +46,11 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1TaggedObject;
-import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERTaggedObject;
+import org.bouncycastle.asn1.DLSequence;
+
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Certificate;
 
@@ -292,13 +294,13 @@ public class Signed {
         int index = 3;
         ASN1Encodable tmp = sequence.getObjectAt(index);
         if((tmp instanceof ASN1TaggedObject) && ((ASN1TaggedObject)tmp).getTagNo() == 0) {
-            certificates = ((ASN1TaggedObject)tmp).getBaseObject().toASN1Primitive();
+                certificates = ASN1Shim.getTaggedObject((ASN1TaggedObject) tmp);
             index++;
         }
 
         tmp = sequence.getObjectAt(index);
         if((tmp instanceof ASN1TaggedObject) && ((ASN1TaggedObject)tmp).getTagNo() == 1) {
-            crls = ((ASN1TaggedObject)tmp).getBaseObject().toASN1Primitive();
+                crls = ASN1Shim.getTaggedObject((ASN1TaggedObject) tmp);
             index++;
         }
 

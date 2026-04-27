@@ -45,6 +45,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.shim.PKeyShim;
 
 /**
 *
@@ -123,7 +124,7 @@ public class NetscapeCertRequest // extends ASN1Object
             this.content = new DERBitString(pkac);
 
             final SubjectPublicKeyInfo pubKeyInfo =
-                new SubjectPublicKeyInfo((ASN1Sequence) pkac.getObjectAt(0));
+                PKeyShim.newSubjectPublicKeyInfo((ASN1Sequence) pkac.getObjectAt(0));
 
             encodedKeySpec = new X509EncodedKeySpec( new DERBitString(pubKeyInfo).getBytes() );
 

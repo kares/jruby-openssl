@@ -65,6 +65,7 @@ import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.pkcs.PKCSException;
 import org.jruby.ext.openssl.SecurityHelper;
+import org.jruby.ext.openssl.shim.PKeyShim;
 
 public class PKCS10Request {
 
@@ -111,7 +112,7 @@ public class PKCS10Request {
         CertificationRequest req = signedRequest.toASN1Structure();
         CertificationRequestInfo reqInfo = new CertificationRequestInfo(subject, publicKeyInfo, toAttributesSet());
         ASN1Sequence seq = (ASN1Sequence) req.toASN1Primitive();
-        req = new CertificationRequest(reqInfo, (AlgorithmIdentifier) seq.getObjectAt(1), (DERBitString) seq.getObjectAt(2));
+        req = PKeyShim.newCertificationRequest(reqInfo, (AlgorithmIdentifier) seq.getObjectAt(1), (DERBitString) seq.getObjectAt(2));
         signedRequest = new PKCS10CertificationRequest(req); // valid = true;
     }
 
@@ -288,7 +289,7 @@ public class PKCS10Request {
 
     public byte[] getSignatureBytes() {
         if ( signedRequest == null ) return null;
-        return signedRequest.toASN1Structure().getSignature().getOctets();
+        return PKeyShim.getCertReqSignature(signedRequest.toASN1Structure()).getOctets();
     }
 
     private static class PKCS10Signer implements ContentSigner {

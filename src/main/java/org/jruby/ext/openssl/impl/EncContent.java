@@ -38,6 +38,8 @@ import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.util.ByteList;
 
 /** PKCS7_ENC_CONTENT
@@ -157,7 +159,7 @@ public class EncContent {
         ec.setContentType( ASN1Registry.oid2nid(contentType) );
         ec.setAlgorithm(AlgorithmIdentifier.getInstance(sequence.getObjectAt(1)));
         if(sequence.size() > 2 && sequence.getObjectAt(2) instanceof ASN1TaggedObject && ((ASN1TaggedObject)(sequence.getObjectAt(2))).getTagNo() == 0) {
-            ASN1Encodable ee = ((ASN1TaggedObject)(sequence.getObjectAt(2))).getBaseObject().toASN1Primitive();
+                ASN1Encodable ee = ASN1Shim.getTaggedObject((ASN1TaggedObject) sequence.getObjectAt(2));
             if ( ee instanceof ASN1Sequence && ((ASN1Sequence) ee).size() > 0 ) {
                 ByteList combinedOctets = new ByteList();
                 Enumeration enm = ((ASN1Sequence)ee).getObjects();

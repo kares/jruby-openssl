@@ -1,34 +1,37 @@
-#-*- mode: ruby -*-
+require 'rake/testtask'
 
-#Rake::Task[:jar].clear rescue nil
+mvnw = File.expand_path('./mvnw', File.dirname(__FILE__))
+
 desc "Package jopenssl.jar with the compiled classes"
 task :jar do
-  sh( './mvnw prepare-package -Dmaven.test.skip=true' )
+  sh("#{mvnw} prepare-package -Dmaven.test.skip=true")
 end
 namespace :jar do
-  desc "Package jopenssl.jar file (and dependendent jars)"
+  desc "Package jopenssl.jar file (and dependent jars)"
   task :all do
-    sh( './mvnw package -Dmaven.test.skip=true' )
+    sh("#{mvnw} package -Dmaven.test.skip=true")
   end
 end
-task :test_prepare do
-  sh( './mvnw prepare-package -Dmaven.test.skip=true' )
-  sh( './mvnw test-compile' ) # separate step due -Dmaven.test.skip=true
+task :test_prepare => :jar do
+  sh("#{mvnw} test-compile") # separate due -Dmaven.test.skip=true
 end
 
 task :clean do
-  sh( './mvnw clean' )
+  sh("#{mvnw} clean")
 end
 
 task :build do
-  sh( './mvnw clean package -Dmaven.test.skip=true' )
+  sh("#{mvnw} package")
 end
 
 task :default => :build
 
-file('lib/jopenssl.jar') { Rake::Task['jar'].invoke }
+file('lib/jopenssl.jar') { Rake::Task[:jar].invoke }
 
-require 'rake/testtask'
+file('pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class') do
+  Rake::Task[:test_prepare].invoke
+end
+
 Rake::TestTask.new do |task|
   task.libs << File.expand_path('src/test/ruby', File.dirname(__FILE__))
   test_files = FileList['src/test/ruby/**/test*.rb'].to_a
@@ -37,7 +40,7 @@ Rake::TestTask.new do |task|
   task.loader = :direct
   task.ruby_opts = [ '-v', '-C', 'src/test/ruby', '-rbundler/setup' ]
 end
-task :test => 'lib/jopenssl.jar'
+task :test => ['lib/jopenssl.jar', 'pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class']
 
 namespace :integration do
   it_path = File.expand_path('../src/test/integration', __FILE__)

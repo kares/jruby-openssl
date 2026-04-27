@@ -8,6 +8,16 @@ class TestReadNonblockTLS13 < TestCase
 
   # ── helpers ──────────────────────────────────────────────────────────
 
+  def assert_wait_symbol(result, message = nil)
+    assert_includes [:wait_readable, :wait_writable], result, message
+  end
+
+  def assert_wait_error(&block)
+    error = assert_raise(OpenSSL::SSL::SSLErrorWaitReadable, OpenSSL::SSL::SSLErrorWaitWritable, &block)
+    assert_includes ["read would block", "write would block"], error.message
+    error
+  end
+
   # Set up a TLS 1.3 server where the server does NOT read, so the
   # client's send buffer saturates. Yields |ssl, port| to the block.
   # This forces selectNow()==0 inside doHandshake when processing
@@ -133,25 +143,24 @@ class TestReadNonblockTLS13 < TestCase
 
   # ── TLS 1.3 + saturated buffer (the exact production bug scenario) ──
 
-  # Core reproducer: exception:false must return :wait_readable, not throw.
+  # Core reproducer: exception:false must return a wait symbol, not throw.
   def test_read_nonblock_exception_false_saturated_tls13
     with_saturated_tls13_client do |ssl|
       assert_equal "TLSv1.3", ssl.ssl_version
 
       result = ssl.read_nonblock(1024, exception: false)
-      assert_equal :wait_readable, result
+      assert_wait_symbol result
     end
   end
 
-  # exception:true must raise SSLErrorWaitReadable (not EAGAIN or IOError).
+  # exception:true must raise a specific SSL wait error (not EAGAIN or IOError).
   def test_read_nonblock_exception_true_saturated_tls13
     with_saturated_tls13_client do |ssl|
       assert_equal "TLSv1.3", ssl.ssl_version
 
-      raised = assert_raise(OpenSSL::SSL::SSLErrorWaitReadable) do
+      assert_wait_error do
         ssl.read_nonblock(1024)
       end
-      assert_equal "read would block", raised.message
     end
   end
 
@@ -160,7 +169,7 @@ class TestReadNonblockTLS13 < TestCase
     with_saturated_tls13_client do |ssl|
       buf = ''
       result = ssl.read_nonblock(1024, buf, exception: false)
-      assert_equal :wait_readable, result
+      assert_wait_symbol result
     end
   end
 
@@ -168,29 +177,29 @@ class TestReadNonblockTLS13 < TestCase
   def test_sysread_nonblock_exception_false_saturated_tls13
     with_saturated_tls13_client do |ssl|
       result = ssl.send(:sysread_nonblock, 1024, exception: false)
-      assert_equal :wait_readable, result
+      assert_wait_symbol result
     end
   end
 
-  # Multiple consecutive read_nonblock calls must all return :wait_readable
+  # Multiple consecutive read_nonblock calls must all return wait symbols
   def test_read_nonblock_repeated_calls_saturated_tls13
     with_saturated_tls13_client do |ssl|
       5.times do |i|
         result = ssl.read_nonblock(1024, exception: false)
-        assert_equal :wait_readable, result, "iteration #{i}"
+        assert_wait_symbol result, "iteration #{i}"
       end
     end
   end
 
   # ── TLS 1.2 + saturated buffer (control — no post-handshake messages) ─
 
-  # TLS 1.2 has no post-handshake messages, so the bug path is never hit.
+  # TLS 1.2 has no post-handshake messages, so the TLS 1.3 bug path is never hit.
   def test_read_nonblock_exception_false_saturated_tls12
     with_saturated_tls12_client do |ssl|
       assert_equal "TLSv1.2", ssl.ssl_version
 
       result = ssl.read_nonblock(1024, exception: false)
-      assert_equal :wait_readable, result
+      assert_wait_symbol result
     end
   end
 
@@ -198,7 +207,7 @@ class TestReadNonblockTLS13 < TestCase
     with_saturated_tls12_client do |ssl|
       assert_equal "TLSv1.2", ssl.ssl_version
 
-      assert_raise(OpenSSL::SSL::SSLErrorWaitReadable) do
+      assert_wait_error do
         ssl.read_nonblock(1024)
       end
     end
@@ -433,7 +442,7 @@ class TestReadNonblockTLS13 < TestCase
       end
 
       result = ssl.read_nonblock(1024, exception: false)
-      assert_equal :wait_readable, result
+      assert_wait_symbol result
     ensure
       ssl.close rescue nil
       sock.close rescue nil

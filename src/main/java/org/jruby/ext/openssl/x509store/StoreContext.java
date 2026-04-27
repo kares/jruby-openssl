@@ -1374,6 +1374,8 @@ public class StoreContext {
     private static final String OID_NAME_CONSTRAINTS = "2.5.29.30";
     private static final String OID_SUBJECT_ALT_NAME = "2.5.29.17";
 
+    private static final String NAME_CONSTRAINT_EXCLUDED_MESSAGE = "excluded subtree";
+
     /**
      * c: check_name_constraints
      *
@@ -1429,9 +1431,8 @@ public class StoreContext {
                         validator.checkExcluded(dnName);
                     }
                 } catch (NameConstraintValidatorException e) {
-                    int err = e.getMessage() != null && e.getMessage().contains("excluded")
-                            ? V_ERR_EXCLUDED_VIOLATION : V_ERR_PERMITTED_VIOLATION;
-                    if (verify_cb_cert(x, i, err) == 0) return 0;
+                    final String log = "checkNameConstraints subject directory name";
+                    if (handleNameConstraintViolation(e, x, i, log)) return 0;
                 }
 
                 // Check all Subject Alternative Names
@@ -1446,17 +1447,30 @@ public class StoreContext {
                         }
                     }
                 } catch (NameConstraintValidatorException e) {
-                    LOG.debugStack(e);
-                    int err = e.getMessage() != null && e.getMessage().contains("excluded")
-                            ? V_ERR_EXCLUDED_VIOLATION : V_ERR_PERMITTED_VIOLATION;
-                    if (verify_cb_cert(x, i, err) == 0) return 0;
+                    final String log = "checkNameConstraints subject alt name";
+                    if (handleNameConstraintViolation(e, x, i, log)) return 0;
                 }
             }
         }
         return 1;
     }
 
-    private final static Set<String> CRITICAL_EXTENSIONS = new HashSet<String>(8);
+    private boolean handleNameConstraintViolation(NameConstraintValidatorException ex,
+                                                  X509AuxCertificate x,
+                                                  int depth,
+                                                  String logMsg) throws Exception {
+        int err;
+        final String msg = ex.getMessage();
+        if (msg != null && msg.contains(NAME_CONSTRAINT_EXCLUDED_MESSAGE)) {
+            err = V_ERR_EXCLUDED_VIOLATION; // DNS is from an excluded subtree.
+        } else { // DNS is not from a permitted subtree.
+            LOG.debug(logMsg, ex);
+            err = V_ERR_PERMITTED_VIOLATION;
+        }
+        return verify_cb_cert(x, depth, err) == 0;
+    }
+
+    private final static Set<String> CRITICAL_EXTENSIONS = new HashSet<>(8);
     static {
         CRITICAL_EXTENSIONS.add("2.16.840.1.113730.1.1"); // netscape cert type, NID 71
         CRITICAL_EXTENSIONS.add("2.5.29.15"); // key usage, NID 83

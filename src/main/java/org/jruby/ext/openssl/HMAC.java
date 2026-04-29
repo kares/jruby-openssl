@@ -37,6 +37,7 @@ import org.jruby.RubyModule;
 import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.runtime.Visibility;
@@ -53,6 +54,10 @@ public class HMAC extends RubyObject {
         RubyClass HMAC = OpenSSL.defineClassUnder("HMAC", runtime.getObject(), (r, klass) -> new HMAC(r, klass));
         OpenSSL.defineClassUnder("HMACError", OpenSSLError, OpenSSLError.getAllocator());
         HMAC.defineAnnotatedMethods(HMAC.class);
+    }
+
+    static RubyClass _HMAC(final Ruby runtime) {
+        return (RubyClass) runtime.getModule("OpenSSL").getConstantAt("HMAC");
     }
 
     static Mac getMacInstance(final String algorithmName) throws NoSuchAlgorithmException {
@@ -84,11 +89,11 @@ public class HMAC extends RubyObject {
             return runtime.newString( new ByteList(mac.doFinal(), false) );
         }
         catch (NoSuchAlgorithmException e) {
-            throw runtime.newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
+            throw Digest.newDigestError(runtime, "unsupported digest algorithm: " + algName, e);
         }
-        catch (GeneralSecurityException e) {
+        catch (GeneralSecurityException|IllegalArgumentException e) { // org.bouncycastle.crypto.IllegalKeyException
             LOG.debugStack(runtime, "digest", e);
-            throw runtime.newNotImplementedError(e.getMessage());
+            throw newHMACError(runtime, e.getMessage(), e);
         }
     }
 
@@ -105,11 +110,11 @@ public class HMAC extends RubyObject {
             return runtime.newString( toHEX( mac.doFinal() ) );
         }
         catch (NoSuchAlgorithmException e) {
-            throw runtime.newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
+            throw Digest.newDigestError(runtime, "unsupported digest algorithm: " + algName, e);
         }
-        catch (GeneralSecurityException e) {
+        catch (GeneralSecurityException|IllegalArgumentException e) {
             LOG.debugStack(runtime, "hexdigest", e);
-            throw runtime.newNotImplementedError(e.getMessage());
+            throw newHMACError(runtime, e.getMessage(), e);
         }
     }
 
@@ -130,11 +135,11 @@ public class HMAC extends RubyObject {
             mac.init( SimpleSecretKey.copy(mac.getAlgorithm(), this.key) );
         }
         catch (NoSuchAlgorithmException e) {
-            throw getRuntime().newNotImplementedError("Unsupported MAC algorithm (HMAC[-]" + algName + ")");
+            throw Digest.newDigestError(getRuntime(), "unsupported digest algorithm: " + algName, e);
         }
-        catch (GeneralSecurityException e) {
+        catch (GeneralSecurityException|IllegalArgumentException e) {
             LOG.debugStack(getRuntime(), "initialize", e);
-            throw getRuntime().newNotImplementedError(e.getMessage());
+            throw newHMACError(getRuntime(), e.getMessage(), e);
         }
         return this;
     }
@@ -154,11 +159,11 @@ public class HMAC extends RubyObject {
             mac.init( SimpleSecretKey.copy(algName, key) );
         }
         catch (NoSuchAlgorithmException e) {
-            throw getRuntime().newNotImplementedError("Unsupported MAC algorithm (" + algName + ")");
+            throw Digest.newDigestError(getRuntime(), "unsupported digest algorithm: " + algName, e);
         }
-        catch (GeneralSecurityException e) {
+        catch (GeneralSecurityException|IllegalArgumentException e) {
             LOG.debugStack(getRuntime(), "initialize_copy", e);
-            throw getRuntime().newNotImplementedError(e.getMessage());
+            throw newHMACError(getRuntime(), e.getMessage(), e);
         }
 
         data = new ByteList(that.data);
@@ -216,4 +221,7 @@ public class HMAC extends RubyObject {
         return out;
     }
 
+    private static RaiseException newHMACError(Ruby runtime, String message, Throwable cause) {
+        return Utils.newError(runtime, runtime.getModule("OpenSSL").getClass("HMACError"), message, cause);
+    }
 }// HMAC

@@ -38,6 +38,7 @@ import org.jruby.RubyModule;
 import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -60,7 +61,7 @@ public class Digest extends RubyObject {
         final RubyModule coreDigest = runtime.getModule("Digest");
         final RubyClass DigestClass = coreDigest.getClass("Class"); // ::Digest::Class
         RubyClass Digest = OpenSSL.defineClassUnder("Digest", DigestClass, (r, klass) -> new Digest(r, klass));
-        OpenSSL.defineClassUnder("DigestError", OpenSSLError, OpenSSLError.getAllocator());
+        Digest.defineClassUnder("DigestError", OpenSSLError, OpenSSLError.getAllocator());
         Digest.defineAnnotatedMethods(Digest.class);
 
         String digestName;
@@ -382,4 +383,7 @@ public class Digest extends RubyObject {
 
     }
 
+    static RaiseException newDigestError(Ruby runtime, String message, Throwable cause) {
+        return Utils.newError(runtime, _Digest(runtime).getClass("DigestError"), message, cause);
+    }
 }

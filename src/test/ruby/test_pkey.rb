@@ -130,6 +130,11 @@ class TestPKey < TestCase
 
     assert_raise(OpenSSL::PKey::PKeyError) { pkey.verify("SHA256", hmac, "data") }
     assert_raise(OpenSSL::PKey::PKeyError) { pkey.raw_public_key }
+  rescue OpenSSL::HMACError => e
+    if fips? && e.message.include?("approved mode")
+      skip 'BC-FIPS approved-only mode rejects SHA-256/HMAC'
+    end
+    raise(e)
   end
 
   def test_hmac_new_raw_private_key
@@ -138,6 +143,11 @@ class TestPKey < TestCase
     assert_instance_of OpenSSL::PKey::PKey, pkey
     assert_equal "secret", pkey.raw_private_key
     assert_equal OpenSSL::HMAC.digest("SHA256", "secret", "payload"), pkey.sign("SHA256", "payload")
+  rescue OpenSSL::HMACError => e
+    if fips? && e.message.include?("approved mode")
+      skip 'BC-FIPS approved-only mode rejects SHA-256/HMAC'
+    end
+    raise(e)
   end
 
   def test_hmac_generate_key_requires_key_option
@@ -227,6 +237,11 @@ class TestPKey < TestCase
     assert_equal 1024, pkey.n.num_bits
     assert_equal 3, pkey.e.to_i
     assert pkey.private?
+  rescue OpenSSL::PKey::RSAError => e
+    if fips? && e.message.include?("RSA key size too small for FIPS")
+      skip 'BC-FIPS approved-only mode rejects RSA-1024 signing'
+    end
+    raise(e)
   end
 
   def test_generate_key_ec_with_options
@@ -327,7 +342,14 @@ class TestPKey < TestCase
     assert_kind_of java.security.PublicKey, pkey.to_java(java.security.interfaces.RSAPublicKey)
     assert_kind_of java.security.PublicKey, pkey.to_java(java.security.Key)
     pub_key = pkey.to_java(java.security.PublicKey)
-    if pub_key.is_a? org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPublicKey
+    bc_jce_available = true
+    begin
+      org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPublicKey
+    rescue NameError => e
+      bc_jce_available = false
+      raise(e) unless fips?
+    end
+    if bc_jce_available && pub_key.is_a?(org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPublicKey)
       assert_kind_of java.security.PublicKey, pkey.to_java(org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPublicKey)
     end
     assert_raise_kind_of(TypeError) { pkey.to_java(java.security.interfaces.ECPublicKey) }

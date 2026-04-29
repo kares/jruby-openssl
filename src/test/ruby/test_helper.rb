@@ -1,4 +1,8 @@
-require 'java' if defined? JRUBY_VERSION
+begin
+  gem 'test-unit'
+rescue LoadError
+  warn "gem 'test-unit' not available, will load built-in 'test/unit'"
+end
 
 if bc_version = ENV['BC_VERSION']
   require 'jar-dependencies'
@@ -19,49 +23,8 @@ else
   # raise "bcpkix jar not found" unless jar; $CLASSPATH << jar
 end if defined? JRUBY_VERSION
 
-begin
-  gem 'test-unit'
-rescue LoadError
-  warn "gem 'test-unit' not available, will load built-in 'test/unit'"
-end
-
-begin
-  gem 'minitest'
-  require 'minitest/autorun'
-  # NOTE: deal with maven plugin 1.0.10 setting output (gone on minitest 5) :
-  if Minitest.const_defined?(:Unit) && ! defined?(Minitest::Unit.output)
-      Minitest::Unit.module_eval do
-        @@report_path = nil
-        def self.report_path; @@report_path end
-        def self.output=(report_path) # called by the runit-maven-plugin
-          Minitest.extensions << 'output' # add a plugin (MiniT calls #plugin_output_init)
-          @@report_path = report_path
-        end
-      end
-      Minitest.module_eval do
-        def self.plugin_output_init(options)
-          summary = self.reporter.reporters.find { |rr| rr.is_a?(Minitest::SummaryReporter) }
-          if summary && Minitest::Unit.report_path
-            summary = summary.dup
-            summary.io = Minitest::Unit.report_path
-            self.reporter.reporters << summary
-          end
-        end
-      end
-  end
-rescue LoadError => e
-  warn "gem 'minitest' failed to load: #{e.inspect}"
-end unless (Test::Unit::AutoRunner.respond_to?(:setup_option)) rescue true # runit rules
-# @see https://github.com/jruby/jruby-maven-plugins/blob/master/runit-maven-plugin/src/main/java/de/saumya/mojo/runit/RunitMavenTestScriptFactory.java
-
-if defined? Minitest::Test
-  TestCase = Minitest::Test
-else
-  require 'test/unit'
-  TestCase = Test::Unit::TestCase
-end
-
-puts "#{__FILE__} using #{TestCase}" if $VERBOSE || defined?(REPORT_PATH)
+require 'test/unit'
+TestCase = Test::Unit::TestCase
 
 class TestCase
 
@@ -217,22 +180,3 @@ else
   end
 end
 
-if defined? JRUBY_VERSION # make sure our OpenSSL lib gets used not JRuby's
-  unless ENV['BC_VERSION']
-    $LOAD_PATH.unshift(File.expand_path('../../../lib', File.dirname(__FILE__)))
-  end
-end
-
-if ENV['OPENSSL_TEST_SUITE'].to_s == 'true'
-
-  require 'jopenssl/load' if defined? JRUBY_VERSION
-
-  base = File.expand_path('../ossl', File.dirname(__FILE__))
-  if ( sub = RUBY_VERSION[0, 3] ) == '2.0'
-    sub = '1.9'
-  end
-  puts "loading (MRI) OpenSSL suite from: #{File.join(base, sub)}"
-  Dir.glob("#{File.join(base, sub)}/**/test_*.rb").each do |test|
-    require test
-  end
-end

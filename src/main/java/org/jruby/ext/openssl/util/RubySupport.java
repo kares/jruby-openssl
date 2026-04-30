@@ -12,6 +12,8 @@ import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.RubySymbol;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.runtime.Block;
+import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
@@ -99,6 +101,12 @@ public abstract class RubySupport {
         if (caller0.isNil()) return null;
         final IRubyObject first = caller0.convertToArray().eltInternal(0);
         return first instanceof RubyString ? (RubyString) first : first.asString();
+    }
+
+    //
+
+    public static IRubyObject invokeSuper(ThreadContext context, IRubyObject self, IRubyObject[] args, Block block) {
+        return Helpers.invokeSuper(context, self, args, block);
     }
 
     // extract **kwargs helpers (borrowed from JRuby's ArgsUtil)

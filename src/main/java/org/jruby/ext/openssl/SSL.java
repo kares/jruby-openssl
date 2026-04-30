@@ -41,6 +41,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.SafePropertyAccessor;
 
+import static org.jruby.ext.openssl.util.RubySupport.invokeSuper;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newErrorWithoutTrace;
 
@@ -262,7 +263,7 @@ public class SSL {
                 IRubyObject F_SETFL = ((RubyModule) Fcntl).getConstant("F_SETFL");
                 fcntl.call(context, io, ioClass, "fcntl", new IRubyObject[] { F_SETFL, flag }); // @io.fcntl(Fcntl::F_SETFL, flag)
             }
-            return Utils.invokeSuper(context, self, args, Block.NULL_BLOCK); // super
+            return invokeSuper(context, self, args, Block.NULL_BLOCK); // super
         }
 
         private static IRubyObject or(final ThreadContext context, final IRubyObject flag, final IRubyObject flags) {

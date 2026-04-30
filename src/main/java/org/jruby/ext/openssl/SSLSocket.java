@@ -59,6 +59,7 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static org.jruby.ext.openssl.SSL.newSSLErrorWaitReadable;
 import static org.jruby.ext.openssl.SSL.newSSLErrorWaitWritable;
+import static org.jruby.ext.openssl.util.RubySupport.invokeSuper;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newIOError;
 import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
@@ -188,7 +189,7 @@ public class SSLSocket extends RubyObject {
 
         this.initializeTime = System.currentTimeMillis();
 
-        return Utils.invokeSuper(context, this, args, Block.NULL_BLOCK); // super()
+        return invokeSuper(context, this, args, Block.NULL_BLOCK); // super()
     }
 
     private IRubyObject set_io_nonblock_checked(final ThreadContext context, RubyBoolean value) {

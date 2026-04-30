@@ -66,6 +66,9 @@ import org.jruby.util.ByteList;
 import org.jruby.ext.openssl.impl.ASN1Registry;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newIOError;
+import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 
 /**
@@ -1111,7 +1114,7 @@ public class ASN1 {
         catch (RuntimeException e) {
 
             LOG.debugStack(context.runtime, null, e);
-            throw Utils.newRuntimeError(context.runtime, e);
+            throw newRuntimeError(context.runtime, e);
         }
     }
 
@@ -1167,22 +1170,17 @@ public class ASN1 {
 
             // X.690-0207 8.1.2.4.2
             // "c) bits 7 to 1 of the first subsequent octet shall not all be zero."
-            if ((b & 0x7f) == 0) // Note: -1 will pass
-            {
+            if ((b & 0x7f) == 0) { // -1 will pass
                 throw new IOException("corrupted stream - invalid high tag number found");
             }
 
-            while ((b >= 0) && ((b & 0x80) != 0))
-            {
+            while ((b >= 0) && ((b & 0x80) != 0)) {
                 tagNo |= (b & 0x7f);
                 tagNo <<= 7;
                 b = asn1[ ++offset ];
             }
 
-            if (b < 0)
-            {
-                throw new IOException("EOF found inside tag value.");
-            }
+            if (b < 0) throw new IOException("EOF found inside tag value");
 
             tagNo |= (b & 0x7f);
         }
@@ -1401,7 +1399,7 @@ public class ASN1 {
     }
 
     public static RaiseException newASN1Error(Ruby runtime, String message) {
-        return Utils.newError(runtime, _ASN1(runtime).getClass("ASN1Error"), message, false);
+        return newError(runtime, _ASN1(runtime).getClass("ASN1Error"), message, false);
     }
 
     static RaiseException newASN1Error(Ruby runtime, Throwable ex) {
@@ -2394,7 +2392,7 @@ public class ASN1 {
                 }
                 return false;
             }
-            catch (IOException e) { throw Utils.newIOError(context.runtime, e); }
+            catch (IOException e) { throw newIOError(context.runtime, e); }
         }
 
         @JRubyMethod

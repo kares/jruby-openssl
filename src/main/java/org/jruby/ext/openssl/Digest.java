@@ -46,7 +46,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 
-import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -384,6 +384,6 @@ public class Digest extends RubyObject {
     }
 
     static RaiseException newDigestError(Ruby runtime, String message, Throwable cause) {
-        return Utils.newError(runtime, _Digest(runtime).getClass("DigestError"), message, cause);
+        return newError(runtime, _Digest(runtime).getClass("DigestError"), message, cause);
     }
 }

@@ -71,6 +71,8 @@ import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.PKey._PKey;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.PKey.supportedSignatureAlgorithm;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newIOError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -209,7 +211,7 @@ public class X509Request extends RubyObject {
             return getRuntime().newString( writer.toString() );
         }
         catch (IOException e) {
-            throw Utils.newIOError(getRuntime(), e);
+            throw newIOError(getRuntime(), e);
         }
     }
 
@@ -474,11 +476,11 @@ public class X509Request extends RubyObject {
     }
 
     private static RaiseException newRequestError(Ruby runtime, Exception e) {
-        return Utils.newError(runtime, _X509(runtime).getClass("RequestError"), e);
+        return newError(runtime, _X509(runtime).getClass("RequestError"), e);
     }
 
     private static RaiseException newRequestError(Ruby runtime, String message, Exception cause) {
-        return Utils.newError(runtime, _X509(runtime).getClass("RequestError"), message, cause);
+        return newError(runtime, _X509(runtime).getClass("RequestError"), message, cause);
     }
 
 }// X509Request

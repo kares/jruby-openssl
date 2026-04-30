@@ -47,6 +47,8 @@ import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+
 /**
  * OCSP
  *
@@ -206,7 +208,7 @@ public class OCSP {
     }
     
     static RaiseException newOCSPError(Ruby runtime, Exception ex) {
-        return Utils.newError(runtime, _OCSP(runtime).getClass("OCSPError"), ex);
+        return newError(runtime, _OCSP(runtime).getClass("OCSPError"), ex);
     }
     
     static RubyModule _OCSP(final Ruby runtime) {

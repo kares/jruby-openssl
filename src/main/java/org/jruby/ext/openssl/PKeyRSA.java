@@ -94,12 +94,14 @@ import org.jruby.util.ByteList;
 import org.jruby.ext.openssl.impl.CipherSpec;
 import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
+
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.impl.PKey.readRSAPrivateKey;
 import static org.jruby.ext.openssl.impl.PKey.readRSAPublicKey;
 import static org.jruby.ext.openssl.impl.PKey.toASN1Primitive;
 import static org.jruby.ext.openssl.impl.PKey.toDerRSAKey;
 import static org.jruby.ext.openssl.impl.PKey.toDerRSAPublicKey;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -129,7 +131,7 @@ public class PKeyRSA extends PKey {
     }
 
     public static RaiseException newRSAError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _PKey(runtime).getClass("RSAError"), message);
+        return newError(runtime, _PKey(runtime).getClass("RSAError"), message);
     }
 
     static RaiseException newRSAError(Ruby runtime, Throwable cause) {
@@ -137,7 +139,7 @@ public class PKeyRSA extends PKey {
     }
 
     static RaiseException newRSAError(Ruby runtime, String message, Throwable cause) {
-        return Utils.newError(runtime, _PKey(runtime).getClass("RSAError"), message, cause);
+        return newError(runtime, _PKey(runtime).getClass("RSAError"), message, cause);
     }
 
     public PKeyRSA(Ruby runtime, RubyClass type) {

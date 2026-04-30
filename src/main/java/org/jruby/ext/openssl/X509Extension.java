@@ -83,6 +83,7 @@ import org.jruby.util.ConvertBytes;
 import static org.jruby.ext.openssl.ASN1._ASN1;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * OpenSSL::X509::Extension
@@ -977,11 +978,11 @@ public class X509Extension extends RubyObject {
     }
 
     static RaiseException newExtensionError(Ruby runtime, Exception e) {
-        return Utils.newError(runtime, _X509(runtime).getClass("ExtensionError"), e);
+        return newError(runtime, _X509(runtime).getClass("ExtensionError"), e);
     }
 
     static RaiseException newExtensionError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _X509(runtime).getClass("ExtensionError"), message);
+        return newError(runtime, _X509(runtime).getClass("ExtensionError"), message);
     }
 
     // our custom "internal" HEX helpers :

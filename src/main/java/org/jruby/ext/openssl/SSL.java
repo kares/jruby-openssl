@@ -41,6 +41,9 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.SafePropertyAccessor;
 
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newErrorWithoutTrace;
+
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
@@ -180,15 +183,15 @@ public class SSL {
     }
 
     public static RaiseException newSSLError(Ruby runtime, Exception ex) {
-        return Utils.newError(runtime, _SSL(runtime).getClass("SSLError"), ex);
+        return newError(runtime, _SSL(runtime).getClass("SSLError"), ex);
     }
 
     public static RaiseException newSSLError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _SSL(runtime).getClass("SSLError"), message, false);
+        return newError(runtime, _SSL(runtime).getClass("SSLError"), message, false);
     }
 
     private static RaiseException newSSLError(Ruby runtime, String message, Exception ex) {
-        return Utils.newError(runtime, _SSL(runtime).getClass("SSLError"), message, ex);
+        return newError(runtime, _SSL(runtime).getClass("SSLError"), message, ex);
     }
 
     public static RaiseException newSSLErrorWaitReadable(Ruby runtime, String message) {
@@ -219,9 +222,9 @@ public class SSL {
             errorClass = _SSL(runtime).getClass("SSLError"); // fallback
         }
         if ( waitErrorBacktrace ) {
-            return Utils.newError(runtime, errorClass, message, false);
+            return newError(runtime, errorClass, message, false);
         }
-        return Utils.newErrorWithoutTrace(runtime, errorClass, message);
+        return newErrorWithoutTrace(runtime, errorClass, message);
     }
 
     static RubyModule _SSL(final Ruby runtime) {

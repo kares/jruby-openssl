@@ -105,6 +105,7 @@ import static org.jruby.ext.openssl.X509CRL.extensions_to_text;
 import static org.jruby.ext.openssl.StringHelper.appendGMTDateTime;
 import static org.jruby.ext.openssl.StringHelper.appendLowerHexValue;
 import static org.jruby.ext.openssl.StringHelper.lowerHexBytes;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
@@ -281,15 +282,15 @@ public class X509Cert extends RubyObject {
     }
 
     public static RaiseException newCertificateError(final Ruby runtime, Exception e) {
-        return Utils.newError(runtime, _CertificateError(runtime), e);
+        return newError(runtime, _CertificateError(runtime), e);
     }
 
     static RaiseException newCertificateError(final Ruby runtime, String msg) {
-        return Utils.newError(runtime, _CertificateError(runtime), msg);
+        return newError(runtime, _CertificateError(runtime), msg);
     }
 
     static RaiseException newCertificateError(final Ruby runtime, String msg, Exception e) {
-        return Utils.newError(runtime, _CertificateError(runtime), msg, e);
+        return newError(runtime, _CertificateError(runtime), msg, e);
     }
 
     @Override

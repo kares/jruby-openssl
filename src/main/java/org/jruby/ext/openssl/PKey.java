@@ -67,6 +67,7 @@ import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.Cipher._Cipher;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -92,7 +93,7 @@ public abstract class PKey extends RubyObject {
     }
 
     public static RaiseException newPKeyError(Ruby runtime, String message) {
-        return Utils.newError(runtime, (RubyClass) _PKey(runtime).getConstantAt("PKeyError"), message);
+        return newError(runtime, (RubyClass) _PKey(runtime).getConstantAt("PKeyError"), message);
     }
 
     public static PKey newInstance(final Ruby runtime, final PublicKey publicKey) {
@@ -644,7 +645,7 @@ public abstract class PKey extends RubyObject {
             return str.convertToString();
         }
         catch (RaiseException ex) { // to_str conversion failed
-            throw Utils.newError(runtime, (RubyClass) runtime.getClassFromPath(errorType), errorMsg == null ? null : errorMsg.toString());
+            throw newError(runtime, (RubyClass) runtime.getClassFromPath(errorType), errorMsg == null ? null : errorMsg.toString());
         }
     }
 
@@ -822,7 +823,7 @@ public abstract class PKey extends RubyObject {
         final String digAlg = digest.getShortAlgorithm();
         if ( ( "DSA".equalsIgnoreCase(keyAlg) && "MD5".equalsIgnoreCase(digAlg)) ||
              ( "RSA".equalsIgnoreCase(keyAlg) && "DSS1".equals( digest.name().toString() ) ) ) {
-            throw Utils.newError(runtime, errorClass, "unsupported key / digest algorithm ( "+ keyAlg +" / "+ digAlg +" )");
+            throw newError(runtime, errorClass, "unsupported key / digest algorithm ( "+ keyAlg +" / "+ digAlg +" )");
         }
     }
 

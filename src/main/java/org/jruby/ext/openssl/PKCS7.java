@@ -32,7 +32,6 @@ import java.io.StringWriter;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
@@ -82,6 +81,7 @@ import org.jruby.ext.openssl.x509store.Store;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -918,11 +918,11 @@ public class PKCS7 extends RubyObject {
     }
 
     private static RaiseException newPKCS7Error(Ruby runtime, Exception e) {
-        return Utils.newError(runtime, _PKCS7(runtime).getClass("PKCS7Error"), e);
+        return newError(runtime, _PKCS7(runtime).getClass("PKCS7Error"), e);
     }
 
     private static RaiseException newPKCS7Error(Ruby runtime, String message) {
-        return Utils.newError(runtime, _PKCS7(runtime).getClass("PKCS7Error"), message);
+        return newError(runtime, _PKCS7(runtime).getClass("PKCS7Error"), message);
     }
 
     static RubyClass _PKCS7(final Ruby runtime) {

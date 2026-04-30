@@ -43,6 +43,8 @@ import org.jruby.util.ByteList;
 import org.jruby.runtime.Visibility;
 import org.jruby.ext.openssl.log.Logger;
 
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
@@ -222,6 +224,6 @@ public class HMAC extends RubyObject {
     }
 
     private static RaiseException newHMACError(Ruby runtime, String message, Throwable cause) {
-        return Utils.newError(runtime, runtime.getModule("OpenSSL").getClass("HMACError"), message, cause);
+        return newError(runtime, runtime.getModule("OpenSSL").getClass("HMACError"), message, cause);
     }
 }// HMAC

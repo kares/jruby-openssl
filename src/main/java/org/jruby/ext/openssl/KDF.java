@@ -35,6 +35,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
 import static org.jruby.ext.openssl.util.RubySupport.extractKeywordArgs;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * Provides functionality of various KDFs (key derivation function).
@@ -121,7 +122,7 @@ public class KDF {
     }
 
     static RaiseException newKDFError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _KDF(runtime).getClass("KDFError"), message);
+        return newError(runtime, _KDF(runtime).getClass("KDFError"), message);
     }
 
     static RubyClass _KDF(final Ruby runtime) {

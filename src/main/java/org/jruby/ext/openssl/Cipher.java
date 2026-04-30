@@ -69,6 +69,7 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static javax.crypto.Cipher.DECRYPT_MODE;
 import static javax.crypto.Cipher.ENCRYPT_MODE;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -1503,11 +1504,11 @@ public class Cipher extends RubyObject {
     }
 
     private static RaiseException newCipherError(Ruby runtime, Exception e) {
-        return Utils.newError(runtime, _Cipher(runtime).getClass("CipherError"), e);
+        return newError(runtime, _Cipher(runtime).getClass("CipherError"), e);
     }
 
     private static RaiseException newCipherError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _Cipher(runtime).getClass("CipherError"), message);
+        return newError(runtime, _Cipher(runtime).getClass("CipherError"), message);
     }
 
     private static class KeyAndIv {

@@ -94,6 +94,7 @@ import org.jruby.ext.openssl.x509store.Name;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.StringHelper.newString;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  *
@@ -799,15 +800,15 @@ public class X509Name extends RubyObject {
     }
 
     private static RaiseException newNameError(Ruby runtime, String msg, Throwable e) {
-        return Utils.newError(runtime, _X509(runtime).getClass("NameError"), msg, e);
+        return newError(runtime, _X509(runtime).getClass("NameError"), msg, e);
     }
 
     private static RaiseException newNameError(Ruby runtime, Throwable e) {
-        return Utils.newError(runtime, _X509(runtime).getClass("NameError"), e);
+        return newError(runtime, _X509(runtime).getClass("NameError"), e);
     }
 
     private static RaiseException newNameError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _X509(runtime).getClass("NameError"), message);
+        return newError(runtime, _X509(runtime).getClass("NameError"), message);
     }
 
 }// X509Name

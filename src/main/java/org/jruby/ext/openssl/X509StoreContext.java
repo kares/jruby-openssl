@@ -55,6 +55,7 @@ import static org.jruby.ext.openssl.X509CRL._CRL;
 import static org.jruby.ext.openssl.X509Cert._Certificate;
 import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
 import static org.jruby.ext.openssl.x509store.X509Utils.verifyCertificateErrorString;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -282,7 +283,7 @@ public class X509StoreContext extends RubyObject {
     }
 
     private static RaiseException newStoreError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _X509(runtime).getClass("StoreError"), message);
+        return newError(runtime, _X509(runtime).getClass("StoreError"), message);
     }
 
     private static RaiseException newStoreError(Ruby runtime, Exception cause) {

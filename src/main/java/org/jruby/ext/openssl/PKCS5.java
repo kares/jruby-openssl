@@ -36,6 +36,7 @@ import org.jruby.anno.JRubyModule;
 import org.jruby.runtime.builtin.IRubyObject;
 
 import static org.jruby.ext.openssl.KDF.newKDFError;
+import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
 
 /**
  * OpenSSL::PKCS5
@@ -70,7 +71,7 @@ public class PKCS5 {
             return pbkdf2Hmac(runtime, args);
         }
         catch (NoSuchAlgorithmException ex) {
-            throw Utils.newRuntimeError(runtime, ex); // should no happen
+            throw newRuntimeError(runtime, ex); // should not happen
         }
         catch (InvalidKeyException ex) {
             throw newKDFError(runtime, ex.getMessage()); // in MRI PKCS5 delegates to KDF impl
@@ -123,7 +124,7 @@ public class PKCS5 {
             return StringHelper.newString(runtime, deriveKey(mac, salt, iter, keySize));
         }
         catch (NoSuchAlgorithmException e) {
-            throw Utils.newRuntimeError(runtime, e);
+            throw newRuntimeError(runtime, e);
         }
         catch (InvalidKeyException e) {
             throw newKDFError(runtime, e.getMessage());

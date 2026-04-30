@@ -1,16 +1,94 @@
 package org.jruby.ext.openssl.util;
 
+import java.io.IOException;
 import java.util.HashSet;
+import java.util.function.Function;
 
+import org.jruby.Ruby;
 import org.jruby.RubyBasicObject;
+import org.jruby.RubyClass;
 import org.jruby.RubyHash;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.RubySymbol;
+import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
 public abstract class RubySupport {
+
+    // error/exception factory helpers
+
+    public static RaiseException newIOError(Ruby runtime, IOException e) {
+        return newIOError(runtime, e.getMessage(), e);
+    }
+
+    public static RaiseException newIOError(Ruby runtime, String msg) {
+        return new RaiseException(runtime, runtime.getIOError(), msg, true);
+    }
+
+    public static RaiseException newIOError(Ruby runtime, String msg, Exception e) {
+        RaiseException ex = newIOError(runtime, msg);
+        ex.initCause(e);
+        return ex;
+    }
+
+    public static RaiseException newRuntimeError(Ruby runtime, Exception e) {
+        return newRuntimeError(runtime, e.getMessage(), e);
+    }
+
+    public static RaiseException newRuntimeError(Ruby runtime, String msg) {
+        return new RaiseException(runtime, runtime.getRuntimeError(), msg, true);
+    }
+
+    public static RaiseException newRuntimeError(Ruby runtime, String msg, Exception e) {
+        RaiseException ex = newRuntimeError(runtime, msg);
+        ex.initCause(e);
+        return ex;
+    }
+
+    public static RaiseException newArgumentError(Ruby runtime, Exception e) {
+        return newError(runtime, runtime.getArgumentError(), e);
+    }
+
+    public static RaiseException newErrorWithoutTrace(Ruby runtime, RubyClass errorClass, String message) {
+        final IRubyObject backtrace = runtime.newEmptyArray();
+        return new RaiseException(runtime, errorClass, message, backtrace, false);
+    }
+
+    public static RaiseException newError(Ruby runtime, RubyClass errorClass, String message, boolean nativeException) {
+        return new RaiseException(runtime, errorClass, message, nativeException);
+    }
+
+    public static RaiseException newError(Ruby runtime, RubyClass errorClass, Throwable e) {
+        return newError(runtime, errorClass, e.getMessage(), e);
+    }
+
+    public static RaiseException newError(Ruby runtime, RubyClass errorClass, String msg) {
+        return newError(runtime, errorClass, msg, true);
+    }
+
+    public static RaiseException newError(Ruby runtime, RubyClass errorClass, String msg, Throwable e) {
+        RaiseException ex = newError(runtime, errorClass, msg);
+        ex.initCause(e);
+        return ex;
+    }
+
+    public static <T extends Throwable> RaiseException newError(Function<T, RaiseException> errorFunction, T e) {
+        RaiseException ex = errorFunction.apply(e);
+        ex.initCause(e);
+        return ex;
+    }
+
+    public static RaiseException newSecurityError(Ruby runtime, Throwable e) {
+        return newSecurityError(runtime, e.getMessage(), e);
+    }
+
+    public static RaiseException newSecurityError(Ruby runtime, String msg, Throwable e) {
+        RaiseException ex = new RaiseException(runtime, runtime.getSecurityError(), msg, true);
+        ex.initCause(e);
+        return ex;
+    }
 
     public static CharSequence callerTraceAt(final ThreadContext context, final int level) {
         final IRubyObject caller0 = context.runtime.getKernel().callMethod(

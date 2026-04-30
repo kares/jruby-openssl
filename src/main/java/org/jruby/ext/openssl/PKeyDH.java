@@ -63,6 +63,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.ext.openssl.log.Logger;
 
 import static org.jruby.ext.openssl.OpenSSL.bcExceptionMessage;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * OpenSSL::PKey::DH implementation.
@@ -90,7 +91,7 @@ public class PKeyDH extends PKey {
     }
 
     public static RaiseException newDHError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _PKey(runtime).getClass("DHError"), message);
+        return newError(runtime, _PKey(runtime).getClass("DHError"), message);
     }
 
     // transient because: we do not want these value serialized (insecure)

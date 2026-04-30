@@ -27,11 +27,7 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl;
 
-import java.io.IOException;
-import java.util.function.Function;
-
 import org.jruby.*;
-import org.jruby.exceptions.RaiseException;
 import org.jruby.internal.runtime.methods.DynamicMethod;
 import org.jruby.internal.runtime.methods.UndefinedMethod;
 import org.jruby.runtime.Block;
@@ -44,67 +40,6 @@ import org.jruby.runtime.builtin.IRubyObject;
 final class Utils {
 
     private Utils() {}
-
-    static RaiseException newIOError(Ruby runtime, IOException e) {
-        return newIOError(runtime, e.getMessage(), e);
-    }
-
-    static RaiseException newIOError(Ruby runtime, String msg) {
-        return new RaiseException(runtime, runtime.getIOError(), msg, true);
-    }
-
-    static RaiseException newIOError(Ruby runtime, String msg, Exception e) {
-        RaiseException ex = newIOError(runtime, msg);
-        ex.initCause(e);
-        return ex;
-    }
-
-    static RaiseException newRuntimeError(Ruby runtime, Exception e) {
-        return newRuntimeError(runtime, e.getMessage(), e);
-    }
-
-    static RaiseException newRuntimeError(Ruby runtime, String msg, Exception e) {
-        RaiseException ex = newRuntimeError(runtime, msg);
-        ex.initCause(e);
-        return ex;
-    }
-
-    static RaiseException newArgumentError(Ruby runtime, Exception e) {
-        return newError(runtime, runtime.getArgumentError(), e);
-    }
-
-    static RaiseException newRuntimeError(Ruby runtime, String msg) {
-        return new RaiseException(runtime, runtime.getRuntimeError(), msg, true);
-    }
-
-    static RaiseException newErrorWithoutTrace(Ruby runtime, RubyClass errorClass, String message) {
-        final IRubyObject backtrace = runtime.newEmptyArray(); // runtime.getNil();
-        return new RaiseException(runtime, errorClass, message, backtrace, false);
-    }
-
-    static RaiseException newError(Ruby runtime, RubyClass errorClass, String message, boolean nativeException) {
-        return new RaiseException(runtime, errorClass, message, nativeException);
-    }
-
-    static RaiseException newError(Ruby runtime, RubyClass errorClass, Throwable e) {
-        return newError(runtime, errorClass, e.getMessage(), e);
-    }
-
-    static RaiseException newError(Ruby runtime, RubyClass errorClass, String msg) {
-        return newError(runtime, errorClass, msg, true);
-    }
-
-    static RaiseException newError(Ruby runtime, RubyClass errorClass, String msg, Throwable e) {
-        RaiseException ex = newError(runtime, errorClass, msg);
-        ex.initCause(e);
-        return ex;
-    }
-
-    static <T extends Throwable> RaiseException newError(Function<T, RaiseException> errorFunction, T e) {
-        RaiseException ex = errorFunction.apply(e);
-        ex.initCause(e);
-        return ex;
-    }
 
     // reinvented parts of org.jruby.runtime.Helpers for compatibility with "older" JRuby :
 

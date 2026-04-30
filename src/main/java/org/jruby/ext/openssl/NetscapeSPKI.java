@@ -58,7 +58,7 @@ import org.jruby.util.ByteList;
 // org.bouncycastle.jce.netscape.NetscapeCertRequest emulator:
 import org.jruby.ext.openssl.impl.NetscapeCertRequest;
 
-import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -99,8 +99,9 @@ public class NetscapeSPKI extends RubyObject {
                 this.cert = cert = new NetscapeCertRequest(request);
                 challenge = runtime.newString( cert.getChallenge() );
             }
-            catch (GeneralSecurityException e) { throw newSPKIError(e); }
-            catch (IllegalArgumentException e) { throw newSPKIError(e); }
+            catch (GeneralSecurityException|IllegalArgumentException e) {
+                throw newSPKIError(e);
+            }
 
             this.public_key = PKey.newInstance(runtime, cert.getPublicKey());
         }
@@ -133,8 +134,9 @@ public class NetscapeSPKI extends RubyObject {
             // no Base64.DO_BREAK_LINES option needed for NSPKI :
             source = Base64.encodeBytesToBytes(source, 0, source.length, Base64.NO_OPTIONS);
             return getRuntime().newString(new ByteList(source, false));
+        } catch (IOException ex) {
+            throw newSPKIError(ex);
         }
-        catch (IOException ioe) { throw newSPKIError(ioe); }
     }
 
     private byte[] toDER() throws IOException {
@@ -186,7 +188,8 @@ public class NetscapeSPKI extends RubyObject {
                 for (CharSequence line : StringHelper.split(keyText, '\n')) {
                     text.append("    ").append(line).append('\n');
                 }
-            } catch (Exception e) {
+            } catch (Exception ex) {
+                LOG.debug(runtime, "to_text unable to load public key", ex);
                 text.append("    Unable to load public key\n");
             }
         }
@@ -219,8 +222,8 @@ public class NetscapeSPKI extends RubyObject {
         try {
             final String name = ASN1.oid2name(runtime, algId.getAlgorithm(), true);
             if (name != null) return name;
-        } catch (RuntimeException e) {
-            LOG.debug(runtime, "Failed to resolve algorithm name: " + algId, e);
+        } catch (Exception ex) {
+            LOG.debug(runtime, "Failed to resolve algorithm name: " + algId, ex);
         }
         return algId.getAlgorithm().getId();
     }
@@ -248,11 +251,8 @@ public class NetscapeSPKI extends RubyObject {
             this.cert = cert = new NetscapeCertRequest(challengeStr, new AlgorithmIdentifier(alg), publicKey);
             cert.sign( ((PKey) key).getPrivateKey() );
         }
-        catch (NoSuchAlgorithmException e) {
-            LOG.debugStack(getRuntime(), null, e);
-            throw newSPKIError(e);
-        }
         catch (GeneralSecurityException e) {
+            LOG.debugStack(getRuntime(), "sign", e);
             throw newSPKIError(e);
         }
         return this;
@@ -266,12 +266,9 @@ public class NetscapeSPKI extends RubyObject {
             boolean result = cert.verify(challenge.toString());
             return getRuntime().newBoolean(result);
         }
-        catch (NoSuchAlgorithmException e) {
-            LOG.debugStack(getRuntime(), null, e);
-            throw newSPKIError(e);
-        }
-        catch (GeneralSecurityException e) {
-            throw newSPKIError(e);
+        catch (GeneralSecurityException ex) {
+            LOG.debugStack(getRuntime(), "verify", ex);
+            throw newSPKIError(ex);
         }
     }
 
@@ -285,12 +282,13 @@ public class NetscapeSPKI extends RubyObject {
         return this.challenge = challenge;
     }
 
-    private RaiseException newSPKIError(final Exception e) {
-        return newSPKIError(getRuntime(), e.getMessage());
+    private RaiseException newSPKIError(final Exception ex) {
+        final Ruby runtime = getRuntime();
+        return newError(runtime, _Netscape(runtime).getClass("SPKIError"), ex);
     }
 
     private static RaiseException newSPKIError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _Netscape(runtime).getClass("SPKIError"), message);
+        return newError(runtime, _Netscape(runtime).getClass("SPKIError"), message);
     }
 
 }// NetscapeSPKI

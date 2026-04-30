@@ -50,7 +50,8 @@ import org.jruby.runtime.Visibility;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.ASN1._ASN1;
-import static org.jruby.ext.openssl.Utils.*;
+import static org.jruby.ext.openssl.util.RubySupport.newArgumentError;
+import static org.jruby.ext.openssl.util.RubySupport.newIOError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>

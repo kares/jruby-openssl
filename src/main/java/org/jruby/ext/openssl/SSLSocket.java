@@ -59,7 +59,9 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static org.jruby.ext.openssl.SSL.newSSLErrorWaitReadable;
 import static org.jruby.ext.openssl.SSL.newSSLErrorWaitWritable;
-import static org.jruby.ext.openssl.OpenSSL.*;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newIOError;
+import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -334,7 +336,7 @@ public class SSLSocket extends RubyObject {
     }
 
     private static RaiseException newErrnoEPIPEError(final Ruby runtime, final String detail) {
-        return Utils.newError(runtime, runtime.getErrno().getClass("EPIPE"), detail);
+        return newError(runtime, runtime.getErrno().getClass("EPIPE"), detail);
     }
 
     @JRubyMethod
@@ -535,9 +537,9 @@ public class SSLSocket extends RubyObject {
                         }
                     }
                 } catch (ClosedSelectorException ex) {
-                    throw Utils.newRuntimeError(runtime, "selector closed", ex);
+                    throw newRuntimeError(runtime, "selector closed", ex);
                 } catch (IOException ex) {
-                    throw Utils.newIOError(runtime, ex);
+                    throw newIOError(runtime, ex);
                 }
             } else {
                 io.addBlockingThread(thread);
@@ -546,9 +548,9 @@ public class SSLSocket extends RubyObject {
                         try {
                             result[0] = selector.select();
                         } catch (ClosedSelectorException ex) {
-                            throw Utils.newRuntimeError(runtime, "selector closed", ex);
+                            throw newRuntimeError(runtime, "selector closed", ex);
                         } catch (IOException ex) {
-                            throw Utils.newIOError(runtime, ex);
+                            throw newIOError(runtime, ex);
                         }
                     }
 
@@ -986,7 +988,7 @@ public class SSLSocket extends RubyObject {
         }
         catch (IOException ex) {
             LOG.debugStack(runtime, "sysreadImpl", ex);
-            throw Utils.newError(runtime::newIOErrorFromException, ex);
+            throw newError(runtime::newIOErrorFromException, ex);
         }
     }
 
@@ -1070,7 +1072,7 @@ public class SSLSocket extends RubyObject {
         }
         catch (IOException ex) {
             LOG.debugStack(runtime, "syswriteImpl", ex);
-            throw Utils.newError(runtime::newIOErrorFromException, ex);
+            throw newError(runtime::newIOErrorFromException, ex);
         }
     }
 

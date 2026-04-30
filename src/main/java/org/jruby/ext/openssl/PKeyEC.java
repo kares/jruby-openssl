@@ -91,6 +91,7 @@ import org.jruby.ext.openssl.impl.ECPrivateKeyWithName;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
 import static org.jruby.ext.openssl.impl.PKey.readECPrivateKey;
+import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
  * OpenSSL::PKey::EC implementation.
@@ -124,11 +125,11 @@ public final class PKeyEC extends PKey {
     }
 
     private static RaiseException newECError(Ruby runtime, String message) {
-        return Utils.newError(runtime, _PKey(runtime).getClass("ECError"), message);
+        return newError(runtime, _PKey(runtime).getClass("ECError"), message);
     }
 
     private static RaiseException newECError(Ruby runtime, String message, Exception cause) {
-        return Utils.newError(runtime, _PKey(runtime).getClass("ECError"), message, cause);
+        return newError(runtime, _PKey(runtime).getClass("ECError"), message, cause);
     }
 
     @JRubyMethod(meta = true)
@@ -974,9 +975,8 @@ public final class PKeyEC extends PKey {
             Group.defineAnnotatedMethods(Group.class);
         }
 
-        static RaiseException newError(final Ruby runtime, final String message) {
-            final RubyClass Error = _EC(runtime).getClass("Group").getClass("Error");
-            return Utils.newError(runtime, Error, message);
+        static RaiseException newGroupError(final Ruby runtime, final String message) {
+            return newError(runtime, _EC(runtime).getClass("Group").getClass("Error"), message);
         }
 
         private transient ECParameterSpec paramSpec;
@@ -1061,7 +1061,7 @@ public final class PKeyEC extends PKey {
         private String getCurveName() {
             if (curveName == null) {
                 if (impl_curve_name == null) {
-                    throw newError(getRuntime(), "no curve name");
+                    throw newGroupError(getRuntime(), "no curve name");
                 }
                 return impl_curve_name.asJavaString();
             }
@@ -1175,7 +1175,7 @@ public final class PKeyEC extends PKey {
                 final byte[] encoded;
                 if ((asn1Flag & 1) != 0) { // NAMED_CURVE: encode as DER OID
                     final ASN1ObjectIdentifier oid = getCurveOID(getCurveName())
-                            .orElseThrow(() -> newError(runtime, "invalid curve name: " + getCurveName()));
+                            .orElseThrow(() -> newGroupError(runtime, "invalid curve name: " + getCurveName()));
                     encoded = oid.getEncoded(ASN1Encoding.DER);
                 } else { // explicit parameters: encode as X9.62 ECParameters SEQUENCE
                     final ECParameterSpec ps = getParamSpec();
@@ -1190,7 +1190,7 @@ public final class PKeyEC extends PKey {
                 }
                 return StringHelper.newString(runtime, encoded);
             } catch (IOException e) {
-                throw newError(runtime, e.getMessage());
+                throw newGroupError(runtime, e.getMessage());
             }
         }
 
@@ -1278,9 +1278,8 @@ public final class PKeyEC extends PKey {
             this.group = group;
         }
 
-        private static RaiseException newError(final Ruby runtime, final String message) {
-            final RubyClass Error = _EC(runtime).getClass("Point").getClass("Error");
-            return Utils.newError(runtime, Error, message);
+        private static RaiseException newPointError(final Ruby runtime, final String message) {
+            return newError(runtime, _EC(runtime).getClass("Point").getClass("Error"), message);
         }
 
         @JRubyMethod(visibility = Visibility.PRIVATE)
@@ -1307,7 +1306,7 @@ public final class PKeyEC extends PKey {
             }
             catch (IllegalArgumentException ex) {
                 // MRI: OpenSSL::PKey::EC::Point::Error: invalid encoding
-                throw newError(context.runtime, ex.getMessage());
+                throw newPointError(context.runtime, ex.getMessage());
             }
 
             return this;

@@ -50,7 +50,6 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.RC2ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.bouncycastle.openssl.EncryptionException;
 import org.bouncycastle.openssl.PEMDecryptor;
 import org.bouncycastle.openssl.PEMDecryptorProvider;
 import org.bouncycastle.openssl.PEMEncryptedKeyPair;
@@ -67,7 +66,6 @@ import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.pem.MiscPEMGeneratorHelper;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
-//import org.bouncycastle.util.io.pem.PemReader;
 
 import static org.jruby.ext.openssl.x509store.PEMInputOutput.getKeyFactory;
 
@@ -76,7 +74,7 @@ import static org.jruby.ext.openssl.x509store.PEMInputOutput.getKeyFactory;
  *
  * @author kares
  */
-public abstract class PEMUtils {
+abstract class PEMUtils {
 
     /**
      * Convert a Ruby string to a password char[] without creating an intermediate

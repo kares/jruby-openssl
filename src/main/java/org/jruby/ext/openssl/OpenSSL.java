@@ -93,6 +93,7 @@ public final class OpenSSL {
         NetscapeSPKI.createNetscapeSPKI(runtime, _OpenSSL, OpenSSLError);
         SSL.createSSL(runtime, _OpenSSL, OpenSSLError);
         PKCS7.createPKCS7(runtime, _OpenSSL, OpenSSLError);
+        PKCS12.createPKCS12(runtime, _OpenSSL, OpenSSLError);
         PKCS5.createPKCS5(runtime, _OpenSSL);
         OCSP.createOCSP(runtime, _OpenSSL, OpenSSLError);
         KDF.createKDF(runtime, _OpenSSL, OpenSSLError);

@@ -120,7 +120,7 @@ public abstract class PKey extends RubyObject {
     public static class PKeyModule {
 
         @JRubyMethod(name = "read", meta = true, required = 1, optional = 1)
-        public static IRubyObject read(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
+        public static IRubyObject read(final ThreadContext context, IRubyObject recv, IRubyObject... args) {
             final Ruby runtime = context.runtime;
 
             final IRubyObject data; final char[] pass;

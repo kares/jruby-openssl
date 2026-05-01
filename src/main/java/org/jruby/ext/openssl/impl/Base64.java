@@ -854,17 +854,12 @@ public class Base64
      *
      * @param source The data to convert
      * @return The Base64-encoded data as a byte[] (of ASCII characters)
+     * @throws java.io.IOException if there is an error
      * @throws NullPointerException if source array is null
-     * @since 2.3.1
+     * @throws IllegalArgumentException if source array, offset, or length are invalid
      */
-    public static byte[] encodeBytesToBytes( byte[] source ) {
-        byte[] encoded = null;
-        try {
-            encoded = encodeBytesToBytes( source, 0, source.length, Base64.NO_OPTIONS );
-        } catch( java.io.IOException ex ) {
-            assert false : "IOExceptions only come from GZipping, which is turned off: " + ex.getMessage();
-        }
-        return encoded;
+    public static byte[] encodeBytesToBytes( byte[] source ) throws java.io.IOException {
+        return encodeBytesToBytes(source, 0, source.length, Base64.NO_OPTIONS);
     }
 
 
@@ -884,7 +879,6 @@ public class Base64
      * @throws java.io.IOException if there is an error
      * @throws NullPointerException if source array is null
      * @throws IllegalArgumentException if source array, offset, or length are invalid
-     * @since 2.3.1
      */
     public static byte[] encodeBytesToBytes( byte[] source, int off, int len, int options ) throws java.io.IOException {
 

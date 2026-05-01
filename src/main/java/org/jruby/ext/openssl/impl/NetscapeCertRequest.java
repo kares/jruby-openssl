@@ -286,18 +286,11 @@ public class NetscapeCertRequest // extends ASN1Object
     }
 
     public ASN1Primitive toASN1Primitive() throws IOException {
-        ASN1EncodableVector spkac = new ASN1EncodableVector();
         ASN1EncodableVector pkac = new ASN1EncodableVector();
-
-        try {
-            pkac.add( getKeySpec() );
-        }
-        catch (IOException e) {
-            // TODO is this really fine shouldn't it be thrown ?
-        }
-
+        pkac.add(getKeySpec());
         pkac.add(new DERIA5String(challenge));
 
+        ASN1EncodableVector spkac = new ASN1EncodableVector();
         spkac.add(new DERSequence(pkac));
         spkac.add(sigAlg);
         spkac.add(new DERBitString(signatureBits));

@@ -21,29 +21,19 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.jruby.ext.openssl;
+package org.jruby.ext.openssl.util;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 
 import java.security.Key;
 import java.security.KeyFactory;
-import java.security.KeyPair;
 import java.security.KeyStore;
-import java.security.Provider;
-import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Arrays;
 import java.util.Collection;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
@@ -56,185 +46,18 @@ import org.bouncycastle.openssl.PEMEncryptedKeyPair;
 import org.bouncycastle.openssl.PEMException;
 import org.bouncycastle.openssl.PEMKeyPair;
 import org.bouncycastle.openssl.PEMParser;
-import org.bouncycastle.openssl.PEMWriter;
-import org.bouncycastle.operator.OperatorCreationException;
 
-import org.jruby.RubyString;
+import org.jruby.ext.openssl.SecurityHelper;
 import org.jruby.ext.openssl.impl.OpenSSLKDF;
-import org.jruby.runtime.builtin.IRubyObject;
-import org.jruby.util.ByteList;
-
-import org.jruby.ext.openssl.impl.pem.MiscPEMGeneratorHelper;
-import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 
 import static org.jruby.ext.openssl.x509store.PEMInputOutput.getKeyFactory;
 
 /**
- * PEM Utilities, for now mostly to replace {@link PEMHandler}.
+ * PEM Utilities, mostly to replace <code>PEMHandler</code>.
  *
  * @author kares
  */
-abstract class PEMUtils {
-
-    /**
-     * Convert a Ruby string to a password char[] without creating an intermediate
-     * Java String (which would be immutable and unclearable in memory).
-     * <p>
-     * This matches C OpenSSL's password handling where the password is used
-     * in-place from the caller's buffer ({@code const char *pass}) with no
-     * intermediate immutable copy.
-     * <p>
-     * The caller can clear the returned array after use via {@link #clearChars}.
-     *
-     * @param passwd a Ruby string (or nil)
-     * @return password as char[], never null
-     */
-    public static char[] toPasswordChars(final IRubyObject passwd) {
-        if (passwd == null || passwd.isNil()) return new char[0];
-
-        final RubyString str = passwd.convertToString();
-        final ByteList byteList = str.getByteList();
-
-        return toPasswordChars(
-            byteList.getUnsafeBytes(), byteList.getBegin(), byteList.getRealSize(),
-            byteList.getEncoding().getCharset()
-        );
-    }
-
-    // Package-private for testing
-    static char[] toPasswordChars(final byte[] bytes, final int offset, final int length, Charset charset) {
-        if (length == 0) return new char[0];
-
-        if (charset == null) charset = StandardCharsets.ISO_8859_1;
-
-        final ByteBuffer byteBuf = ByteBuffer.wrap(bytes, offset, length);
-        final CharBuffer charBuf = charset.decode(byteBuf);
-
-        final char[] result = new char[charBuf.remaining()];
-        charBuf.get(result);
-
-        // Clear the decoder's intermediate buffer
-        if (charBuf.hasArray()) {
-            Arrays.fill(charBuf.array(), '\0');
-        }
-
-        return result;
-    }
-
-    /**
-     * Zero-fill a password char array. Safe to call with null.
-     */
-    public static void clearChars(final char[] chars) {
-        if (chars != null) Arrays.fill(chars, '\0');
-    }
-
-    /*
-    private static boolean bcPEMParser;
-    private static Class<?> pemReaderImpl;
-
-    private static Reader newPemReader(final Reader reader) {
-        if ( pemReaderImpl == null ) {
-            synchronized(BouncyCastlePEMHandler.class) {
-                if ( pemReaderImpl == null ) {
-                    try {
-                        pemReaderImpl = Class.forName("org.bouncycastle.openssl.PEMParser");
-                        bcPEMParser = true;
-                    }
-                    catch (ClassNotFoundException ex) {
-                        pemReaderImpl = org.jruby.ext.openssl.impl.pem.PEMParser.class;
-                    }
-                }
-            }
-        }
-        try {
-            Constructor<? extends PemReader> constructor = (Constructor<? extends PemReader>)
-                    pemReaderImpl.getConstructor(new Class[] { Reader.class });
-            return constructor.newInstance(reader);
-        }
-        catch (NoSuchMethodException e) {
-            throw new IllegalStateException(e.getMessage(), e);
-        }
-        //catch (InstantiationException e) {
-        //}
-        catch (InvocationTargetException e) {
-            throw new IllegalStateException(e.getTargetException());
-        }
-        catch (Exception e) {
-            if ( e instanceof RuntimeException ) throw (RuntimeException) e;
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static Object doInvoke(Object obj, String methodName, Class<?>[] paramTypes, Object... params)
-        throws IOException {
-        final Method method;
-        try {
-            method = obj.getClass().getDeclaredMethod(methodName, paramTypes);
-            method.setAccessible(true);
-            return method.invoke(obj, params);
-        }
-        catch (NoSuchMethodException e) {
-            throw new IllegalStateException(e.getMessage(), e);
-        }
-        catch (InvocationTargetException e) {
-            final Throwable target = e.getTargetException();
-            if ( target instanceof IOException ) throw (IOException) target;
-            if ( target instanceof RuntimeException ) throw (RuntimeException) target;
-            throw new IllegalStateException(target);
-        }
-        catch (Exception e) {
-            if ( e instanceof IOException ) throw (IOException) e;
-            if ( e instanceof RuntimeException ) throw (RuntimeException) e;
-            throw new IllegalStateException(e);
-        }
-    }
-
-    */
-
-    public static KeyPair readKeyPair(final Reader reader) throws IOException {
-        return readKeyPair(reader, null);
-    }
-
-    public static KeyPair readKeyPair(final Reader reader, final char[] password) throws IOException {
-        PEMKeyPair pemKeyPair = readInternal(reader, password);
-        return toKeyPair(pemKeyPair);
-    }
-
-    static PEMKeyPair readInternal(final Reader reader, final char[] password) throws IOException {
-        Object keyPair = new PEMParser(reader).readObject();
-        if ( keyPair instanceof PEMEncryptedKeyPair) {
-            return ((PEMEncryptedKeyPair) keyPair).decryptKeyPair(new PEMDecryptorImpl(password));
-        }
-        return (PEMKeyPair) keyPair;
-    }
-
-    private static KeyPair toKeyPair(final PEMKeyPair pemKeyPair) throws IOException {
-        try {
-            KeyFactory keyFactory = getKeyFactory( pemKeyPair.getPrivateKeyInfo().getPrivateKeyAlgorithm() );
-            return new KeyPair(
-                keyFactory.generatePublic( new X509EncodedKeySpec( pemKeyPair.getPublicKeyInfo().getEncoded() ) ),
-                keyFactory.generatePrivate( new PKCS8EncodedKeySpec( pemKeyPair.getPrivateKeyInfo().getEncoded() ) )
-            );
-        }
-        catch (Exception e) {
-            throw new PEMException("unable to convert key pair: " + e.getMessage(), e);
-        }
-    }
-
-    public static void writePEM(final Writer writer, final Object obj,
-        final String algorithm, final char[] password) throws IOException {
-
-        final PEMWriter pemWriter = new PEMWriter(writer);
-
-        final SecureRandom random = SecurityHelper.getSecureRandom();
-
-        pemWriter.writeObject(MiscPEMGeneratorHelper.newGenerator(obj, algorithm, password, random));
-        pemWriter.flush();
-    }
-
-    public static void writePEM(final Writer writer, final Object obj) throws IOException {
-        writePEM(writer, obj, null, null);
-    }
+public abstract class PEMGenerator {
 
     public static byte[] generatePKCS12(final Reader keyReader, final byte[] cert,
         final String aliasName, final char[] password)
@@ -257,6 +80,14 @@ abstract class PEMUtils {
         return pkcs12Out.toByteArray();
     }
 
+    static PEMKeyPair readInternal(final Reader reader, final char[] password) throws IOException {
+        Object keyPair = new PEMParser(reader).readObject();
+        if ( keyPair instanceof PEMEncryptedKeyPair) {
+            return ((PEMEncryptedKeyPair) keyPair).decryptKeyPair(new PEMDecryptorImpl(password));
+        }
+        return (PEMKeyPair) keyPair;
+    }
+
     private static class PEMDecryptorImpl implements PEMDecryptorProvider, PEMDecryptor {
 
         PEMDecryptorImpl(char[] password) { this.password = password; }
@@ -264,7 +95,7 @@ abstract class PEMUtils {
         private char[] password;
         private String dekAlgName;
 
-        public PEMDecryptor get(String dekAlgName) throws OperatorCreationException {
+        public PEMDecryptor get(String dekAlgName) {
             this.dekAlgName = dekAlgName;
             return this; // PEMDecryptor
         }
@@ -274,17 +105,6 @@ abstract class PEMUtils {
         }
 
         static byte[] decrypt(
-            byte[] bytes,
-            char[] password,
-            String dekAlgName,
-            byte[] iv)
-            throws PEMException
-        {
-            return decrypt(SecurityHelper.getSecurityProvider(), bytes, password, dekAlgName, iv);
-        }
-
-        static byte[] decrypt(
-            Provider provider,
             byte[] bytes,
             char[] password,
             String dekAlgName,
@@ -394,7 +214,7 @@ abstract class PEMUtils {
                 throw new PEMException("unknown encryption with private key");
             }
 
-            String transformation = alg + "/" + blockMode + "/" + padding;
+            String transformation = alg + '/' + blockMode + '/' + padding;
 
             try
             {
@@ -421,8 +241,7 @@ abstract class PEMUtils {
             char[] password,
             String algorithm,
             int keyLength,
-            byte[] salt)
-        {
+            byte[] salt) {
             return secretKeySpec(password, algorithm, keyLength, salt, false);
         }
 
@@ -431,11 +250,9 @@ abstract class PEMUtils {
             String algorithm,
             int keyLength,
             byte[] salt,
-            boolean des2)
-        {
+            boolean des2) {
             byte[] key = OpenSSLKDF.evpBytesToKey(password, salt, keyLength);
-            if (des2 && key.length >= 24)
-            {
+            if (des2 && key.length >= 24) {
                 // For DES2, we must copy first 8 bytes into the last 8 bytes.
                 System.arraycopy(key, 0, key, 16, 8);
             }

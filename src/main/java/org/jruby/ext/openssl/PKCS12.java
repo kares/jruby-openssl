@@ -25,12 +25,17 @@ package org.jruby.ext.openssl;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 
@@ -52,12 +57,14 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyClass;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.util.PEMGenerator;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
+import org.jruby.util.ByteList;
 
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 
@@ -122,7 +129,7 @@ public class PKCS12 extends RubyObject {
         storeBytes = input.getBytes();
 
         final IRubyObject passArg = args.length > 1 ? args[1] : runtime.getNil();
-        final char[] password = PEMUtils.toPasswordChars(passArg);
+        final char[] password = toPasswordChars(passArg);
         try {
             final KeyStore store = SecurityHelper.getKeyStore("PKCS12");
             store.load(new ByteArrayInputStream(storeBytes), password);
@@ -133,7 +140,7 @@ public class PKCS12 extends RubyObject {
             throw newPKCS12Error(runtime, e);
         }
         finally {
-            PEMUtils.clearChars(password);
+            clearChars(password);
         }
 
         return this;
@@ -186,7 +193,7 @@ public class PKCS12 extends RubyObject {
 
         validateCreateOptions(runtime, args);
 
-        final char[] password = PEMUtils.toPasswordChars(passArg);
+        final char[] password = toPasswordChars(passArg);
         try {
             final PrivateKey privateKey = ((PKey) keyArg).getPrivateKey();
             if (privateKey == null) throw newPKCS12Error(runtime, "private key not set");
@@ -209,7 +216,7 @@ public class PKCS12 extends RubyObject {
             throw newPKCS12Error(runtime, e);
         }
         finally {
-            PEMUtils.clearChars(password);
+            clearChars(password);
         }
     }
 
@@ -344,6 +351,42 @@ public class PKCS12 extends RubyObject {
         final String name = pbe.convertToString().asJavaString();
         if ("PBE-SHA1-3DES".equals(name) || "PBE-SHA1-RC2-40".equals(name)) return;
         throw runtime.newArgumentError("Unknown PBE algorithm " + pbe.inspect());
+    }
+
+    static char[] toPasswordChars(final IRubyObject passwd) {
+        if (passwd == null || passwd.isNil()) return new char[0];
+
+        final RubyString str = passwd.convertToString();
+        final ByteList byteList = str.getByteList();
+
+        return toPasswordChars(
+                byteList.getUnsafeBytes(), byteList.getBegin(), byteList.getRealSize(),
+                byteList.getEncoding().getCharset()
+        );
+    }
+
+    // Package-private for testing
+    static char[] toPasswordChars(final byte[] bytes, final int offset, final int length, Charset charset) {
+        if (length == 0) return new char[0];
+
+        if (charset == null) charset = StandardCharsets.ISO_8859_1;
+
+        final ByteBuffer byteBuf = ByteBuffer.wrap(bytes, offset, length);
+        final CharBuffer charBuf = charset.decode(byteBuf);
+
+        final char[] result = new char[charBuf.remaining()];
+        charBuf.get(result);
+
+        // Clear the decoder's intermediate buffer
+        if (charBuf.hasArray()) {
+            Arrays.fill(charBuf.array(), '\0');
+        }
+
+        return result;
+    }
+
+    static void clearChars(final char[] chars) {
+        if (chars.length > 0) Arrays.fill(chars, '\0');
     }
 
     private static RaiseException newPKCS12Error(final Ruby runtime, final Throwable e) {

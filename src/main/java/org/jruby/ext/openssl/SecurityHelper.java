@@ -196,7 +196,7 @@ public abstract class SecurityHelper {
         final int fipsModeValue = fipsMode ? FIPS_MODE_TRUE : FIPS_MODE_FALSE;
         if (FIPS_MODE.get() == 0) FIPS_MODE.set(fipsModeValue);
         if (FIPS_MODE.get() != fipsModeValue) {
-            throw new SecurityException("[JOpenSSL] unexpected FIPS mode adjustment (" + fipsMode + ")");
+            throw new SecurityException("unexpected FIPS mode adjustment (" + fipsMode + ")");
         }
     }
 

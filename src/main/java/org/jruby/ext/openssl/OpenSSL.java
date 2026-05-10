@@ -30,7 +30,6 @@ import org.bouncycastle.util.Arrays;
 import org.jruby.*;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
-import org.jruby.common.IRubyWarnings;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.util.ExceptionUtil;
 import org.jruby.runtime.ThreadContext;
@@ -194,7 +193,7 @@ public final class OpenSSL {
     public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject mode) {
         final Ruby runtime = context.runtime;
         if (mode.isTrue() && !SecurityHelper.isFipsMode()) {
-            throw runtime.newNotImplementedError("FIPS mode requires a different gem version");
+            throw runtime.newNotImplementedError("FIPS mode requires jruby-openssl-fips gem");
         }
         if (mode == runtime.getFalse() && SecurityHelper.isFipsMode()) {
             throw runtime.newSecurityError("FIPS mode can not be disabled at runtime");
@@ -208,8 +207,6 @@ public final class OpenSSL {
     // internal (package-level) helpers :
 
     private static boolean debug;
-
-    // on by default, warnings can be disabled using -Djruby.openssl.warn=false
     private static boolean warn = true;
 
     public static boolean isDebug() { return debug; }
@@ -236,26 +233,6 @@ public final class OpenSSL {
         return atLeast ? gt <= 0 : gt == 0;
     }
 
-    public static boolean javaVersion9(final boolean atLeast) {
-        final int major = parseIntDot( javaVersion("0", -1) );
-        return atLeast ? major >= 9 : major == 9;
-    }
-
-    static boolean javaVersion10(final boolean atLeast) {
-        final int major = parseIntDot( javaVersion("0", -1) );
-        return atLeast ? major >= 10 : major == 10;
-    }
-
-    private static int parseIntDot(String version) {
-        String[] parts = version.split("[-_]")[0].split("\\.");
-        try {
-            return Integer.parseInt(parts[0]);
-        }
-        catch (NumberFormatException ex) {
-            return -1;
-        }
-    }
-
     private static String javaName(final String def) {
         // Sun Java 6 or Oracle Java 7/8/9/10
         // "Java HotSpot(TM) Server VM" or "Java HotSpot(TM) 64-Bit Server VM"
@@ -264,11 +241,11 @@ public final class OpenSSL {
         return SafePropertyAccessor.getProperty("java.vm.name", def);
     }
 
-    public static boolean javaHotSpot() {
+    static boolean javaHotSpot() {
         return javaName("").contains("HotSpot(TM)");
     }
 
-    public static boolean javaOpenJDK() {
+    static boolean javaOpenJDK() {
         return javaName("").contains("OpenJDK");
     }
 

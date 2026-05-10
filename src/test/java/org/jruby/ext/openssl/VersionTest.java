@@ -47,9 +47,6 @@ public class VersionTest {
 
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertFalse(javaVersion9(true));
     }
 
     @Test
@@ -58,9 +55,6 @@ public class VersionTest {
 
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertFalse(javaVersion9(true));
     }
 
     @Test
@@ -69,9 +63,6 @@ public class VersionTest {
 
         assertFalse(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertFalse(javaVersion9(true));
     }
 
 	@Test
@@ -80,9 +71,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertTrue(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertFalse(javaVersion9(true));
 	}
 
     @Test
@@ -91,9 +79,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertTrue(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertFalse(javaVersion9(true));
     }
 
     @Test
@@ -102,9 +87,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertTrue(javaVersion9(false));
-        assertTrue(javaVersion9(true));
     }
 
     @Test
@@ -113,9 +95,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertTrue(javaVersion9(false));
-        assertTrue(javaVersion9(true));
     }
 
     @Test
@@ -124,9 +103,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertTrue(javaVersion9(false));
-        assertTrue(javaVersion9(true));
     }
 
     @Test
@@ -135,9 +111,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertTrue(javaVersion9(false));
-        assertTrue(javaVersion9(true));
     }
 
     @Test
@@ -146,12 +119,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertTrue(javaVersion9(true));
-
-        assertTrue(javaVersion10(false));
-        assertTrue(javaVersion10(true));
     }
 
     @Test
@@ -160,12 +127,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertTrue(javaVersion9(true));
-
-        assertTrue(javaVersion10(false));
-        assertTrue(javaVersion10(true));
     }
 
     @Test
@@ -174,12 +135,6 @@ public class VersionTest {
 
         assertTrue(javaVersion8(true));
         assertFalse(javaVersion8(false));
-
-        assertFalse(javaVersion9(false));
-        assertTrue(javaVersion9(true));
-
-        assertTrue(javaVersion10(false));
-        assertTrue(javaVersion10(true));
     }
 
 }

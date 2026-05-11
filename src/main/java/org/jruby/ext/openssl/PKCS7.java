@@ -119,19 +119,13 @@ public class PKCS7 extends RubyObject {
         _PKCS7.setConstant("NOSMIMECAP", runtime.newFixnum(512));
     }
 
-    public static BIO obj2bio(IRubyObject obj) {
-        if ( obj instanceof RubyFile ) {
-            throw obj.getRuntime().newNotImplementedError("TODO: handle RubyFile correctly");
-//     if (TYPE(obj) == T_FILE) {
-//         OpenFile *fptr;
-//         GetOpenFile(obj, fptr);
-//         rb_io_check_readable(fptr);
-//         bio = BIO_new_fp(fptr->f, BIO_NOCLOSE);
+    // ossl_obj2bio
+    public static BIO obj2bio(ThreadContext context, IRubyObject obj) {
+        if (obj instanceof RubyFile) {
+            obj = obj.callMethod(context, "read");
         }
-        else {
-            final ByteList str = obj.asString().getByteList();
-            return BIO.memBuf(str.getUnsafeBytes(), str.getBegin(), str.getRealSize());
-        }
+        final ByteList str = obj.asString().getByteList();
+        return BIO.memBuf(str.getUnsafeBytes(), str.getBegin(), str.getRealSize());
     }
 
     private static PKCS7 wrap(final Ruby runtime, org.jruby.ext.openssl.impl.PKCS7 p7) {
@@ -161,9 +155,9 @@ public class PKCS7 extends RubyObject {
     }
 
     @JRubyMethod(meta = true)
-    public static IRubyObject read_smime(IRubyObject self, IRubyObject arg) {
-        final Ruby runtime = self.getRuntime();
-        final BIO in = obj2bio(arg);
+    public static IRubyObject read_smime(ThreadContext context, IRubyObject self, IRubyObject arg) {
+        final Ruby runtime = context.runtime;
+        final BIO in = obj2bio(context, arg);
         final BIO[] out = new BIO[] { null };
         org.jruby.ext.openssl.impl.PKCS7 pkcs7Impl;
         try {
@@ -217,8 +211,8 @@ public class PKCS7 extends RubyObject {
     }
 
     @JRubyMethod(meta = true, rest = true)
-    public static IRubyObject sign(IRubyObject self, IRubyObject[] args) {
-        final Ruby runtime = self.getRuntime();
+    public static IRubyObject sign(ThreadContext context, IRubyObject self, IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
 
         final X509Cert cert; final PKey key; final IRubyObject data;
         IRubyObject certs = runtime.getNil();
@@ -236,7 +230,7 @@ public class PKCS7 extends RubyObject {
         X509AuxCertificate auxCert = cert.getAuxCert();
         PrivateKey privKey = key.getPrivateKey();
         final int flg = flags.isNil() ? 0 : RubyNumeric.fix2int(flags);
-        final BIO dataBIO = obj2bio(data);
+        final BIO dataBIO = obj2bio(context, data);
         List<X509AuxCertificate> auxCerts = certs.isNil() ? null : getAuxCerts(certs);
 
         org.jruby.ext.openssl.impl.PKCS7 pkcs7Impl;
@@ -308,18 +302,18 @@ public class PKCS7 extends RubyObject {
 
     @JRubyMethod(name = "initialize", rest = true, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, IRubyObject[] args) {
-        if ( Arity.checkArgumentCount(getRuntime(), args, 0, 1) == 0 ) {
+        if ( Arity.checkArgumentCount(context.runtime, args, 0, 1) == 0 ) {
             p7 = new org.jruby.ext.openssl.impl.PKCS7();
             try {
                 p7.setType(ASN1Registry.NID_undef);
             }
             catch (PKCS7Exception e) {
-                throw newPKCS7Error(getRuntime(), e);
+                throw newPKCS7Error(context.runtime, e);
             }
             return this;
         }
         IRubyObject arg = to_der_if_possible(context, args[0]);
-        BIO input = obj2bio(arg);
+        BIO input = obj2bio(context, arg);
         try {
             p7 = org.jruby.ext.openssl.impl.PKCS7.readPEM(input);
             if (p7 == null) {
@@ -328,15 +322,15 @@ public class PKCS7 extends RubyObject {
             }
         }
         catch (IllegalArgumentException e) {
-            throw getRuntime().newArgumentError(e.getMessage());
+            throw context.runtime.newArgumentError(e.getMessage());
         }
-        catch (IOException ioe) {
-            throw newPKCS7Error(getRuntime(), ioe.getMessage());
+        catch (IOException e) {
+            throw newPKCS7Error(context.runtime, e.getMessage());
         }
-        catch (PKCS7Exception pkcs7e) {
-            throw newPKCS7Error(getRuntime(), pkcs7e);
+        catch (PKCS7Exception e) {
+            throw newPKCS7Error(context.runtime, e);
         }
-        setData( getRuntime().getNil() );
+        setData(context.nil);
         return this;
     }
 
@@ -633,7 +627,7 @@ public class PKCS7 extends RubyObject {
     }
 
     @JRubyMethod(name = { "add_data", "data=" })
-    public IRubyObject add_data(IRubyObject obj) {
+    public IRubyObject add_data(ThreadContext context, IRubyObject obj) {
         if (p7.isData()) {
             p7.setData(new DEROctetString(obj.asString().getBytes()));
             setData(obj);
@@ -643,17 +637,17 @@ public class PKCS7 extends RubyObject {
         if (p7.isSigned()) {
             try {
                 p7.contentNew(ASN1Registry.NID_pkcs7_data);
-            } catch (PKCS7Exception pkcs7e) {
-                throw newPKCS7Error(getRuntime(), pkcs7e);
+            } catch (PKCS7Exception e) {
+                throw newPKCS7Error(context.runtime, e);
             }
         }
 
-        BIO in = obj2bio(obj);
+        BIO in = obj2bio(context, obj);
         BIO out;
         try {
             out = p7.dataInit(null);
-        } catch (PKCS7Exception pkcs7e) {
-            throw newPKCS7Error(getRuntime(), pkcs7e);
+        } catch (PKCS7Exception e) {
+            throw newPKCS7Error(context.runtime, e);
         }
         byte[] buf = new byte[4096];
         for(;;) {
@@ -666,23 +660,23 @@ public class PKCS7 extends RubyObject {
                     out.write(buf, 0, i);
                 }
             } catch(IOException e) {
-                throw getRuntime().newIOErrorFromException(e);
+                throw context.runtime.newIOErrorFromException(e);
             }
         }
 
         try {
             p7.dataFinal(out);
-        } catch (PKCS7Exception pkcs7e) {
-            throw newPKCS7Error(getRuntime(), pkcs7e);
+        } catch (PKCS7Exception e) {
+            throw newPKCS7Error(context.runtime, e);
         }
-        setData(getRuntime().getNil());
+        setData(context.nil);
 
         return obj;
     }
 
     @JRubyMethod(rest = true)
-    public IRubyObject verify(IRubyObject[] args) {
-        final Ruby runtime = getRuntime();
+    public IRubyObject verify(ThreadContext context, IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
 
         IRubyObject certs; X509Store store;
         IRubyObject indata = runtime.getNil();
@@ -697,7 +691,7 @@ public class PKCS7 extends RubyObject {
 
         if ( indata.isNil() ) indata = getData();
 
-        final BIO in = indata.isNil() ? null : obj2bio(indata);
+        final BIO in = indata.isNil() ? null : obj2bio(context, indata);
 
         List<X509AuxCertificate> x509s = certs.isNil() ? null : getAuxCerts(certs);
 

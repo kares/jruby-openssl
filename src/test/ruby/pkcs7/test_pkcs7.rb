@@ -1077,5 +1077,24 @@ module PKCS7Test
       assert_equal p7.to_der, copy.to_der
       assert_equal p7.data, copy.data
     end
+
+    def test_new_from_file
+      require 'tempfile'
+      p7 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, 'hello', [@ca_cert], OpenSSL::PKCS7::BINARY)
+      der = p7.to_der
+
+      f = Tempfile.new(['pkcs7', '.der'])
+      begin
+        f.binmode
+        f.write(der)
+        f.close
+
+        # CRuby accepts a File object via ossl_obj2bio
+        p7_from_file = OpenSSL::PKCS7.new(File.open(f.path, 'rb'))
+        assert_equal der, p7_from_file.to_der
+      ensure
+        f.close! rescue nil
+      end
+    end
   end
 end

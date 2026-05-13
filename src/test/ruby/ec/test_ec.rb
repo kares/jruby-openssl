@@ -498,6 +498,17 @@ class TestEC < TestCase
     assert_equal 5, group.degree
   end
 
+  def test_ec_point_invert
+    group = OpenSSL::PKey::EC::Group.new(:GFp, 17, 2, 2)
+    group.point_conversion_form = :uncompressed
+
+    point = OpenSSL::PKey::EC::Point.new(group, B(%w{ 04 06 03 }))
+    assert_same point, point.invert!
+    assert_equal B(%w{ 04 06 0E }), point.to_octet_string(:uncompressed)
+    assert_same point, point.invert!
+    assert_equal B(%w{ 04 06 03 }), point.to_octet_string(:uncompressed)
+  end
+
   def test_group_encoding
     for group in @groups
       for meth in [:to_der, :to_pem]

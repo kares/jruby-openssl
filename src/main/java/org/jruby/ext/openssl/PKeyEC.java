@@ -1473,6 +1473,15 @@ public final class PKeyEC extends PKey {
             return this;
         }
 
+        @JRubyMethod(name = "invert!")
+        public IRubyObject invert_bang() {
+            if (isInfinity()) return this;
+
+            final ECCurve curve = toBCCurve(group.getCurve());
+            this.point = convertPoint(toBCPoint(curve, point).negate());
+            return this;
+        }
+
         @Override
         @JRubyMethod
         @SuppressWarnings("unchecked")

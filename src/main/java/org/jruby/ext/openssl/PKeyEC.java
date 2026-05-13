@@ -239,13 +239,15 @@ public final class PKeyEC extends PKey {
         return new ECFieldF2m(poly.getDegree(), ks);
     }
 
-    private static ECCurve toBCCurve(final EllipticCurve curve) {
+    private static ECCurve toBCCurve(final EllipticCurve curve) throws IllegalArgumentException {
         final ECField field = curve.getField();
         final BigInteger a = curve.getA();
         final BigInteger b = curve.getB();
 
         if (field instanceof ECFieldFp) {
-            return new ECCurve.Fp(((ECFieldFp) field).getP(), a, b, null, null);
+            final BigInteger p = ((ECFieldFp) field).getP();
+            //if (!p.isProbablePrime(100)) throw new IllegalArgumentException("Fp q value not prime");
+            return new ECCurve.Fp(p, a, b, null, null, true); // isInternal - doesn't validate prime
         }
 
         final ECFieldF2m fieldF2m = (ECFieldF2m) field;
@@ -995,7 +997,12 @@ public final class PKeyEC extends PKey {
             return newError(runtime, _EC(runtime).getClass("Group").getClass("Error"), message);
         }
 
-        private transient ECParameterSpec paramSpec;
+        private EllipticCurve curve;
+        private ECPoint generator;
+        private BigInteger order;
+        private int cofactor;
+
+        private transient ECParameterSpec paramSpec; // cached from above fields
 
         private PointConversion conversionForm = PointConversion.UNCOMPRESSED;
 
@@ -1018,7 +1025,8 @@ public final class PKeyEC extends PKey {
         public IRubyObject initialize(final ThreadContext context, final IRubyObject[] args) {
             final Ruby runtime = context.runtime;
 
-            if ( Arity.checkArgumentCount(runtime, args, 1, 4) == 1 ) {
+            final int argc = Arity.checkArgumentCount(runtime, args, 1, 4);
+            if ( argc == 1 ) {
                 IRubyObject arg = args[0];
 
                 if ( arg instanceof Group ) {
@@ -1026,6 +1034,10 @@ public final class PKeyEC extends PKey {
                     this.curveName = src.curveName;
                     this.impl_curve_name = src.impl_curve_name;
                     this.paramSpec = src.paramSpec;
+                    this.curve = src.curve;
+                    this.generator = src.generator;
+                    this.order = src.order;
+                    this.cofactor = src.cofactor;
                     this.asn1Flag = src.asn1Flag;
                     this.conversionForm = src.conversionForm;
                     return this;
@@ -1045,9 +1057,10 @@ public final class PKeyEC extends PKey {
                         } else if (primitive instanceof ASN1Sequence) { // explicit X9.62 ECParameters SEQUENCE
                             final X9ECParameters ecParams = X9ECParameters.getInstance(primitive);
                             final EllipticCurve curve = convertCurve(ecParams);
-                            this.paramSpec = new ECParameterSpec(curve,
-                                    convertPoint(ecParams.getG()),
-                                    ecParams.getN(), ecParams.getH().intValue());
+                            this.curve = curve;
+                            this.generator = convertPoint(ecParams.getG());
+                            this.order = ecParams.getN();
+                            this.cofactor = ecParams.getH().intValue();
                             this.asn1Flag = 0; // explicit
                             return this;
                         }
@@ -1057,6 +1070,22 @@ public final class PKeyEC extends PKey {
                 }
 
                 this.impl_curve_name = strArg;
+            } else if (argc == 4) {
+                if (!(args[0] instanceof RubySymbol)) {
+                    throw runtime.newArgumentError("unknown argument, must be :GFp or :GF2m");
+                }
+                final String fieldType = ((RubySymbol) args[0]).asJavaString();
+                if ("GFp".equals(fieldType)) {
+                    this.curve = new EllipticCurve(
+                            new ECFieldFp(getBigInteger(context, args[1])),
+                            getBigInteger(context, args[2]),
+                            getBigInteger(context, args[3]));
+                    this.asn1Flag = 0;
+                } else if ("GF2m".equals(fieldType)) {
+                    throw newGroupError(runtime, "unsupported field");
+                } else {
+                    throw runtime.newArgumentError("unknown symbol, must be :GFp or :GF2m");
+                }
             }
             return this;
         }
@@ -1067,7 +1096,10 @@ public final class PKeyEC extends PKey {
                 final Group src = (Group) original;
                 this.curveName = src.curveName;
                 this.impl_curve_name = src.impl_curve_name;
-                this.paramSpec = src.paramSpec;
+                this.curve = src.curve;
+                this.generator = src.generator;
+                this.order = src.order;
+                this.cofactor = src.cofactor;
                 this.asn1Flag = src.asn1Flag;
                 this.conversionForm = src.conversionForm;
             }
@@ -1120,12 +1152,12 @@ public final class PKeyEC extends PKey {
 
         @JRubyMethod
         public IRubyObject order(final ThreadContext context) {
-            return BN.newBN(context.runtime, getParamSpec().getOrder());
+            return BN.newBN(context.runtime, order != null ? order : getParamSpec().getOrder());
         }
 
         @JRubyMethod
         public IRubyObject cofactor(final ThreadContext context) {
-            return context.runtime.newFixnum(getParamSpec().getCofactor());
+            return context.runtime.newFixnum(order != null ? cofactor : getParamSpec().getCofactor());
         }
 
         @JRubyMethod
@@ -1142,8 +1174,18 @@ public final class PKeyEC extends PKey {
 
         @JRubyMethod
         public IRubyObject generator(final ThreadContext context) {
-            final ECPoint generator = getParamSpec().getGenerator();
+            final ECPoint generator = this.generator != null ? this.generator : getParamSpec().getGenerator();
             return new Point(context.runtime, generator, this);
+        }
+
+        @JRubyMethod(name = "set_generator")
+        public IRubyObject set_generator(final ThreadContext context, final IRubyObject generator, final IRubyObject order, final IRubyObject cofactor) {
+            if (!(generator instanceof Point)) throw context.runtime.newTypeError(generator, _EC(context.runtime).getClass("Point"));
+            this.generator = ((Point) generator).asECPoint();
+            this.order = getBigInteger(context, order);
+            this.cofactor = getBigInteger(context, cofactor).intValue();
+            this.paramSpec = null; // new ECParameterSpec(getCurve(), this.generator, this.order, this.cofactor)
+            return this;
         }
 
         @JRubyMethod(name = { "to_pem" }, alias = "export", rest = true)
@@ -1212,17 +1254,21 @@ public final class PKeyEC extends PKey {
 
         private ECParameterSpec getParamSpec() {
             if (paramSpec == null) {
-                paramSpec = PKeyEC.getParamSpec(getCurveName());
+                if (curve != null && generator != null) {
+                    paramSpec = new ECParameterSpec(curve, generator, order, cofactor);
+                } else {
+                    paramSpec = PKeyEC.getParamSpec(getCurveName());
+                }
             }
             return paramSpec;
         }
 
         EllipticCurve getCurve() {
-            return getParamSpec().getCurve();
+            return curve != null ? curve : getParamSpec().getCurve();
         }
 
         int getBitLength() {
-            return getParamSpec().getOrder().bitLength();
+            return getCurve().getField().getFieldSize();
         }
 
         @JRubyMethod
@@ -1339,7 +1385,6 @@ public final class PKeyEC extends PKey {
 
             if ( groupOrPoint instanceof Group) {
                 this.group = (Group) groupOrPoint;
-                this.point = this.group.getParamSpec().getGenerator();
             } else {
                 throw runtime.newTypeError(groupOrPoint, _EC(runtime).getClass("Group"));
             }
@@ -1439,6 +1484,7 @@ public final class PKeyEC extends PKey {
         @JRubyMethod(name = "add")
         public IRubyObject add(final ThreadContext context, final IRubyObject other) {
             Ruby runtime = context.runtime;
+            if (!(other instanceof Point)) throw runtime.newTypeError(other, _EC(runtime).getClass("Point"));
 
             org.bouncycastle.math.ec.ECPoint pointSelf, pointOther, pointResult;
 

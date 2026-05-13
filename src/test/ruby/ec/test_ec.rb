@@ -483,6 +483,21 @@ class TestEC < TestCase
     assert_equal group1.degree, group4.degree
   end
 
+  def test_ec_group_new_explicit_gfp
+    group = OpenSSL::PKey::EC::Group.new(:GFp, 17, 2, 2)
+    group.point_conversion_form = :uncompressed
+    generator = OpenSSL::PKey::EC::Point.new(group, B(%w{ 04 05 01 }))
+    assert_same group, group.set_generator(generator, 19, 1)
+
+    point = OpenSSL::PKey::EC::Point.new(group, B(%w{ 04 06 03 }))
+    assert_equal 0x040603.to_bn, point.to_bn
+    assert_equal B(%w{ 04 06 03 }), point.to_octet_string(:uncompressed)
+    assert_equal B(%w{ 03 06 }), point.to_octet_string(:compressed)
+    assert_equal 19.to_bn, group.order
+    assert_equal 1, group.cofactor
+    assert_equal 5, group.degree
+  end
+
   def test_group_encoding
     for group in @groups
       for meth in [:to_der, :to_pem]

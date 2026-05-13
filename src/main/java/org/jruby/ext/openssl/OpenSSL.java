@@ -31,6 +31,7 @@ import org.jruby.*;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.log.LoggingSupport;
 import org.jruby.ext.openssl.util.ExceptionUtil;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -61,7 +62,7 @@ public final class OpenSSL {
         final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
         SecurityHelper.setFipsMode(fipsMode);
         SecurityHelper.checkAndRegisterProviderOnce();
-        LoggingSilence.applySilenceOnce();
+        LoggingSupport.silenceBouncyCastleLoggers();
 
         createOpenSSL(runtime);
     }
@@ -207,6 +208,10 @@ public final class OpenSSL {
     }
 
     // internal (package-level) helpers :
+
+    public static void debug(CharSequence msg, Throwable ex) {
+        LOG.debug(msg, ex);
+    }
 
     private static boolean debug;
     private static boolean warn = true;

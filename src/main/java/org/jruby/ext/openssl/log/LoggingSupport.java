@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.jruby.ext.openssl;
+package org.jruby.ext.openssl.log;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -38,6 +38,7 @@ import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
 
+import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.util.SafePropertyAccessor;
 
@@ -61,9 +62,9 @@ import org.jruby.util.SafePropertyAccessor;
  *
  * @author kares
  */
-final class LoggingSilence {
+public class LoggingSupport {
 
-    private LoggingSilence() { /* no instances */ }
+    private LoggingSupport() { /* no instances */ }
 
     private static final Map<String, String> BC_LOGGER_SILENCE_LEVELS;
     static {
@@ -82,7 +83,7 @@ final class LoggingSilence {
     /**
      * Apply default silencing for noisy BC loggers
      */
-    static synchronized void applySilenceOnce() {
+    public static synchronized void silenceBouncyCastleLoggers() {
         if (silencedLoggers != null) return;
 
         if (!SafePropertyAccessor.getBoolean("jruby.openssl.jul.silence", true)) return;
@@ -101,7 +102,7 @@ final class LoggingSilence {
             silencedLoggers = setSilencedLoggerLevels();
         }
         catch (SecurityException ex) {
-            OpenSSL.LOG.debug("unable to configure BC logging levels", ex);
+            OpenSSL.debug("unable to configure BC logging levels", ex);
             silencedLoggers = new java.util.logging.Logger[0];
         }
     }
@@ -151,7 +152,7 @@ final class LoggingSilence {
             return true;
         }
         catch (ReflectiveOperationException | IOException ex) {
-            OpenSSL.LOG.debug("LogManager.updateConfiguration failed", ex);
+            OpenSSL.debug("LogManager.updateConfiguration failed", ex);
             return false;
         }
     }

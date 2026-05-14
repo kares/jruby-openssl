@@ -1136,13 +1136,7 @@ public class Cipher extends RubyObject {
                 final String noPaddingName = realName.replace("PKCS5Padding", "NoPadding");
                 try {
                     javax.crypto.Cipher noPaddingCipher = getCipherInstance(noPaddingName, false);
-                    if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
-                        noPaddingCipher.init(ENCRYPT_MODE, new SimpleSecretKey(getCipherAlgorithm(), this.key));
-                    } else {
-                        noPaddingCipher.init(ENCRYPT_MODE,
-                            new SimpleSecretKey(getCipherAlgorithm(), this.key),
-                            new IvParameterSpec(this.realIV));
-                    }
+                    initManualBlockUpdateCipher(noPaddingCipher, this.realIV);
                     this.cipher = noPaddingCipher;
                     updateBuffer = new byte[blockSize];
                     updateBufferPos = 0;
@@ -1227,7 +1221,7 @@ public class Cipher extends RubyObject {
         return buffer;
     }
 
-    private ByteList updateWithBuffer(final byte[] in, int offset, int length) {
+    private ByteList updateWithBuffer(final byte[] in, int offset, int length) throws GeneralSecurityException {
         final int blockSize = updateBuffer.length;
         final int total = updateBufferPos + length;
         final int fullBlocks = total / blockSize;
@@ -1255,12 +1249,26 @@ public class Cipher extends RubyObject {
         }
         updateBufferPos = remainder;
 
-        final byte[] out = cipher.update(toEncrypt);
+        final byte[] out = cipher.doFinal(toEncrypt);
         if ( out != null ) {
-            if ( realIV != null ) setLastIVIfNeeded(out);
+            if ( realIV != null ) setLastIVIfNeeded(encryptMode ? out : toEncrypt);
+            initManualBlockUpdateCipher(cipher, lastIV);
             return new ByteList(out, false);
         }
+        initManualBlockUpdateCipher(cipher, lastIV);
         return new ByteList(ByteList.NULL_ARRAY);
+    }
+
+    private void initManualBlockUpdateCipher(final javax.crypto.Cipher cipher, final byte[] iv) throws GeneralSecurityException {
+        if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
+            cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE, new SimpleSecretKey(getCipherAlgorithm(), this.key));
+        }
+        else {
+            final byte[] ivBytes = iv == null ? new byte[ivLength] : iv;
+            cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE,
+                    new SimpleSecretKey(getCipherAlgorithm(), this.key),
+                    new IvParameterSpec(ivBytes));
+        }
     }
 
     @JRubyMethod(name = "<<")
@@ -1363,6 +1371,15 @@ public class Cipher extends RubyObject {
     }
 
     private ByteList doFinalWithBuffer() throws GeneralSecurityException {
+        if ( ! encryptMode && "NoPadding".equals(paddingType) ) {
+            if ( updateBufferPos == 0 ) return new ByteList(ByteList.NULL_ARRAY);
+
+            final byte[] lastBlock = new byte[updateBufferPos];
+            System.arraycopy(updateBuffer, 0, lastBlock, 0, updateBufferPos);
+            updateBufferPos = 0;
+            return new ByteList(cipher.doFinal(lastBlock), false);
+        }
+
         // add PKCS7 padding to buffered partial block and encrypt;
         // if buffer is empty (0 bytes remaining), a full padding block is added.
         final int blockSize = updateBuffer.length;
@@ -1392,7 +1409,9 @@ public class Cipher extends RubyObject {
 
     // True when we need manual block buffering to match OpenSSL's EVP_EncryptUpdate flush behavior
     private boolean switchToManualBlockUpdateBuffer() {
-        return encryptMode && "PKCS5Padding".equals(paddingType) && !isStreamCipher() && !isAuthDataMode();
+        if ( isStreamCipher() || isAuthDataMode() ) return false;
+        return ( encryptMode && "PKCS5Padding".equals(paddingType) ) ||
+                ( ! encryptMode && "NoPadding".equals(paddingType) );
     }
 
     private void setLastIVIfNeeded(final byte[] tmpIV) {

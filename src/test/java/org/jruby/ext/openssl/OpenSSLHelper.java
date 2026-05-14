@@ -12,16 +12,16 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-abstract class OpenSSLHelper {
+public abstract class OpenSSLHelper {
 
     protected Ruby runtime;
 
-    void setUpRuntime() throws ClassNotFoundException {
+    protected final void setUpRuntime() throws ClassNotFoundException {
         runtime = Ruby.newInstance();
         loadOpenSSL(runtime);
     }
 
-    void tearDownRuntime() {
+    protected final void tearDownRuntime() {
         if (runtime != null) runtime.tearDown(false);
     }
 

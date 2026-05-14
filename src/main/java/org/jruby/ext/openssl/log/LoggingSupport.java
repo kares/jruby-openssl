@@ -43,28 +43,32 @@ import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.util.SafePropertyAccessor;
 
 /**
- * Applies sensible default {@code java.util.logging} (JUL) levels to a handful
- * of known-noisy BouncyCastle / BCJSSE loggers — but only when the user has
- * not configured JUL themselves and has not explicitly opted out.
- *
- * <h2>What gets silenced</h2>
- * BCJSSE emits some INFO/WARNING lines at first-load and per-handshake :
- * <ul>
- *   <li>{@code org.bouncycastle.jsse.provider.PropertyUtils} init-time report
- *       of JDK-wide disabled-algorithm policies picked up by BCJSSE</li>
- *   <li>{@code org.bouncycastle.jsse.provider.DisabledAlgorithmConstraints}
- *       warnings about Oracle-specific extended syntax in
- *       {@code jdk.certpath.disabledAlgorithms} that BCJSSE's parser doesn't
- *       support (falls back cleanly)</li>
- *   <li>{@code org.bouncycastle.jsse.provider.ProvTlsServer/ProvTlsClient}
- *       per-handshake connection-start/complete INFO lines</li>
- * </ul>
- *
  * @author kares
  */
-public class LoggingSupport {
+public abstract class LoggingSupport {
 
-    private LoggingSupport() { /* no instances */ }
+    static volatile Function<String, org.jruby.ext.openssl.log.Logger>
+            loggerFactory = defaultLoggerFactory();
+
+    static Function<String, org.jruby.ext.openssl.log.Logger> defaultLoggerFactory() {
+        return (name) -> new DefaultLogger(name);
+    }
+
+    private static class JULLoggerFactory implements Function<String, org.jruby.ext.openssl.log.Logger> {
+        @Override
+        public org.jruby.ext.openssl.log.Logger apply(final String name) {
+            return new JULLogger(name);
+        }
+    }
+
+    public static void boostrapLoggerFactory() {
+        final String loggerType = SafePropertyAccessor.getProperty("jruby.openssl.log.logger");
+        if ("jul".equalsIgnoreCase(loggerType)) {
+            loggerFactory = new JULLoggerFactory();
+        } else {
+            loggerFactory = defaultLoggerFactory();
+        }
+    }
 
     private static final Map<String, String> BC_LOGGER_SILENCE_LEVELS;
     static {
@@ -78,15 +82,37 @@ public class LoggingSupport {
         BC_LOGGER_SILENCE_LEVELS = map;
     }
 
+    static boolean usingJulLogger() {
+        return loggerFactory instanceof JULLoggerFactory;
+    }
+
     private static volatile java.util.logging.Logger[] silencedLoggers;
 
     /**
-     * Apply default silencing for noisy BC loggers
+     * Applies sensible default {@code java.util.logging} (JUL) levels to a handful
+     * of known-noisy BouncyCastle / BCJSSE loggers — but only when the user has
+     * not configured JUL themselves and has not explicitly opted out.
+     *
+     * <p>
+     * BCJSSE emits some INFO/WARNING lines at first-load and per-handshake :
+     * <ul>
+     *   <li>{@code org.bouncycastle.jsse.provider.PropertyUtils} init-time report
+     *       of JDK-wide disabled-algorithm policies picked up by BC-JSSE</li>
+     *   <li>{@code org.bouncycastle.jsse.provider.DisabledAlgorithmConstraints}
+     *       Oracle-specific warning that BC-JSSE doesn't support</li>
+     *   <li>{@code org.bouncycastle.jsse.provider.ProvTlsServer/ProvTlsClient}
+     *       per-handshake connection-start/complete INFO lines</li>
+     * </ul>
+     *
+     * @author kares
      */
     public static synchronized void silenceBouncyCastleLoggers() {
         if (silencedLoggers != null) return;
 
-        if (!SafePropertyAccessor.getBoolean("jruby.openssl.jul.silence", true)) return;
+        String logSilence = SafePropertyAccessor.getProperty("jruby.openssl.log.silence");
+        // NOTE: bootstrapLoggerFactory is expected to happen before silenceBouncyCastleLoggers
+        if (logSilence != null && !Boolean.parseBoolean(logSilence)) return; // silence by default
+        if (logSilence == null && usingJulLogger()) return; // do not silence when using JUL
 
         if (userConfiguredJULOrBCLogging()) {
             silencedLoggers = new java.util.logging.Logger[0];
@@ -110,11 +136,11 @@ public class LoggingSupport {
     /**
      * Java 9+ path: merge silenced logger levels into the {@link LogManager}'s
      * configuration properties via {@code updateConfiguration(InputStream, Function)}.
-     * The configuration is consulted by every subsequent
-     * {@link Logger#getLogger(String)} regardless of the caller's module,
-     * which side-steps any concern about caller-context with caller sesitive resolution.
      *
-     * @return {@code true} when applied (Java 9+)
+     * The configuration is consulted by every subsequent
+     * {@link Logger#getLogger(String)} regardless of the caller's module.
+     *
+     * @return {@code true} when applied (on Java 9+)
      */
     private static boolean updateConfigurationForSilencedLoggers() {
         final Method updateConfiguration;
@@ -197,5 +223,4 @@ public class LoggingSupport {
         }
         return false;
     }
-
 }

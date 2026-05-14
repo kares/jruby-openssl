@@ -1,82 +1,74 @@
 package org.jruby.ext.openssl.log;
 
+import java.util.logging.Level;
+
 import org.jruby.Ruby;
 import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.runtime.ThreadContext;
 
-final class DefaultLogger implements Logger {
+final class JULLogger implements Logger {
 
-    private final String name;
+    private final java.util.logging.Logger logger;
 
-    DefaultLogger(final String name) {
-        this.name = name;
+    JULLogger(final String name) {
+        this.logger = java.util.logging.Logger.getLogger(name);
     }
 
     @Override
     public boolean isDebug(final Ruby runtime) {
-        return OpenSSL.isDebug();
+        return OpenSSL.isDebug() && logger.isLoggable(Level.FINE);
+    }
+
+    private boolean isInfo() {
+        return logger.isLoggable(Level.INFO);
     }
 
     private boolean isWarn() {
-        return OpenSSL.isWarn();
+        return OpenSSL.isWarn() && logger.isLoggable(Level.WARNING);
     }
 
     @Override
     public void debug(final Ruby runtime, final CharSequence msg) {
         if (!isDebug(runtime)) return;
 
-        System.out.println(msgWithPrefix(msg, false));
+        logger.log(Level.FINE, msgWithPrefix(msg, false));
     }
 
     @Override
     public void debug(final Ruby runtime, final CharSequence msg, final Throwable ex) {
         if (!isDebug(runtime)) return;
 
-        System.out.println(msgWithPrefix(msg, true) + ex);
+        logger.log(Level.FINE, msgWithPrefix(msg, true) + ex);
     }
 
     @Override
     public void debugStack(final Ruby runtime, final CharSequence msg, final Throwable ex) {
         if (!isDebug(runtime)) return;
 
-        synchronized (System.out) {
-            System.out.print(msgWithPrefix(msg, true));
-            ex.printStackTrace(System.out);
-        }
+        logger.log(Level.FINE, msgWithPrefix(msg, false), ex);
     }
 
     @Override
-    public void info(Ruby runtime, CharSequence msg) {
-        debug(runtime, msg);
+    public void info(final Ruby runtime, final CharSequence msg) {
+        if (!isInfo()) return;
+
+        logger.log(Level.INFO, msgWithPrefix(msg, false));
     }
 
     @Override
     public void warn(final Ruby runtime, final CharSequence msg) {
         if (!isWarn()) return;
 
-        final String message = msgWithPrefix(msg, false);
-        if (runtime != null) {
-            OpenSSL.doWarn(runtime.getCurrentContext(), message);
-        }
-        else {
-            System.err.println(message);
-        }
+        logger.log(Level.WARNING, msgWithPrefix(msg, false));
     }
 
     @Override
     public void warn(final Ruby runtime, final CharSequence msg, final Throwable ex) {
         if (!isWarn()) return;
 
-        final String message = msgWithPrefix(msg, true) + ex;
-        if (runtime != null) {
-            OpenSSL.doWarn(runtime.getCurrentContext(), message);
-        }
-        else {
-            System.err.println(message);
-        }
+        logger.log(Level.WARNING, msgWithPrefix(msg, true) + ex);
     }
-
 
     @Override
     public void warnWithCaller(final Ruby runtime, CharSequence msg) {
@@ -87,14 +79,15 @@ final class DefaultLogger implements Logger {
             final CharSequence caller = RubySupport.callerTraceAt(context, 1);
             if (caller != null) msg = msgWithPrefix(msg, true) + '<' + caller + '>';
             else msg = msgWithPrefix(msg, false);
-            OpenSSL.doWarn(context, msg);
         }
         else {
-            System.err.println(msgWithPrefix(msg, false));
+            msg = msgWithPrefix(msg, false);
         }
+
+        logger.log(Level.WARNING, msg.toString());
     }
 
-    private String msgWithPrefix(final CharSequence msg, final boolean space) {
-        return '[' + name + "] " + (msg == null ? "" : msg) + (space ? ' ' : "");
+    private static String msgWithPrefix(final CharSequence msg, final boolean space) {
+        return (msg == null ? "" : msg) + (space ? " " : "");
     }
 }

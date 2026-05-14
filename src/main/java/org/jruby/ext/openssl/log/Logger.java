@@ -5,11 +5,11 @@ import org.jruby.Ruby;
 public interface Logger {
 
     static Logger getLogger(final Class<?> type) {
-        return LoggerFactory.getLogger(type.getName());
+        return getLogger(type.getName());
     }
 
     static Logger getLogger(final String name) {
-        return LoggerFactory.getLogger(name);
+        return LoggingSupport.loggerFactory.apply(name);
     }
 
     boolean isDebug(Ruby runtime);

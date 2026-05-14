@@ -48,10 +48,13 @@ import static org.jruby.ext.openssl.util.RubySupport.newString;
  * @author kares
  */
 @JRubyModule(name = "OpenSSL")
-public final class OpenSSL {
+public class OpenSSL {
+
+    OpenSSL() { /* no instances */ }
 
     static {
-        // TODO bootstrap logging
+        // NOTE: no guarantee when user manually initializes other Java class (using `Logger.getLogger`)
+        LoggingSupport.boostrapLoggerFactory();
     }
 
     static final Logger LOG = Logger.getLogger(OpenSSL.class);
@@ -74,13 +77,6 @@ public final class OpenSSL {
         final RubyClass OpenSSLError = _OpenSSL.defineClassUnder("OpenSSLError", StandardError, StandardError.getAllocator());
 
         _OpenSSL.defineAnnotatedMethods(OpenSSL.class);
-
-        // set OpenSSL debug internal flag early on so it can print traces even while loading extension
-        setDebug(_OpenSSL, runtime.newBoolean( SafePropertyAccessor.getBoolean("jruby.openssl.debug") ) );
-
-        final String warn = SafePropertyAccessor.getProperty("jruby.openssl.warn");
-        if ( warn != null ) OpenSSL.warn = Boolean.parseBoolean(warn);
-        else OpenSSL.warn = runtime.warningsEnabled();
 
         // Config.createConfig(runtime, _OpenSSL);
         ExtConfig.create(runtime, _OpenSSL);
@@ -148,11 +144,23 @@ public final class OpenSSL {
     }
 
     @JRubyMethod(name = "debug", meta = true)
+    public static IRubyObject getDebug(ThreadContext context, IRubyObject self) {
+        final Ruby runtime = context.runtime;
+        return runtime.newBoolean(OpenSSL.LOG.isDebug(runtime));
+    }
+
+    @JRubyMethod(name = "debug=", meta = true)
+    public static IRubyObject setDebug(ThreadContext context, IRubyObject self, IRubyObject debug) {
+        OpenSSL.debug = debug.isTrue();
+        return getDebug(context, self);
+    }
+
+    @Deprecated
     public static IRubyObject getDebug(IRubyObject self) {
         return self.getRuntime().newBoolean(OpenSSL.debug);
     }
 
-    @JRubyMethod(name = "debug=", meta = true)
+    @Deprecated
     public static IRubyObject setDebug(IRubyObject self, IRubyObject debug) {
         OpenSSL.debug = debug.isTrue();
         return debug;
@@ -213,20 +221,25 @@ public final class OpenSSL {
         LOG.debug(msg, ex);
     }
 
-    private static boolean debug;
+    // set OpenSSL debug internal flag early so it can print even while loading extension
+    private static boolean debug = SafePropertyAccessor.getBoolean("jruby.openssl.debug");
     private static boolean warn = true;
+    static {
+        final String warn = SafePropertyAccessor.getProperty("jruby.openssl.warn");
+        if (warn != null) OpenSSL.warn = Boolean.parseBoolean(warn);
+    }
 
     public static boolean isDebug() { return debug; }
 
     public static boolean isWarn() { return warn; }
 
-    public static void warn(final ThreadContext context, final CharSequence msg) {
-        warn(context, (IRubyObject) RubyString.newString(context.runtime, msg));
+    public static void doWarn(final ThreadContext context, final CharSequence msg) {
+        doWarn(context, (IRubyObject) RubyString.newString(context.runtime, msg));
     }
 
-    private static void warn(final ThreadContext context, final IRubyObject msg) {
-        final RubyModule openssl = context.runtime.getModule("OpenSSL");
-        WARN_CALL_SITE.call(context, openssl, openssl, msg);
+    private static void doWarn(final ThreadContext context, final IRubyObject msg) {
+        final RubyModule _OpenSSL = context.runtime.getModule("OpenSSL");
+        WARN_CALL_SITE.call(context, _OpenSSL, _OpenSSL, msg);
     }
 
     private static String javaVersion(final String def, final int len) {

@@ -1,11 +1,19 @@
-package org.jruby.ext.openssl;
+package org.jruby.ext.openssl.log;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 
+import org.jruby.ext.openssl.OpenSSL;
+import org.jruby.ext.openssl.OpenSSLHelper;
 import org.jruby.runtime.builtin.IRubyObject;
-import org.jruby.ext.openssl.log.Logger;
+
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,17 +21,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class LoggerTest extends OpenSSLHelper {
 
+    private String originalLogProperty;
     private PrintStream originalOut;
     private ByteArrayOutputStream capturedOut;
+    private java.util.logging.Logger capturedJulLogger;
+    private TestLogHandler capturedJulHandler;
 
     @BeforeEach
     public void setUp() throws Exception {
+        originalLogProperty = System.getProperty("jruby.openssl.log.logger");
         setUpRuntime();
     }
 
     @AfterEach
     public void tearDown() {
         try {
+            restoreJulLogger();
+            restoreLogProperty();
+            restoreLoggerFactory();
             restoreStderr();
             restoreSystemOut();
         } finally {
@@ -38,6 +53,7 @@ public class LoggerTest extends OpenSSLHelper {
         replaceRubyStderr();
 
         final Logger logger = Logger.getLogger("test.warn");
+        assertInstanceOf(DefaultLogger.class, logger);
         logger.warn(runtime, "logger-warn");
 
         assertEquals("[test.warn] logger-warn\n", capturedRubyStderr());
@@ -66,7 +82,7 @@ public class LoggerTest extends OpenSSLHelper {
 
     @Test
     public void debugIsSuppressedByDefault() {
-        assertFalse(OpenSSL.isDebug(), "debug should be off by default");
+        Assertions.assertFalse(OpenSSL.isDebug(), "debug should be off by default");
 
         captureSystemOut();
         final Logger logger = Logger.getLogger("test.debug.off");
@@ -89,6 +105,7 @@ public class LoggerTest extends OpenSSLHelper {
         try {
             captureSystemOut();
             final Logger logger = Logger.getLogger("test.debug.on");
+            assertInstanceOf(DefaultLogger.class, logger);
             logger.debug(runtime, "debug-msg");
 
             final String out = capturedSystemOut();
@@ -157,6 +174,50 @@ public class LoggerTest extends OpenSSLHelper {
         }
     }
 
+    @Test
+    public void julDebugLogsToFine() {
+        enableDebug();
+        try {
+            System.setProperty("jruby.openssl.log.logger", "jul");
+            LoggingSupport.boostrapLoggerFactory();
+
+            final TestLogHandler handler = captureJulLogger("test.jul.debug", Level.FINE);
+            final Logger logger = Logger.getLogger("test.jul.debug");
+            assertInstanceOf(JULLogger.class, logger);
+
+            logger.debug(runtime, "debug-msg");
+
+            final LogRecord record = onlyRecord(handler);
+            assertEquals(Level.FINE, record.getLevel());
+            assertEquals("debug-msg", record.getMessage());
+        } finally {
+            disableDebug();
+        }
+    }
+
+    @Test
+    public void julWarnWithCallerIncludesRubyCaller() {
+        System.setProperty("jruby.openssl.log.logger", "jul");
+        LoggingSupport.boostrapLoggerFactory();
+
+        final TestLogHandler handler = captureJulLogger("test.jul.trace", Level.WARNING);
+
+        runtime.executeScript(
+            "logger = org.jruby.ext.openssl.log::Logger.getLogger('test.jul.trace')\n" +
+            "def outer(logger)\n" +
+            "  inner(logger)\n" +
+            "end\n" +
+            "def inner(logger)\n" +
+            "  logger.warnWithCaller(JRuby.runtime, 'trace-warn')\n" +
+            "end\n" +
+            "outer(logger)", "TEST.rb"
+        );
+
+        final LogRecord record = onlyRecord(handler);
+        assertEquals(Level.WARNING, record.getLevel());
+        assertEquals("trace-warn <TEST.rb:3:in `outer'>", record.getMessage());
+    }
+
     private void enableDebug() {
         runtime.evalScriptlet("OpenSSL.debug = true");
     }
@@ -183,6 +244,40 @@ public class LoggerTest extends OpenSSLHelper {
         }
     }
 
+    private void restoreLogProperty() {
+        if (originalLogProperty == null) System.clearProperty("jruby.openssl.log.logger");
+        else System.setProperty("jruby.openssl.log.logger", originalLogProperty);
+    }
+
+    private void restoreLoggerFactory() {
+        LoggingSupport.loggerFactory = LoggingSupport.defaultLoggerFactory();
+    }
+
+    private TestLogHandler captureJulLogger(final String name, final Level level) {
+        capturedJulLogger = java.util.logging.Logger.getLogger(name);
+        capturedJulLogger.setUseParentHandlers(false);
+        capturedJulLogger.setLevel(level);
+        capturedJulHandler = new TestLogHandler();
+        capturedJulHandler.setLevel(Level.ALL);
+        capturedJulLogger.addHandler(capturedJulHandler);
+        return capturedJulHandler;
+    }
+
+    private void restoreJulLogger() {
+        if (capturedJulLogger == null || capturedJulHandler == null) return;
+
+        capturedJulLogger.removeHandler(capturedJulHandler);
+        capturedJulLogger.setUseParentHandlers(true);
+        capturedJulLogger.setLevel(null);
+        capturedJulLogger = null;
+        capturedJulHandler = null;
+    }
+
+    private LogRecord onlyRecord(final TestLogHandler handler) {
+        assertEquals(1, handler.records.size(), "expected exactly one JUL record");
+        return handler.records.get(0);
+    }
+
     private String capturedRubyStderr() {
         final IRubyObject result = runtime.evalScriptlet("$__captured_stderr__.string");
         return result.toString();
@@ -204,5 +299,22 @@ public class LoggerTest extends OpenSSLHelper {
             "  $stderr = $__old_stderr__\n" +
             "end"
         );
+    }
+
+    private static final class TestLogHandler extends Handler {
+        private final List<LogRecord> records = new ArrayList<>();
+
+        @Override
+        public void publish(final LogRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }

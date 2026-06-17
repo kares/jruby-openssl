@@ -10,7 +10,7 @@ final class DefaultLogger implements Logger {
     private final String name;
 
     DefaultLogger(final String name) {
-        this.name = name;
+        this.name = name.replace("org.jruby.ext.openssl.", "");
     }
 
     @Override

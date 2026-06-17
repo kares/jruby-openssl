@@ -151,7 +151,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "id=")
     public IRubyObject set_id(final ThreadContext context, IRubyObject id) {
-        LOG.debug(context.runtime, "OpenSSL::SSL::Session#id= is not supported");
+        LOG.debug(context.runtime, "id= is not supported");
         return context.nil;
     }
 
@@ -163,7 +163,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "time=")
     public IRubyObject set_time(final ThreadContext context, IRubyObject time) {
-        LOG.debug(context.runtime, "OpenSSL::SSL::Session#time= is not supported");
+        LOG.debug(context.runtime, "time= is not supported");
         return context.nil;
     }
 

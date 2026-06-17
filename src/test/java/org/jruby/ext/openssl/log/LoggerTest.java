@@ -116,6 +116,20 @@ public class LoggerTest extends OpenSSLHelper {
     }
 
     @Test
+    public void defaultLoggerUsesShortName() {
+        enableDebug();
+        try {
+            captureSystemOut();
+            final Logger logger = Logger.getLogger("org.jruby.ext.openssl.PKeyRSA");
+            logger.debug(runtime, "short-name-test");
+
+            assertEquals("[PKeyRSA] short-name-test\n", capturedSystemOut());
+        } finally {
+            disableDebug();
+        }
+    }
+
+    @Test
     public void debugStackIncludesExceptionInfo() {
         final String out;
         enableDebug();

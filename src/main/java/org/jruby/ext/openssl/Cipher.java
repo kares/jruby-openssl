@@ -58,6 +58,7 @@ import org.jruby.RubyString;
 import org.jruby.common.IRubyWarnings.ID;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.shim.CipherShim;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
@@ -143,12 +144,24 @@ public class Cipher extends RubyObject {
         final Collection<String> ciphers = Algorithm.AllSupportedCiphers.CIPHERS_MAP.keySet();
         final RubyArray result = runtime.newArray( ciphers.size() * 2 );
         for ( final String cipher : ciphers ) {
+            if ( ! checkCipherAllowed(cipher) ) continue;
             result.append( runtime.newString(cipher) ); // upper-case
         }
         for ( final String cipher : ciphers ) { // than lower-case OpenSSL compatibility
+            if ( ! checkCipherAllowed(cipher) ) continue;
             result.append( runtime.newString(cipher.toLowerCase()) );
         }
         return result;
+    }
+
+    private static boolean checkCipherAllowed(final String name) {
+        final Algorithm alg = Algorithm.osslToJava(name);
+        if (!CipherShim.isCipherAllowed(alg)) return false;
+        try {
+            return getCipherInstance(alg.getRealName(), true) != null;
+        } catch (GeneralSecurityException e) {
+            return false;
+        }
     }
 
     public static boolean isSupportedCipher(final String name) {
@@ -242,7 +255,6 @@ public class Cipher extends RubyObject {
             this.base = cryptoBase;
             this.version = cryptoVersion;
             this.mode = cryptoMode;
-            //this.padding = padding;
         }
 
         private static final Set<String> KNOWN_BLOCK_MODES;
@@ -274,7 +286,15 @@ public class Cipher extends RubyObject {
             NO_PADDING_BLOCK_MODES.add("CCM");
         }
 
-        final static class AllSupportedCiphers {
+        public String getBase() {
+            return base;
+        }
+
+        public String getMode() {
+            return mode;
+        }
+
+        static class AllSupportedCiphers {
 
             // Ruby to Java name String
             static final HashMap<String, String[]> CIPHERS_MAP = new LinkedHashMap<String, String[]>(120, 1);
@@ -891,8 +911,7 @@ public class Cipher extends RubyObject {
         final Ruby runtime = context.runtime;
         checkCipherNotNull(runtime);
         if ( isStreamCipher() ) {
-            // getBlockSize() returns 0 for stream cipher in JCE
-            // OpenSSL returns 1 for RC4.
+            // getBlockSize() returns 0 for stream cipher in JCE; OpenSSL returns 1 for RC4
             return runtime.newFixnum(1);
         }
         return runtime.newFixnum(cipher.getBlockSize());

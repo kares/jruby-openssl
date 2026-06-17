@@ -202,7 +202,7 @@ public class PKCS12 extends RubyObject {
             final Certificate[] chain = certificateChain(runtime, (X509Cert) certArg, caArg);
             final KeyStore store = SecurityHelper.getKeyStore("PKCS12");
             store.load(null, null);
-            store.setKeyEntry(aliasName(nameArg), privateKey, null, chain);
+            store.setKeyEntry(aliasName(nameArg), privateKey, password, chain);
 
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
             store.store(out, password);

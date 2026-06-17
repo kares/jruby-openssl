@@ -647,6 +647,19 @@ public class PKCS7 {
         }
     }
 
+    private static byte[] wrapKey(SecretKey key, PublicKey pkey) throws GeneralSecurityException {
+        Cipher cipher = SecurityHelper.getCipher(CipherSpec.getWrappingAlgorithm(pkey.getAlgorithm()));
+        cipher.init(Cipher.WRAP_MODE, pkey);
+        return cipher.wrap(key);
+    }
+
+    private static byte[] unwrapKey(byte[] encodedKey, PrivateKey pkey, String algorithm) throws GeneralSecurityException {
+        Cipher cipher = SecurityHelper.getCipher(CipherSpec.getWrappingAlgorithm(pkey.getAlgorithm()));
+        cipher.init(Cipher.UNWRAP_MODE, pkey);
+        Key key = cipher.unwrap(encodedKey, algorithm, Cipher.SECRET_KEY);
+        return key.getEncoded();
+    }
+
     /** c: stati PKCS7_bio_add_digest
      *
      */
@@ -745,13 +758,14 @@ public class PKCS7 {
             }
 
             byte[] tmp = null;
+            String algo = org.jruby.ext.openssl.Cipher.Algorithm.getAlgorithmBase(evpCipher);
             /* If we haven't got a certificate try each ri in turn */
             if (null == pcert) {
                 Exception cause = null;
                 for (Iterator<RecipInfo> iter = rsk.iterator(); iter.hasNext();) {
                     ri = iter.next();
                     try {
-                        tmp = EVP.decrypt(ri.getEncKey().getOctets(), pkey);
+                        tmp = unwrapKey(ri.getEncKey().getOctets(), pkey, algo);
                         if (tmp != null) break;
                     } catch (GeneralSecurityException e) {
                         tmp = null; cause = e;
@@ -763,9 +777,7 @@ public class PKCS7 {
                 }
             } else {
                 try {
-                    Cipher cipher = SecurityHelper.getCipher(CipherSpec.getWrappingAlgorithm(pkey.getAlgorithm()));
-                    cipher.init(Cipher.DECRYPT_MODE, pkey);
-                    tmp = cipher.doFinal(ri.getEncKey().getOctets());
+                    tmp = unwrapKey(ri.getEncKey().getOctets(), pkey, algo);
                 } catch (GeneralSecurityException e) {
                     throw new PKCS7Exception(F_PKCS7_DATADECODE, -1, e);
                 }
@@ -773,7 +785,6 @@ public class PKCS7 {
 
             ASN1Encodable params = encAlg.getParameters();
             try {
-                String algo = org.jruby.ext.openssl.Cipher.Algorithm.getAlgorithmBase(evpCipher);
                 if (params instanceof ASN1OctetString) {
                     if (algo.startsWith("RC2")) {
                         // J9's IBMJCE needs this exceptional RC2 support.
@@ -885,9 +896,7 @@ public class PKCS7 {
                 if (null != rsk) {
                     for (RecipInfo ri : rsk) {
                         PublicKey pkey = ri.getCert().getPublicKey();
-                        Cipher cipher = SecurityHelper.getCipher(CipherSpec.getWrappingAlgorithm(pkey.getAlgorithm()));
-                        cipher.init(Cipher.ENCRYPT_MODE, pkey);
-                        tmp = cipher.doFinal(key.getEncoded());
+                        tmp = wrapKey(key, pkey);
                         ri.setEncKey(new DEROctetString(tmp));
                     }
                 }
@@ -1276,4 +1285,3 @@ public class PKCS7 {
         return null;
     }
 }// PKCS7
-

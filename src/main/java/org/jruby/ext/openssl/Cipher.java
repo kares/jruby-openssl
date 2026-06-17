@@ -932,13 +932,6 @@ public class Cipher extends RubyObject {
              */
             byte[] pass = args[0].asString().getBytes();
             byte[] iv = null;
-            try {
-                iv = "OpenSSL for Ruby rulez!".getBytes("ISO8859-1");
-                byte[] iv2 = new byte[this.ivLength];
-                System.arraycopy(iv, 0, iv2, 0, this.ivLength);
-                iv = iv2;
-            } catch (Exception e) {
-            }
 
             if ( args.length > 1 && ! args[1].isNil() ) {
                 runtime.getWarnings().warning(ID.MISCELLANEOUS, "key derivation by " + getMetaClass().getRealClass().getName() + "#encrypt is deprecated; use " + getMetaClass().getRealClass().getName() + "::pkcs5_keyivgen instead");
@@ -953,7 +946,7 @@ public class Cipher extends RubyObject {
             final MessageDigest digest = Digest.getDigest(runtime, "MD5");
             KeyAndIv result = evpBytesToKey(keyLength, ivLength, digest, iv, pass, 2048);
             this.key = result.key;
-            this.realIV = iv;
+            this.realIV = iv == null ? result.iv : iv;
             this.orgIV = this.realIV;
         }
     }

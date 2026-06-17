@@ -92,6 +92,24 @@ class TestCipher < TestCase
     assert_equal(data, c2.update(s2) + c2.final, "decrypt")
   end
 
+  def test_deprecated_encrypt_password_without_salt_matches_pkcs5_keyivgen
+    pass = "secret"
+    data = "message"
+
+    expected = OpenSSL::Cipher.new("AES-128-CBC")
+    expected.encrypt
+    expected.pkcs5_keyivgen(pass)
+    encrypted = expected.update(data) + expected.final
+
+    cipher = OpenSSL::Cipher.new("AES-128-CBC")
+    cipher.encrypt(pass)
+    assert_equal encrypted, cipher.update(data) + cipher.final
+
+    cipher = OpenSSL::Cipher.new("AES-128-CBC")
+    cipher.decrypt(pass)
+    assert_equal data, cipher.update(encrypted) + cipher.final
+  end
+
   def test_des_key_len
     cipher = OpenSSL::Cipher.new 'des'
     assert_equal  8, cipher.key_len

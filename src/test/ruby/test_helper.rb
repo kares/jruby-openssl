@@ -81,6 +81,14 @@ class TestCase
   def self.fips?; !!defined?(JOpenSSL::BOUNCY_CASTLE_FIPS_VERSIONS) end
   def fips?; self.class.fips? end
 
+  def omit_on_fips(msg = nil)
+    skip(msg || 'not supported in FIPS mode') if fips?
+  end
+
+  def omit_on_non_fips
+    skip('only for FIPS mode') unless fips?
+  end
+
   private
 
   def debug(msg); puts msg if $VERBOSE end

@@ -1365,12 +1365,12 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
 
   # @note revisit with future BC-FIPS API updates
   def skip_fips_non_context_specific_asn1_encoding
-    skip 'BC-FIPS ASN.1 encoder cannot construct non-CONTEXT_SPECIFIC DERTaggedObject values' if fips?
+    omit_on_fips 'BC-FIPS ASN.1 encoder cannot construct non-CONTEXT_SPECIFIC DERTaggedObject values'
   end
 
   # @note test fixture should be revised to an approved key size
   def skip_fips_unapproved_rsa1024_signing
-    skip 'BC-FIPS approved-only mode rejects RSA-1024 signing' if fips?
+    omit_on_fips 'RSA-1024 signing is not FIPS-approved'
   end
 
 end

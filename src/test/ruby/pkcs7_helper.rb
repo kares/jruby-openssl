@@ -1,3 +1,5 @@
+require 'jopenssl/load'
+
 module PKCS7Test
 
   MimeEnvelopedString = File::read(File.join(File.dirname(__FILE__), 'pkcs7', 'pkcs7_mime_enveloped.message'))

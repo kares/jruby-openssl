@@ -122,6 +122,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_new_with_no_keys
+    omit_on_fips 'fixture uses legacy PKCS12 PBE-SHA1-3DES'
     str = <<~EOF.unpack1("m")
 MIIGJAIBAzCCBeoGCSqGSIb3DQEHAaCCBdsEggXXMIIF0zCCBc8GCSqGSIb3
 DQEHBqCCBcAwggW8AgEAMIIFtQYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQMw

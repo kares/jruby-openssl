@@ -1,4 +1,5 @@
 require File.expand_path('../test_helper', File.dirname(__FILE__))
+require File.expand_path('../pkcs7_helper', File.dirname(__FILE__))
 
 module PKCS7Test
   class TestSMIME < TestCase

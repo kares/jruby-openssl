@@ -12,6 +12,7 @@ class TestEC < TestCase
       # Oakley curves and X25519 are not suitable for signing and causes
       # FIPS-selftest failure on some environment, so skip for now.
       next if ["Oakley", "X25519"].any? { |n| curve_name.start_with?(n) }
+      next if fips? && !fips_approved_ec_curve?(curve_name)
 
       key = OpenSSL::PKey::EC.generate(curve_name)
       assert_predicate key, :private?
@@ -144,6 +145,8 @@ class TestEC < TestCase
   end
 
   def test_read_pem
+    omit_on_fips 'secp112r1 is not FIPS-approved'
+
     key_file = File.join(File.dirname(__FILE__), 'private_key.pem')
 
     key = OpenSSL::PKey::EC.new(File.read(key_file))
@@ -181,6 +184,8 @@ class TestEC < TestCase
   end
 
   def test_read_pem2
+    omit_on_fips 'brainpoolP512t1 is not FIPS-approved'
+
     key_file = File.join(File.dirname(__FILE__), 'private_key2.pem')
 
     key = OpenSSL::PKey::EC.new(File.read(key_file))
@@ -210,6 +215,8 @@ class TestEC < TestCase
   end
 
   def test_point
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     group = OpenSSL::PKey::EC::Group.new('prime256v1')
     client_public_key_bn = OpenSSL::BN.new('58089019511196532477248433747314139754458690644712400444716868601190212265537817278966641566813745621284958192417192818318052462970895792919572995957754854')
 
@@ -237,6 +244,8 @@ class TestEC < TestCase
   end
 
   def test_random_point
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     group = OpenSSL::PKey::EC::Group.new("prime256v1")
     key = OpenSSL::PKey::EC.generate(group)
     point = key.public_key
@@ -253,6 +262,8 @@ class TestEC < TestCase
   end
 
   def test_encrypt
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     p256dh = "BNFege3oh74znsDbVkGf5CRAtLVUHlo5NTU9-inepE_HpUBWUq3FP_dJR-WDORPvKL7fM_AKyfYch-nKY7kDOe0="
     group_name = 'prime256v1'
 
@@ -272,6 +283,8 @@ class TestEC < TestCase
   end
 
   def test_encrypt_integration # inspired by WebPush
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     require File.expand_path('ece.rb', File.dirname(__FILE__)) unless defined? ECE
     require File.expand_path('hkdf.rb', File.dirname(__FILE__)) unless defined? HKDF
 
@@ -388,6 +401,7 @@ class TestEC < TestCase
 
     OpenSSL::PKey::EC.builtin_curves.each do |curve, comment|
       next if curve.start_with?("Oakley") # Oakley curves are not suitable for ECDSA
+      next if fips? && !fips_approved_ec_curve?(curve)
 
       @groups << group = OpenSSL::PKey::EC::Group.new(curve)
       @keys << OpenSSL::PKey::EC.generate(group)
@@ -420,8 +434,9 @@ class TestEC < TestCase
   def test_sign_verify
     p256 = Fixtures.pkey("p256")
     data = "Sign me!"
-    signature = p256.sign("SHA1", data)
-    assert_equal true, p256.verify("SHA1", signature, data)
+    digest = fips? ? "SHA256" : "SHA1"
+    signature = p256.sign(digest, data)
+    assert_equal true, p256.verify(digest, signature, data)
 
     signature0 = (<<~'end;').unpack("m")[0]
       MEQCIEOTY/hD7eI8a0qlzxkIt8LLZ8uwiaSfVbjX2dPAvN11AiAQdCYx56Fq
@@ -433,6 +448,8 @@ class TestEC < TestCase
   end
 
   def test_derive_key
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     # NIST CAVP, KAS_ECC_CDH_PrimitiveTest.txt, P-256 COUNT = 0
     qCAVSx = "700c48f77f56584c5cc632ca65640db91b6bacce3a4df6b42ce7cc838833d287"
     qCAVSy = "db71e509e3fd9b060ddb20ba5c51dcc5948d46fbf640dfe0441782cab85fa4ac"
@@ -451,6 +468,8 @@ class TestEC < TestCase
   end
 
   def test_ec_group
+    omit_on_fips 'explicit EC group reconstruction is not supported under BC-FIPS approved-only mode'
+
     group1 = OpenSSL::PKey::EC::Group.new("prime256v1")
     key1 = OpenSSL::PKey::EC.new(group1)
     assert_equal group1, key1.group
@@ -484,6 +503,8 @@ class TestEC < TestCase
   end
 
   def test_ec_group_new_explicit_gfp
+    omit_on_fips 'explicit EC domain parameters are not FIPS-approved'
+
     group = OpenSSL::PKey::EC::Group.new(:GFp, 17, 2, 2)
     group.point_conversion_form = :uncompressed
     generator = OpenSSL::PKey::EC::Point.new(group, B(%w{ 04 05 01 }))
@@ -499,6 +520,8 @@ class TestEC < TestCase
   end
 
   def test_ec_point_invert
+    omit_on_fips 'explicit EC domain parameters are not FIPS-approved'
+
     group = OpenSSL::PKey::EC::Group.new(:GFp, 17, 2, 2)
     group.point_conversion_form = :uncompressed
 
@@ -600,6 +623,8 @@ class TestEC < TestCase
   end
 
   def test_ECPrivateKey_encrypted
+    omit_on_fips 'EC PRIVATE KEY round-trip is not supported under BC-FIPS approved-only mode'
+
     p256 = Fixtures.pkey("p256")
     # key = abcdef (hardcoded encrypted PEM from MRI test suite)
     pem = <<~EOF
@@ -629,6 +654,8 @@ class TestEC < TestCase
   end
 
   def test_new_from_der
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     priv_key_hex = '05768F097A19FFE5022D4A862CDBAE22019695D1C2F88FD41607417AD45E2F55'
     pub_key_hex = '04B827833DC1BC38CE0BBE36E0357B1D08AB0BFA05DBD211F0FC677FF9913FAF0EB3A3CC562EEAE8D841B112DBFDAD494E10CFBD4964DC2D175D06F17ACC5771CF'
     do_test_from_sequence('prime256v1', pub_key_hex, priv_key_hex)
@@ -681,6 +708,8 @@ class TestEC < TestCase
   private :do_test_from_sequence
 
   def test_new_from_der_jwt_style
+    omit_on_fips 'raw EC point construction is not supported under BC-FIPS approved-only mode'
+
     jwk_x = "g0TKNSBBDP0dd_6nmvVDonaVRdbRQ6EuhqyPZdkoAEk"
     jwk_y = "_ciKiD10jGIp2SEK0JhN1O2Pd0LswFiECURv9ryIMKo"
     do_test_from_sequence_with_packed_point('prime256v1', jwk_x, jwk_y)
@@ -760,6 +789,10 @@ class TestEC < TestCase
 #  end
 
   private
+
+  def fips_approved_ec_curve?(curve)
+    %w[prime256v1 secp256r1 secp384r1 secp521r1].include?(curve)
+  end
 
   def B(ary)
     [Array(ary).join].pack("H*")

@@ -9,6 +9,8 @@ class TestNSSPKI < TestCase
         'i0//rgBvmco='
 
   def test_build_data
+    omit_on_fips 'RSA-1024 signing is not FIPS-approved'
+
     key1 = Fixtures.pkey('rsa1024')
     key2 = Fixtures.pkey('rsa2048')
     spki = OpenSSL::Netscape::SPKI.new
@@ -45,6 +47,8 @@ class TestNSSPKI < TestCase
   end
 
   def test_to_text_after_sign
+    omit_on_fips 'RSA-1024 signing is not FIPS-approved'
+
     key = Fixtures.pkey('rsa1024')
     spki = OpenSSL::Netscape::SPKI.new
     spki.challenge = 'MyChallenge'

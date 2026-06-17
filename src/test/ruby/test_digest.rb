@@ -12,22 +12,27 @@ class TestDigest < TestCase
     OpenSSL::Digest::SHA512.new.block_length
 
     OpenSSL::Digest::MD2.new.block_length
-    OpenSSL::Digest::MD4.new.block_length # BC
     OpenSSL::Digest::MD5.new.block_length
     # NOTE: MDC2 not supported
     #OpenSSL::Digest::MDC2.new
 
-    OpenSSL::Digest::RIPEMD160.new.block_length # BC
-
     OpenSSL::Digest::DSS.new.block_length
     OpenSSL::Digest::DSS1.new.block_length
+
+    return if fips?
+
+    OpenSSL::Digest::MD4.new.block_length # BC
+    OpenSSL::Digest::RIPEMD160.new.block_length # BC
   end
 
   def test_digest_extension
     # BC supports these - we shall allow any supported algorithms to work
-    OpenSSL::Digest.new('RipeMD256').digest
     OpenSSL::Digest.new('SHA224').digest
     OpenSSL::Digest.new('SHA-384').digest
+
+    return if fips?
+
+    OpenSSL::Digest.new('RipeMD256').digest
     #OpenSSL::Digest.new('SHA3').digest
     OpenSSL::Digest.new('Whirlpool').digest
   end if defined? JRUBY_VERSION

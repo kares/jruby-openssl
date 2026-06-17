@@ -55,6 +55,28 @@ class TestHMAC < TestCase
     assert_equal h2.digest, h1.digest
 
     assert_raise(TypeError) { h1.update(1) }
+  rescue OpenSSL::HMACError => e
+    skip 'FIPS approved-only mode rejects SHA-256/HMAC' if fips? && e.message.include?('approved mode')
+    raise e
   end
 
+  def test_unsupported_digest
+    err = assert_raise(OpenSSL::Digest::DigestError) do
+      OpenSSL::HMAC.new('key', 'BOGUS')
+    end
+    assert_match(/unsupported.*BOGUS/i, err.message)
+  end
+
+  def test_fips_restricted_digest
+    omit_on_non_fips
+
+    # MD5 is not FIPS-approved; should raise DigestError
+    err = assert_raise(OpenSSL::Digest::DigestError) do
+      OpenSSL::HMAC.new('key', 'MD5')
+    end
+    assert_match(/unsupported.*MD5/i, err.message)
+
+    # SHA256 is FIPS-approved and should work
+    assert_nothing_raised { OpenSSL::HMAC.new('key', 'SHA256') }
+  end
 end

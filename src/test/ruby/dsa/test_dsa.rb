@@ -110,6 +110,8 @@ class TestDSA < TestCase
   end
 
   def test_dsa_sys_sign_verify
+    omit_on_fips 'DSA signature generation is not FIPS-approved'
+
     dsa = OpenSSL::PKey::DSA.new(1024)
     doc = 'Sign ME!'
     digest = OpenSSL::Digest::SHA1.digest(doc)
@@ -119,6 +121,8 @@ class TestDSA < TestCase
   end
 
   def test_sign_verify_raw
+    omit_on_fips 'DSA signature generation is not FIPS-approved'
+
     key = Fixtures.pkey("dsa2048")
     data = 'Sign me!'
     digest = OpenSSL::Digest.digest('SHA1', data)

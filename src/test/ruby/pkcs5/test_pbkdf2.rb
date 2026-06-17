@@ -3,6 +3,8 @@ require File.expand_path('../test_helper', File.dirname(__FILE__))
 class TestPKCS5 < TestCase
 
   def test_pbkdf2_hmac_sha1
+    omit_on_fips 'test vector uses HMAC key shorter than 112 bits'
+
     pass = 'secret'
     salt = 'sugar0'
     iter = 42
@@ -13,6 +15,8 @@ class TestPKCS5 < TestCase
   end
 
   def test_pbkdf2_hmac_sha1_with_empty_salt
+    omit_on_fips 'test vector uses HMAC key shorter than 112 bits'
+
     pass = ' '
     expected = "\x81\e\xE9F\xD8op\xA6\x9D\xF4=\tX\x13\x82D\xF7\xF3\x7F\xC8aFR+"
     expected.force_encoding('ASCII-8BIT') if ''.respond_to?(:force_encoding)
@@ -20,6 +24,8 @@ class TestPKCS5 < TestCase
   end
 
   def test_pbkdf2_hmac
+    omit_on_fips 'test vector uses unapproved digest or HMAC key shorter than 112 bits'
+
     pass = 'SecreT2'
     salt = '0123456789001234567890'
 
@@ -40,7 +46,19 @@ class TestPKCS5 < TestCase
   end
 
 
+  def test_pbkdf2_hmac_fips_approved
+    pass = 'passwordpassword'
+    salt = '0123456789001234567890'
+    digest = OpenSSL::Digest::SHA256.new
+    expected = ["c5c6ef07ec47a52962b958f18e6bea610e3cce77ea4be6902efda71aeb19e0224ff21d692ba8a37d2ba3a9e7e942381542234fbdced87eb8cddb5129da58cc33"].pack("H*")
+    expected.force_encoding('ASCII-8BIT') if ''.respond_to?(:force_encoding)
+    assert_equal expected, OpenSSL::PKCS5.pbkdf2_hmac(pass, salt, 100, 64, digest)
+  end
+
+
   def test_pbkdf2_hmac_sha1_rfc6070_c_4096_len_16
+    omit_on_fips 'test vector uses HMAC key shorter than 112 bits'
+
     p ="pass\0word"
     s = "sa\0lt"
     c = 4096
@@ -52,7 +70,7 @@ class TestPKCS5 < TestCase
   end
 
   def test_pbkdf2_hmac_sha256_c_20000_len_32
-    p ="password"
+    p = fips? ? "passwordpassword" : "password"
     s = OpenSSL::Random.random_bytes(16)
     c = 20000
     len = 32

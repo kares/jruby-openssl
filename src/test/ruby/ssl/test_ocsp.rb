@@ -92,11 +92,11 @@ class TestOCSP < TestCase
     request = OpenSSL::OCSP::Request.new
     cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
     request.add_certid(cid)
-    request.sign(@cert, @cert_key, [@ca_cert], 0)
+    request.sign(@cert, @cert_key, [@ca_cert], 0, OpenSSL::Digest::SHA256.new)
     asn1 = OpenSSL::ASN1.decode(request.to_der)
     # TODO: ASN1#to_der seems to be missing some data...
     # assert_equal cid.to_der, asn1.value[0].value.find { |a| a.tag_class == :UNIVERSAL }.value[0].value[0].to_der
-    assert_equal OpenSSL::ASN1.ObjectId("sha1WithRSAEncryption").to_der, asn1.value[1].value[0].value[0].value[0].to_der
+    assert_equal OpenSSL::ASN1.ObjectId("sha256WithRSAEncryption").to_der, asn1.value[1].value[0].value[0].value[0].to_der
     # assert_equal @cert.to_der, asn1.value[1].value[0].value[2].value[0].value[0].to_der
     # assert_equal @ca_cert.to_der, asn1.value[1].value[0].value[2].value[0].value[1].to_der
     # assert_equal asn1.to_der, OpenSSL::OCSP::Request.new(asn1.to_der).to_der
@@ -108,18 +108,20 @@ class TestOCSP < TestCase
 
     # with signer cert
     req = OpenSSL::OCSP::Request.new.add_certid(cid)
-    req.sign(@cert, @cert_key, [])
+    req.sign(@cert, @cert_key, [], 0, OpenSSL::Digest::SHA256.new)
     assert_equal true, req.verify([], store)
 
-    # without signer cert
-    req = OpenSSL::OCSP::Request.new.add_certid(cid)
-    req.sign(@cert, @cert_key, nil)
-    assert_equal false, req.verify([@cert2], store)
-    assert_equal false, req.verify([], store) # no signer
-    assert_equal false, req.verify([], store, OpenSSL::OCSP::NOVERIFY)
+    unless fips?
+      # without signer cert
+      req = OpenSSL::OCSP::Request.new.add_certid(cid)
+      req.sign(@cert, @cert_key, nil, 0, OpenSSL::Digest::SHA256.new)
+      assert_equal false, req.verify([@cert2], store)
+      assert_equal false, req.verify([], store) # no signer
+      assert_equal false, req.verify([], store, OpenSSL::OCSP::NOVERIFY)
 
-    assert_equal true, req.verify([@cert], store, OpenSSL::OCSP::NOINTERN)
-    ret = req.verify([@cert], store)
+      assert_equal true, req.verify([@cert], store, OpenSSL::OCSP::NOINTERN)
+      ret = req.verify([@cert], store)
+
     if ret || OpenSSL::OPENSSL_VERSION =~ /OpenSSL/ && OpenSSL::OPENSSL_VERSION_NUMBER >= 0x10002000
       assert_equal true, ret
     else
@@ -127,6 +129,7 @@ class TestOCSP < TestCase
       # OCSP_NOINTERN is not specified.
       # fixed by OpenSSL 1.0.1j, 1.0.2 and LibreSSL 2.4.2
       pend "RT2560: ocsp_req_find_signer"
+      end
     end
   end
 
@@ -153,23 +156,24 @@ class TestOCSP < TestCase
 
   def test_basic_response_der
     bres = OpenSSL::OCSP::BasicResponse.new
-    cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
+    cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA256.new)
     bres.add_status(cid, OpenSSL::OCSP::V_CERTSTATUS_GOOD, 0, nil, -300, 500, [])
     bres.add_nonce("NONCE")
-    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0)
+    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0, OpenSSL::Digest::SHA256.new)
     der = bres.to_der
     asn1 = OpenSSL::ASN1.decode(der)
     assert_equal OpenSSL::ASN1.Sequence([@ocsp_cert, @ca_cert]).to_der, asn1.value[3].value[0].to_der
     assert_equal der, OpenSSL::OCSP::BasicResponse.new(der).to_der
-  rescue TypeError
-    if /GENERALIZEDTIME/ =~ $!.message
-      pend "OCSP_basic_sign() is broken"
-    else
-      raise
-    end
+  # rescue TypeError
+  #   if /GENERALIZEDTIME/ =~ $!.message
+  #     pend "OCSP_basic_sign() is broken"
+  #   else
+  #     raise
+  #   end
   end
 
   def test_basic_response_sign_verify
+    omit_on_fips 'OCSP BasicResponse#sign defaults to SHA-1'
     store = OpenSSL::X509::Store.new.add_cert(@ca_cert)
 
     # signed by CA
@@ -190,11 +194,12 @@ class TestOCSP < TestCase
     assert_equal true, bres.verify([], store)
     assert_equal false, bres.verify([], store, OpenSSL::OCSP::NOCHAIN)
     # OpenSSL had a bug on this; test that our workaround works
-    bres.sign(@ocsp_cert, @ocsp_key, [])
+    bres.sign(@ocsp_cert, @ocsp_key, [], 0, OpenSSL::Digest::SHA256.new)
     assert_equal true, bres.verify([@cert], store)
   end
 
   def test_basic_response_dup
+    omit_on_fips 'OCSP BasicResponse#sign defaults to SHA-1'
     bres = OpenSSL::OCSP::BasicResponse.new
     cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
     bres.add_status(cid, OpenSSL::OCSP::V_CERTSTATUS_GOOD, 0, nil, -300, 500, [])
@@ -264,7 +269,7 @@ class TestOCSP < TestCase
     bres = OpenSSL::OCSP::BasicResponse.new
     cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
     bres.add_status(cid, OpenSSL::OCSP::V_CERTSTATUS_GOOD, 0, nil, -300, 500, [])
-    bres.sign(@ocsp_cert, @ocsp_key, [])
+    bres.sign(@ocsp_cert, @ocsp_key, [], 0, OpenSSL::Digest::SHA256.new)
     res = OpenSSL::OCSP::Response.create(OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL, bres)
 
     assert_equal bres.to_der, res.basic.to_der
@@ -275,7 +280,7 @@ class TestOCSP < TestCase
     bres = OpenSSL::OCSP::BasicResponse.new
     cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
     bres.add_status(cid, OpenSSL::OCSP::V_CERTSTATUS_GOOD, 0, nil, -300, 500, [])
-    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0)
+    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0, OpenSSL::Digest::SHA256.new)
     res = OpenSSL::OCSP::Response.create(OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL, bres)
     der = res.to_der
     asn1 = OpenSSL::ASN1.decode(der)
@@ -287,7 +292,7 @@ class TestOCSP < TestCase
 
   def test_response_dup
     bres = OpenSSL::OCSP::BasicResponse.new
-    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0)
+    bres.sign(@ocsp_cert, @ocsp_key, [@ca_cert], 0, OpenSSL::Digest::SHA256.new)
     res = OpenSSL::OCSP::Response.create(OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL, bres)
     assert_equal res.to_der, res.dup.to_der
   end

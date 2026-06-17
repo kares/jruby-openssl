@@ -17,6 +17,8 @@ class TestCipher < TestCase
   end
 
   def test_cipher_extended_support
+    skip_fips_unapproved_ciphers
+
     # NOTE: since 0.9.6 we allow the underlying JCE cipher algorithms
     # to work - although we won't report support for them in `ciphers`
     OpenSSL::Cipher.new 'PBEWithSHA1AndRC2_40-CBC' # Sun JCE
@@ -29,6 +31,8 @@ class TestCipher < TestCase
   end if defined? JRUBY_VERSION
 
   def test_named_classes
+    skip_fips_unapproved_ciphers
+
     OpenSSL::Cipher::AES.new '192-ECB'
     #assert_raise_cipher_error { OpenSSL::Cipher::AES.new '128' }
     OpenSSL::Cipher::AES.new 128, 'CBC'
@@ -73,6 +77,8 @@ class TestCipher < TestCase
   end if defined? JRUBY_VERSION
 
   def test_encrypt_decrypt_des_ede3_cbc # borrowed from OpenSSL suite
+    skip_fips_unapproved_ciphers
+
     c1 = OpenSSL::Cipher::Cipher.new("DES-EDE3-CBC")
     c2 = OpenSSL::Cipher::DES.new(:EDE3, "CBC")
     key = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
@@ -357,6 +363,8 @@ class TestCipher < TestCase
   @@test_encrypt_decrypt_des_variations = nil
 
   def test_encrypt_decrypt_des_variations
+    skip_fips_unapproved_ciphers
+
     key = "\0\0\0\0\0\0\0\0" * 3
     iv =  "\0\0\0\0\0\0\0\0"
     data = "JPMNT"
@@ -426,6 +434,8 @@ class TestCipher < TestCase
   end
 
   def test_another_encrypt_des_ede3
+    skip_fips_unapproved_ciphers
+
     cipher = OpenSSL::Cipher.new('DES-EDE3')
     cipher.encrypt # calculated on MRI :
     cipher.key = "\x1F\xFF&\xA4k\x8F^\xC80\txq'S\x93\xD2\xE3A\xEDT\xDCs\xFD<=G\a\x8F=\x8FhE"
@@ -488,6 +498,10 @@ class TestCipher < TestCase
     end
   end
 
+  def skip_fips_unapproved_ciphers
+    omit_on_fips 'cipher is not FIPS-approved'
+  end
+
   def test_cipher_update_non_mod_length
     cipher = OpenSSL::Cipher.new 'AES-128-CFB1'
     cipher.encrypt
@@ -545,7 +559,12 @@ class TestCipher < TestCase
     bytes = '0000' * 4
     expected = "\xAC\xC8\x0E\xEDbX,\xB4\xCD\x02\x06O(p\xF8u" # from MRI
     actual = cipher.update(bytes)
-    assert_equal expected, actual
+    if fips?
+      assert_equal "", actual
+      assert_equal expected, cipher.final
+    else
+      assert_equal expected, actual
+    end
     assert_equal "", cipher.final unless defined? JRUBY_VERSION
 
     cipher = OpenSSL::Cipher.new('aes-128-gcm')
@@ -556,7 +575,12 @@ class TestCipher < TestCase
     bytes = '0000' * 4
     expected = "\xF3\xEF\xE6K\xBAJ\xAB=7m'\b\xE0\x06U\x9B" # from MRI
     actual = cipher.update(bytes)
-    assert_equal expected, actual
+    if fips?
+      assert_equal "", actual
+      assert_equal expected, cipher.final
+    else
+      assert_equal expected, actual
+    end
     #assert_equal "", cipher.final unless defined? JRUBY_VERSION
 
     cipher = OpenSSL::Cipher.new('aes-128-gcm')
@@ -569,7 +593,12 @@ class TestCipher < TestCase
     bytes = '0000' * 4
     expected = "\xAC\xC8\x0E\xEDbX,\xB4\xCD\x02\x06O(p\xF8u" # from MRI
     actual = cipher.update(bytes)
-    assert_equal expected, actual
+    if fips?
+      assert_equal "", actual
+      assert_equal expected, cipher.final
+    else
+      assert_equal expected, actual
+    end
     #assert_equal "", cipher.final
 
     cipher = OpenSSL::Cipher.new('aes-256-gcm')
@@ -582,7 +611,12 @@ class TestCipher < TestCase
     bytes = '0101' * 8
     expected = "\xA8I0\xF8\xCD?Z\xFD\x8E\"T\xF5\xF2\xC5\xC8\x05\xD4b\x85\xA3}'\xC99]\xC1\x16\x8B\x13\x9E-)" # from MRI
     actual = cipher.update(bytes)
-    assert_equal expected, actual
+    if fips?
+      assert_equal "", actual
+      assert_equal expected, cipher.final
+    else
+      assert_equal expected, actual
+    end
     #assert_equal "", cipher.final
   end
 
@@ -685,7 +719,10 @@ class TestCipher < TestCase
     bytes = '0000' * 5
     expected = "f0@\x02\xF6\xA8\xC2\rt\xCC\x83\x8F8e\x19RZ\x8D5\xF8" # from MRI
     actual = cipher.update(bytes)
-    if jruby? # NOTE: ugly but this is as far as JCE gets us :
+    if fips?
+      assert_equal expected, actual
+      assert_equal "", cipher.final
+    elsif jruby? # NOTE: ugly but this is as far as JCE gets us :
       assert_equal expected[0...16], actual
       # since on Java the padding is handled internally by the Cipher
       # we get :( "Z\x8D5\xF8\x10S|\xB7_R\xA2\x921\x93\x14]"

@@ -715,6 +715,8 @@ module PKCS7Test
     EXISTING_PKCS7_DEF = "0\202\002 \006\t*\206H\206\367\r\001\a\003\240\202\002\0210\202\002\r\002\001\0001\202\001\2700\201\331\002\001\0000B0=1\0230\021\006\n\t\222&\211\223\362,d\001\031\026\003org1\0310\027\006\n\t\222&\211\223\362,d\001\031\026\truby-lang1\v0\t\006\003U\004\003\f\002CA\002\001\0020\r\006\t*\206H\206\367\r\001\001\001\005\000\004\201\200\213kF\330\030\362\237\363$\311\351\207\271+_\310sr\344\233N\200\233)\272\226\343\003\224OOf\372 \r\301{\206\367\241\270\006\240\254\3179F\232\231Q\232\225\347\373\233\032\375\360\035o\371\275p\306\v5Z)\263\037\302|\307\300\327\a\375\023G'Ax\313\346\261\254\227K\026\364\242\337\367\362rk\276\023\217m\326\343F\366I1\263\nLuNf\234\203\261\300\030\232Q\277\231\f0\030\001\332\021\0030\201\331\002\001\0000B0=1\0230\021\006\n\t\222&\211\223\362,d\001\031\026\003org1\0310\027\006\n\t\222&\211\223\362,d\001\031\026\truby-lang1\v0\t\006\003U\004\003\f\002CA\002\001\0030\r\006\t*\206H\206\367\r\001\001\001\005\000\004\201\200\215\223\3428\2440]\0278\016\230,\315\023Tg\325`\376~\353\304\020\243N{\326H\003\005\361q\224OI\310\2324-\341?\355&r\215\233\361\245jF\255R\271\203D\304v\325\265\243\321$\bSh\031i\eS\240\227\362\221\364\232\035\202\f?x\031\223D\004ZHD\355'g\243\037\236mJ\323\210\347\274m\324-\351\332\353#A\273\002\"h\aM\202\347\236\265\aI$@\240bt=<\212\2370L\006\t*\206H\206\367\r\001\a\0010\035\006\t`\206H\001e\003\004\001\002\004\020L?\325\372\\\360\366\372\237|W\333nnI\255\200 \253\234\252\263\006\335\037\320\350{s\352r\337\304\305\216\223k\003\376f\027_\201\035#*\002yM\334"
 
     def test_encrypt_integration_test
+      omit_on_fips 'RSA PKCS#1 v1.5 key transport is not FIPS-approved'
+
       certs = [X509Cert]
       provider = org.jruby.ext.openssl.SecurityHelper.getSecurityProvider
       c = Cipher.get_instance('AES', provider)
@@ -874,6 +876,8 @@ module PKCS7Test
       cipher = OpenSSL::Cipher.new('aes-128-cbc')
       data = "aaaaa\nbbbbb\nccccc\n"
 
+      omit_on_fips 'RSA key size outside of accepted range - 1024 bits: RSA/PKCS1V1.5'
+
       tmp = OpenSSL::PKCS7.encrypt(certs, data, cipher, OpenSSL::PKCS7::BINARY)
       p7 = OpenSSL::PKCS7.new(tmp.to_der)
       recip = p7.recipients
@@ -917,6 +921,8 @@ module PKCS7Test
     end
 
     def test_signed
+      omit_on_fips 'PKCS7.sign defaults to SHA-1'
+
       store = OpenSSL::X509::Store.new
       store.add_cert(@ca_cert)
       ca_certs = [@ca_cert]
@@ -982,9 +988,32 @@ module PKCS7Test
       assert_equal Time, signers[1].signed_time.class
     end
 
+    def test_signed2 # FIPS approved
+      store = OpenSSL::X509::Store.new
+      store.add_cert(@ca_cert)
+
+      data = "aaaaa\nbbbbb\nccccc\n"
+      psi = OpenSSL::PKCS7::SignerInfo.new(@ee1_cert, @rsa2048, 'sha256')
+      p7 = OpenSSL::PKCS7.new
+      p7.type = :signed
+      p7.add_signer(psi)
+      p7.add_certificate(@ee1_cert)
+      p7.add_certificate(@ca_cert)
+      p7.add_data(data)
+
+      signed = OpenSSL::PKCS7.new(p7.to_der)
+      certs = signed.certificates
+      signers = signed.signers
+      assert_equal true, signed.verify([], store)
+      assert_equal(2, certs.size)
+      assert_equal(1, signers.size)
+      assert_equal(@ee1_cert.serial, signers[0].serial)
+      assert_equal(@ee1_cert.issuer.to_s, signers[0].issuer.to_s)
+    end
+
     def test_signed_add_signer
       data = "aaaaa\nbbbbb\nccccc\n"
-      psi = OpenSSL::PKCS7::SignerInfo.new(@ee1_cert, @rsa1024, 'sha256')
+      psi = OpenSSL::PKCS7::SignerInfo.new(@ee1_cert, @rsa2048, 'sha256')
       p7 = OpenSSL::PKCS7.new
       p7.type = :signed
       p7.add_signer(psi)
@@ -1018,6 +1047,8 @@ module PKCS7Test
     end
 
     def test_enveloped_add_recipient
+      omit_on_fips 'RSA PKCS1.5 encryption disallowed'
+
       data = "aaaaa\nbbbbb\nccccc\n"
       recipient_one = OpenSSL::PKCS7::RecipientInfo.new(@ee1_cert)
       recipient_two = OpenSSL::PKCS7::RecipientInfo.new(@ee2_cert)
@@ -1070,6 +1101,7 @@ module PKCS7Test
     end
 
     def test_initialize_copy
+      omit_on_fips 'PKCS7.sign defaults to SHA-1 and RSA-1024 is not FIPS-approved'
       p7 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, 'content', [@ca_cert], OpenSSL::PKCS7::BINARY)
       copy = p7.dup
 
@@ -1079,8 +1111,9 @@ module PKCS7Test
     end
 
     def test_new_from_file
+      omit_on_fips 'PKCS7.sign defaults to SHA-1'
       require 'tempfile'
-      p7 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, 'hello', [@ca_cert], OpenSSL::PKCS7::BINARY)
+      p7 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa2048, 'hello', [@ca_cert], OpenSSL::PKCS7::BINARY)
       der = p7.to_der
 
       f = Tempfile.new(['pkcs7', '.der'])

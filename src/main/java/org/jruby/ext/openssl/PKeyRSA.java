@@ -34,6 +34,7 @@ import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
+import java.security.InvalidParameterException;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -239,7 +240,7 @@ public class PKeyRSA extends PKey {
         try {
             return generateImpl(context, rsa, keySize, exp);
         }
-        catch (NoSuchAlgorithmException|InvalidAlgorithmParameterException e) {
+        catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             throw newRSAError(context.runtime, e.getMessage());
         }
         catch (RuntimeException e) {
@@ -554,11 +555,14 @@ public class PKeyRSA extends PKey {
             }
             return newString(context.runtime, privateKey.getEncoded());
         }
-        catch (NoClassDefFoundError e) {
-            throw newRSAError(context.runtime, bcExceptionMessage(e));
+        catch (NoClassDefFoundError ex) {
+            throw newRSAError(context.runtime, bcExceptionMessage(ex));
         }
-        catch (OperatorCreationException | IOException e) {
-            throw newRSAError(context.runtime, e.getMessage(), e);
+        catch (OperatorCreationException | IOException ex) {
+            throw newRSAError(context.runtime, ex);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
         }
     }
 
@@ -684,8 +688,8 @@ public class PKeyRSA extends PKey {
             byte[] output = engine.doFinal(buffer.getBytes());
             return newString(runtime, output);
         }
-        catch (GeneralSecurityException gse) {
-            throw newRSAError(runtime, gse.getMessage());
+        catch (GeneralSecurityException | InvalidParameterException ex) {
+            throw newRSAError(runtime, ex);
         }
         catch (Throwable ex) {
             return handlePotentialOperationError(runtime, ex);

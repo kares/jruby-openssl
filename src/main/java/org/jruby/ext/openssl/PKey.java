@@ -123,6 +123,16 @@ public abstract class PKey extends RubyObject {
         @JRubyMethod(name = "read", meta = true, required = 1, optional = 1)
         public static IRubyObject read(final ThreadContext context, IRubyObject recv, IRubyObject... args) {
             final Ruby runtime = context.runtime;
+            try {
+                return readImpl(context, args);
+            }
+            catch (Throwable ex) {
+                return handlePotentialOperationError(runtime, ex);
+            }
+        }
+
+        private static IRubyObject readImpl(final ThreadContext context, IRubyObject... args) {
+            final Ruby runtime = context.runtime;
 
             final IRubyObject data; final char[] pass;
             switch (args.length) {

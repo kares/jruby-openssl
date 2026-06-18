@@ -248,8 +248,8 @@ public class OCSPRequest extends RubyObject {
 
         try {
             if (digest.isNil()) digest = digestInstance.initialize(context, RubyString.newString(runtime, "SHA1"));
-            if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int(nocerts);
             if (!flags.isNil()) flag = RubyFixnum.fix2int(flags);
+            if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int(nocerts);
                     
             X509Cert signer = (X509Cert) args[0];
             PKey signerKey = (PKey) args[1];

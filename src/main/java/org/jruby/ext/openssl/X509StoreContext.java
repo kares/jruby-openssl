@@ -42,6 +42,7 @@ import org.jruby.RubyObject;
 import org.jruby.RubyString;
 import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.common.IRubyWarnings.ID;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.*;
@@ -227,6 +228,7 @@ public class X509StoreContext extends RubyObject {
     @JRubyMethod
     public IRubyObject current_cert(final ThreadContext context) {
         final X509AuxCertificate x509 = storeContext.getCurrentCertificate();
+        if (x509 == null) return context.nil;
         try {
             return X509Cert.wrap(context, x509.getEncoded());
         }
@@ -238,9 +240,10 @@ public class X509StoreContext extends RubyObject {
     @JRubyMethod
     public IRubyObject current_crl(final ThreadContext context) {
         final Ruby runtime = context.runtime;
+        final java.security.cert.X509CRL crl = storeContext.getCurrentCRL();
+        if (crl == null) return context.nil;
         final RubyClass _CRL = _CRL(runtime);
         try {
-            final java.security.cert.X509CRL crl = storeContext.getCurrentCRL();
             return _CRL.newInstance(context, newString(runtime, crl.getEncoded()), Block.NULL_BLOCK);
         }
         catch (CRLException e) {
@@ -250,6 +253,7 @@ public class X509StoreContext extends RubyObject {
 
     @JRubyMethod
     public IRubyObject cleanup(final ThreadContext context) {
+        context.runtime.getWarnings().warn(ID.DEPRECATED_METHOD, "OpenSSL::X509::StoreContext#cleanup is deprecated");
         try {
             storeContext.cleanup();
         }

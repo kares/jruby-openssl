@@ -36,9 +36,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.interfaces.EdDSAPublicKey;
 
-public final class PKeyShim {
-
-    private PKeyShim() {}
+public abstract class PKeyShim {
 
     /** extract raw point encoding from an EdDSA public key */
     public static byte[] getEdDSAPointEncoding(PublicKey key) {

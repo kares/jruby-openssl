@@ -66,8 +66,24 @@ class TestOCSP < TestCase
   def test_certificate_id_hash_algorithm
     cid_sha1 = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)
     cid_sha256 = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA256.new)
+    cid_sha384 = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA384.new)
+    cid_sha512 = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA512.new)
     assert_equal "sha1", cid_sha1.hash_algorithm
     assert_equal "sha256", cid_sha256.hash_algorithm
+    assert_equal "sha384", cid_sha384.hash_algorithm
+    assert_equal "sha512", cid_sha512.hash_algorithm
+  end
+
+  def test_certificate_id_sha2_der
+    {
+      OpenSSL::Digest::SHA224.new => "SHA224",
+      OpenSSL::Digest::SHA384.new => "SHA384",
+      OpenSSL::Digest::SHA512.new => "SHA512",
+    }.each do |digest, oid_name|
+      cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, digest)
+      asn1 = OpenSSL::ASN1.decode(cid.to_der)
+      assert_equal OpenSSL::ASN1.ObjectId(oid_name).to_der, asn1.value[0].value[0].to_der
+    end
   end
 
   def test_certificate_id_der

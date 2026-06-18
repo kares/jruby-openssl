@@ -325,6 +325,18 @@ class TestASN1 < TestCase
     assert_equal "2.16.840.1.101.3.4.2.1", obj.oid
     assert_equal "SHA256", obj.sn
     assert_equal "sha256", obj.ln
+    obj = OpenSSL::ASN1::ObjectId.new("sha384")
+    assert_equal "2.16.840.1.101.3.4.2.2", obj.oid
+    assert_equal "SHA384", obj.sn
+    assert_equal "sha384", obj.ln
+    obj = OpenSSL::ASN1::ObjectId.new("sha512")
+    assert_equal "2.16.840.1.101.3.4.2.3", obj.oid
+    assert_equal "SHA512", obj.sn
+    assert_equal "sha512", obj.ln
+    obj = OpenSSL::ASN1::ObjectId.new("sha224")
+    assert_equal "2.16.840.1.101.3.4.2.4", obj.oid
+    assert_equal "SHA224", obj.sn
+    assert_equal "sha224", obj.ln
     scts = OpenSSL::ASN1::ObjectId.new("1.3.6.1.4.1.11129.2.4.2")
     assert_equal "ct_precert_scts", scts.sn
     assert_equal "CT Precertificate SCTs", scts.ln

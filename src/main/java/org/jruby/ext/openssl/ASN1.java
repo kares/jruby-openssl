@@ -288,6 +288,9 @@ public class ASN1 {
         addObject(runtime, 185, "AES-256-OFB", "aes-256-ofb","2.16.840.1.101.3.4.1.43");
         addObject(runtime, 186, "AES-256-CFB", "aes-256-cfb","2.16.840.1.101.3.4.1.44");
         addObject(runtime, 672, "SHA256", "sha256", "2.16.840.1.101.3.4.2.1");
+        addObject(runtime, 673, "SHA384", "sha384", "2.16.840.1.101.3.4.2.2");
+        addObject(runtime, 674, "SHA512", "sha512", "2.16.840.1.101.3.4.2.3");
+        addObject(runtime, 675, "SHA224", "sha224", "2.16.840.1.101.3.4.2.4");
 
         addObject(runtime, 660, "street", "streetAddress", "2.5.4.9");
         addObject(runtime, 391, "DC", "domainComponent", "0.9.2342.19200300.100.1.25");

@@ -138,7 +138,7 @@ class TestX509Extension < TestCase
 
   def test_subject_key_identifier_hash
     #key = Fixtures.pkey("rsa1024")
-    key = OpenSSL::PKey::RSA.new(1024)
+    key = OpenSSL::PKey::RSA.new(2048)
     subject = "/C=FR/ST=IDF/L=PARIS/O=Company/CN=myhost.example"
     cert = OpenSSL::X509::Certificate.new
     cert.subject = cert.issuer = OpenSSL::X509::Name.parse(subject)

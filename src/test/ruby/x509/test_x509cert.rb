@@ -438,7 +438,7 @@ EOF
     cert = OpenSSL::X509::Certificate.new
     cert.not_before = Time.at(0)
     cert.not_after = Time.now + 1 * 365 * 86400
-    cert.public_key = pkey = OpenSSL::PKey::RSA.generate(1024)
+    cert.public_key = pkey = OpenSSL::PKey::RSA.generate(2048)
     cert.serial = 1
     cert.issuer = issuer
     cert.subject = subject
@@ -464,7 +464,7 @@ EOF
     context = OpenSSL::SSL::SSLContext.new
     context.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
-    context.key             = OpenSSL::PKey::RSA.new(1024)
+    context.key             = OpenSSL::PKey::RSA.new(2048)
     context.cert            = OpenSSL::X509::Certificate.new
     context.cert.subject    = OpenSSL::X509::Name.new( [['CN', 'localhost']] )
     context.cert.issuer     = context.cert.subject

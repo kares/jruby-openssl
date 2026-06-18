@@ -12,10 +12,12 @@ class TestX509Request < TestCase
 
   def test_public_key
     setup!
-    req = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA256'))
-    assert_equal(@rsa1024.public_key.to_der, req.public_key.to_der)
+    req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
+    assert_equal(@rsa2048.public_key.to_der, req.public_key.to_der)
     req = OpenSSL::X509::Request.new(req.to_der)
-    assert_equal(@rsa1024.public_key.to_der, req.public_key.to_der)
+    assert_equal(@rsa2048.public_key.to_der, req.public_key.to_der)
+
+    return if fips?
 
     req = issue_csr(0, @dn, @dsa512, OpenSSL::Digest.new('SHA256'))
     assert_equal(@dsa512.public_key.to_der, req.public_key.to_der)
@@ -23,7 +25,20 @@ class TestX509Request < TestCase
     assert_equal(@dsa512.public_key.to_der, req.public_key.to_der)
   end
 
+  def test_sign_and_verify_rsa_sha256
+    setup!
+    req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
+    assert_equal(true,  req.verify(@rsa2048))
+    assert_equal(false, req.verify(@rsa1024)) unless fips?
+    assert_equal(false, request_error_returns_false { req.verify(@dsa256) })
+    assert_equal(false, request_error_returns_false { req.verify(@dsa512) })
+    req.subject = OpenSSL::X509::Name.parse('/C=JP/CN=FooBar')
+    assert_equal(false, req.verify(@rsa2048))
+  end
+
   def test_sign_and_verify_rsa_sha1
+    omit_on_fips 'RSA-1024 and SHA-1 not FIPS approved'
+
     setup!
     req = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA1'))
     assert_equal(true,  req.verify(@rsa1024))
@@ -38,16 +53,18 @@ class TestX509Request < TestCase
   def test_sign_and_verify_rsa_md5
     setup!
     req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('MD5'))
-    assert_equal(false, req.verify(@rsa1024))
-    assert_equal(true,  req.verify(@rsa2048))
+    assert_equal(fips? ? nil : false, req.verify(@rsa1024))
+    assert_equal(true, req.verify(@rsa2048))
     assert_equal(false, request_error_returns_false { req.verify(@dsa256) })
     assert_equal(false, request_error_returns_false { req.verify(@dsa512) })
     req.subject = OpenSSL::X509::Name.parse('/C=JP/CN=FooBar')
     assert_equal(false, req.verify(@rsa2048))
-    # rescue OpenSSL::X509::RequestError # RHEL7 disables MD5
+  # rescue OpenSSL::X509::RequestError # RHEL7 disables MD5
   end
 
   def test_sign_and_verify_dsa
+    omit_on_fips 'DSA is not approved for signature generation'
+
     setup!
     req = issue_csr(0, @dn, @dsa512, OpenSSL::Digest.new('SHA256'))
     assert_equal(false, request_error_returns_false { req.verify(@rsa1024) })
@@ -59,7 +76,7 @@ class TestX509Request < TestCase
   end
 
   def test_csr_request_extensions
-    key = OpenSSL::PKey::RSA.new(512)
+    key = OpenSSL::PKey::RSA.new(2048)
     csr = OpenSSL::X509::Request.new
 
     csr.version = 0
@@ -136,9 +153,9 @@ class TestX509Request < TestCase
       OpenSSL::X509::Attribute.new('msExtReq', attrval)
     ]
 
-    req0 = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA256'))
+    req0 = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
     attrs.each { |attr| req0.add_attribute(attr) }
-    req1 = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA256'))
+    req1 = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
     req1.attributes = attrs
     assert_equal req0.to_der, req1.to_der
 
@@ -160,12 +177,14 @@ class TestX509Request < TestCase
 
   def test_dup
     setup!
-    req = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA256'))
+    req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
     assert_equal req.to_der, req.dup.to_der
   end
 
   # from GH-150
   def test_to_der_new_from_der
+    omit_on_fips 'RSA-1024 and SHA-1 not FIPS approved'
+
     require 'base64'
     # Build the CSR
     key = OpenSSL::PKey::RSA.new TEST_KEY_RSA1024
@@ -188,7 +207,7 @@ class TestX509Request < TestCase
 
   def test_to_text
     setup!
-    req = issue_csr(0, @dn, @rsa1024, OpenSSL::Digest.new('SHA256'))
+    req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('SHA256'))
     text = req.to_text
 
     assert_not_nil text
@@ -207,7 +226,7 @@ class TestX509Request < TestCase
     req = OpenSSL::X509::Request.new
     req.version = 0
     req.subject = @dn
-    req.public_key = @rsa1024.public_key
+    req.public_key = @rsa2048.public_key
 
     exts = [
       OpenSSL::X509::ExtensionFactory.new.create_extension('subjectAltName',
@@ -217,7 +236,7 @@ class TestX509Request < TestCase
       OpenSSL::ASN1.decode(d)
     end)])
     req.add_attribute(OpenSSL::X509::Attribute.new('extReq', ext_req))
-    req.sign(@rsa1024, OpenSSL::Digest.new('SHA256'))
+    req.sign(@rsa2048, OpenSSL::Digest.new('SHA256'))
 
     text = req.to_text
     assert_match(/Certificate Request:/, text)

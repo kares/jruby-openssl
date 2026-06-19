@@ -64,9 +64,9 @@ public abstract class SecurityHelper {
     private static final Logger LOG = Logger.getLogger(SecurityHelper.class);
 
     static final String BC_PROVIDER_CLASS = "org.bouncycastle.jce.provider.BouncyCastleProvider";
-    static final String BC_PROVIDER_NAME = "BC";
+    public static final String BC_PROVIDER_NAME = "BC";
     static final String BC_FIPS_PROVIDER_CLASS = "org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider";
-    static final String BC_FIPS_PROVIDER_NAME = "BCFIPS";
+    public static final String BC_FIPS_PROVIDER_NAME = "BCFIPS";
 
     static volatile boolean initSecurityProvider = true;
     static volatile Provider securityProvider; // 'BC' (or 'BCFIPS') provider

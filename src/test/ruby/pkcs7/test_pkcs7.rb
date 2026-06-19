@@ -1,12 +1,11 @@
 # coding: US-ASCII
 
 require File.expand_path('../test_helper', File.dirname(__FILE__))
+require File.expand_path('../pkcs7_helper', File.dirname(__FILE__))
 
 module PKCS7Test
   class TestPKCS7 < TestCase
     require 'jopenssl/load'
-
-    require File.expand_path('../pkcs7_helper', File.dirname(__FILE__))
 
     java_import 'org.jruby.ext.openssl.impl.PKCS7'
     java_import 'org.jruby.ext.openssl.impl.ASN1Registry'
@@ -900,6 +899,7 @@ module PKCS7Test
     def setup
       @rsa1024 = Fixtures.pkey('rsa1024')
       @rsa2048 = Fixtures.pkey('rsa2048')
+      @ca_rsa2048 = OpenSSL::PKey::RSA.generate(2048)
       ca = OpenSSL::X509::Name.new([%w[CN CA]])
       ee1 = OpenSSL::X509::Name.new([%w[CN EE1]])
       ee2 = OpenSSL::X509::Name.new([%w[CN EE2]])
@@ -910,14 +910,14 @@ module PKCS7Test
         ['subjectKeyIdentifier', 'hash', false],
         ['authorityKeyIdentifier', 'keyid:always', false]
       ]
-      @ca_cert = issue_cert(ca, @rsa2048, 1, ca_exts, nil, nil)
+      @ca_cert = issue_cert(ca, @ca_rsa2048, 1, ca_exts, nil, nil)
       ee_exts = [
         ['keyUsage', 'Non Repudiation, Digital Signature, Key Encipherment', true],
         ['authorityKeyIdentifier', 'keyid:always', false],
         ['extendedKeyUsage', 'clientAuth, emailProtection, codeSigning', false]
       ]
-      @ee1_cert = issue_cert(ee1, @rsa1024, 2, ee_exts, @ca_cert, @rsa2048)
-      @ee2_cert = issue_cert(ee2, @rsa1024, 3, ee_exts, @ca_cert, @rsa2048)
+      @ee1_cert = issue_cert(ee1, @rsa2048, 2, ee_exts, @ca_cert, @ca_rsa2048)
+      @ee2_cert = issue_cert(ee2, @rsa2048, 3, ee_exts, @ca_cert, @ca_rsa2048)
     end
 
     def test_signed
@@ -928,7 +928,7 @@ module PKCS7Test
       ca_certs = [@ca_cert]
 
       data = "aaaaa\r\nbbbbb\r\nccccc\r\n"
-      tmp = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, data, ca_certs)
+      tmp = OpenSSL::PKCS7.sign(@ee1_cert, @rsa2048, data, ca_certs)
       p7 = OpenSSL::PKCS7.new(tmp.to_der)
       certs = p7.certificates
       signers = p7.signers
@@ -947,7 +947,7 @@ module PKCS7Test
 
       data = "aaaaa\nbbbbb\nccccc\n"
       flag = OpenSSL::PKCS7::BINARY
-      tmp = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, data, ca_certs, flag)
+      tmp = OpenSSL::PKCS7.sign(@ee1_cert, @rsa2048, data, ca_certs, flag)
       assert_equal OpenSSL::PKCS7, tmp.class
 
       p7 = OpenSSL::PKCS7.new(tmp.to_der)
@@ -967,8 +967,8 @@ module PKCS7Test
       #   1. create two signed-data
       #   2. copy signerInfo and certificate from one to another
 
-      tmp1 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa1024, data, [], flag)
-      tmp2 = OpenSSL::PKCS7.sign(@ee2_cert, @rsa1024, data, [], flag)
+      tmp1 = OpenSSL::PKCS7.sign(@ee1_cert, @rsa2048, data, [], flag)
+      tmp2 = OpenSSL::PKCS7.sign(@ee2_cert, @rsa2048, data, [], flag)
       tmp1.add_signer(tmp2.signers[0])
       tmp1.add_certificate(@ee2_cert)
 

@@ -67,16 +67,20 @@ class TestHMAC < TestCase
     assert_match(/unsupported.*BOGUS/i, err.message)
   end
 
-  def test_fips_restricted_digest
-    omit_on_non_fips
+  def test_digest_restrictions
+    #omit_on_non_fips
 
-    # MD5 is not FIPS-approved; should raise DigestError
-    err = assert_raise(OpenSSL::Digest::DigestError) do
-      OpenSSL::HMAC.new('key', 'MD5')
-    end
-    assert_match(/unsupported.*MD5/i, err.message)
-
+    fips_key = 'x' * 14 # FIPS requires HMAC key >= 112 bits (14 bytes)
+    # HMAC-MD5 is allowed under FIPS 140-3 (HMAC security relies on the  PRF property)
+    assert_nothing_raised { OpenSSL::HMAC.new(fips_key, 'MD5') }
     # SHA256 is FIPS-approved and should work
-    assert_nothing_raised { OpenSSL::HMAC.new('key', 'SHA256') }
+    assert_nothing_raised { OpenSSL::HMAC.new(fips_key, 'SHA256') }
+
+    OpenSSL::HMAC.new('xyz', 'MD5')
+    begin
+      OpenSSL::HMAC.new('xyz', 'SHA256')
+    rescue OpenSSL::HMACError => e # >= 112 bits in approved mode
+      raise e if !fips? || !e.message.include?('approved mode')
+    end
   end
 end

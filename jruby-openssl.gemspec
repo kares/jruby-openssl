@@ -10,9 +10,10 @@ Gem::Specification.new do |s|
   s.platform = 'java'
   s.authors = ['Karol Bucek', 'Ola Bini', 'JRuby contributors']
   s.email = 'self+jruby-openssl@kares.org'
-  s.summary = "JRuby OpenSSL"
+  s.summary = "SSL/TLS and general-purpose cryptography for JRuby"
+  s.description = "Ruby OpenSSL compatibility for JRuby, "  +
+                  "based on Java JCA/JCE and Bouncy Castle libraries (does not depend on native OpenSSL)."
   s.homepage = 'https://github.com/jruby/jruby-openssl'
-  s.description = 'JRuby-OpenSSL is an add-on gem for JRuby that emulates the Ruby OpenSSL native library.'
   s.licenses = [ 'EPL-1.0', 'GPL-2.0', 'LGPL-2.1' ]
 
   s.require_paths = ['lib']

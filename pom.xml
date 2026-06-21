@@ -13,8 +13,8 @@ DO NOT MODIFY - GENERATED CODE
   <artifactId>jruby-openssl</artifactId>
   <version>0.19.0.dev-SNAPSHOT</version>
   <packaging>gem</packaging>
-  <name>JRuby OpenSSL</name>
-  <description>JRuby-OpenSSL is an add-on gem for JRuby that emulates the Ruby OpenSSL native library.</description>
+  <name>SSL/TLS and general-purpose cryptography for JRuby</name>
+  <description>Ruby OpenSSL compatibility for JRuby, based on Java JCA/JCE and Bouncy Castle libraries (does not depend on native OpenSSL).</description>
   <url>https://github.com/jruby/jruby-openssl</url>
   <licenses>
     <license>
@@ -273,7 +273,6 @@ DO NOT MODIFY - GENERATED CODE
         <configuration>
           <source>1.8</source>
           <target>1.8</target>
-          <release>8</release>
           <encoding>UTF-8</encoding>
           <debug>true</debug>
           <showWarnings>true</showWarnings>

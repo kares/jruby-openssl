@@ -149,6 +149,15 @@ class TestX509Store < TestCase
     assert store.verify(@cert)
   end
 
+  def test_store_context_verify_raises_on_reuse
+    store = OpenSSL::X509::Store.new
+    store.add_file @ca_cert
+    ctx = OpenSSL::X509::StoreContext.new(store, @cert)
+    ctx.verify
+    # MRI raises StoreError when X509_verify_cert returns -1 (internal error)
+    assert_raise(OpenSSL::X509::StoreError) { ctx.verify }
+  end
+
   # CRuby raises TypeError (not StoreError) for wrong argument types
   def test_add_cert_type_check
     store = OpenSSL::X509::Store.new

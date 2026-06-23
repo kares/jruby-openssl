@@ -173,7 +173,7 @@ class TestSSL < TestCase
                            not_before: now, not_after: now + 1800)
 
     start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
-      # verify_hostname defaults to false/nil — mismatched hostname should succeed
+      # verify_hostname defaults to false/nil - mismatched hostname should succeed
       ctx = OpenSSL::SSL::SSLContext.new
       ctx.cert_store = OpenSSL::X509::Store.new
       ctx.cert_store.add_cert(@ca_cert)
@@ -182,7 +182,7 @@ class TestSSL < TestCase
       sock = TCPSocket.new("127.0.0.1", port)
       ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
       ssl.hostname = "wrong.example.com"
-      ssl.connect # should succeed — verify_hostname is not set
+      ssl.connect # should succeed - verify_hostname is not set
     ensure
       ssl&.close rescue nil
       sock&.close rescue nil
@@ -344,6 +344,64 @@ class TestSSL < TestCase
         ssl&.close rescue nil
         sock&.close rescue nil
       end
+    end
+  end
+
+  # SSL_get_peer_cert_chain behavior differs between C OpenSSL and JSSE:
+  #   C OpenSSL server-side: excludes the peer's leaf cert (use peer_cert for that)
+  #   C OpenSSL client-side: includes the server's leaf cert
+  #   JSSE (both sides):     always includes the leaf cert
+  # This test documents the difference; both are valid TLS implementations.
+  def test_peer_cert_chain_server_side
+    now = Time.now
+    int_key = OpenSSL::PKey::RSA.new(2048)
+    int_cert = issue_cert(
+      OpenSSL::X509::Name.parse("/CN=Intermediate"), int_key, 10,
+      [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]],
+      @ca_cert, @ca_key, not_before: now, not_after: now + 3600)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+    leaf_cert = issue_cert(
+      OpenSSL::X509::Name.parse("/CN=Leaf"), leaf_key, 11,
+      [["keyUsage","keyEncipherment,digitalSignature",true]],
+      int_cert, int_key, not_before: now, not_after: now + 1800)
+
+    server_peer_cert = nil
+    server_peer_chain = nil
+
+    ctx_proc = Proc.new do |ctx|
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.cert_store = OpenSSL::X509::Store.new
+      ctx.cert_store.add_cert(@ca_cert)
+    end
+
+    server_proc = Proc.new do |sctx, ssl|
+      server_peer_cert = ssl.peer_cert
+      server_peer_chain = ssl.peer_cert_chain
+      readwrite_loop(sctx, ssl)
+    end
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true,
+                 ctx_proc: ctx_proc, server_proc: server_proc) do |server, port|
+      cctx = OpenSSL::SSL::SSLContext.new
+      cctx.cert = leaf_cert
+      cctx.key = leaf_key
+      cctx.extra_chain_cert = [int_cert]
+      cctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      server_connect(port, cctx) do |ssl|
+        ssl.puts "hello"; ssl.gets
+      end
+    end
+
+    # Both: peer_cert is the leaf
+    assert_equal "/CN=Leaf", server_peer_cert.subject.to_s
+
+    chain_subjects = server_peer_chain.map { |c| c.subject.to_s }
+    if defined?(JRUBY_VERSION)
+      # JSSE's getPeerCertificates always includes the leaf
+      assert_equal ["/CN=Leaf", "/CN=Intermediate"], chain_subjects
+    else
+      # C OpenSSL's SSL_get_peer_cert_chain on server side excludes the leaf
+      assert_equal ["/CN=Intermediate"], chain_subjects
     end
   end
 

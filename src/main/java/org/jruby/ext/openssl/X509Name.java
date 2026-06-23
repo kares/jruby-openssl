@@ -93,8 +93,9 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.ext.openssl.x509store.Name;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.X509._X509;
-import static org.jruby.ext.openssl.StringHelper.newString;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
+import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
 
 /**
  *
@@ -557,7 +558,7 @@ public class X509Name extends RubyObject {
 
     @JRubyMethod
     public IRubyObject to_utf8(ThreadContext context) {
-        return StringHelper.newUTF8String(context.runtime, toFormat(context.runtime, RFC2253));
+        return newUTF8String(context.runtime, toFormat(context.runtime, RFC2253));
     }
 
     @Override
@@ -582,8 +583,8 @@ public class X509Name extends RubyObject {
             final String value = valuesIter.next().toString();
             final Integer type = typesIter.next();
             final IRubyObject[] entry = new IRubyObject[] {
-                    StringHelper.newUTF8String(runtime, oName),
-                    StringHelper.newUTF8String(runtime, value),
+                    newUTF8String(runtime, oName),
+                    newUTF8String(runtime, value),
                     type == null ? runtime.getNil() : runtime.newFixnum(type)
             };
             entries.append( runtime.newArrayNoCopy(entry) );
@@ -766,7 +767,7 @@ public class X509Name extends RubyObject {
             seq = new DLSequence();
         }
         try {
-            return StringHelper.newString(runtime, seq.getEncoded(ASN1Encoding.DER));
+            return newString(runtime, seq.getEncoded(ASN1Encoding.DER));
         }
         catch (IOException e) {
             throw newNameError(runtime, e);

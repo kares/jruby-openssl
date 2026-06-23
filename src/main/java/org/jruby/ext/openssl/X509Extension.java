@@ -84,6 +84,7 @@ import static org.jruby.ext.openssl.ASN1._ASN1;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL::X509::Extension
@@ -666,7 +667,7 @@ public class X509Extension extends RubyObject {
             // to map its payload into ASN.1 object model (e.g. because of unsupported nested tags).
             // MRI/OpenSSL still renders the raw extension bytes in to_text instead of raising.
             LOG.debugStack(runtime, "rawValueAsString", e);
-            return StringHelper.newString(runtime, getRealValueEncoded());
+            return newString(runtime, getRealValueEncoded());
         }
         if ( value instanceof RubyArray ) {
             final RubyArray arr = (RubyArray) value;
@@ -904,7 +905,7 @@ public class X509Extension extends RubyObject {
     @JRubyMethod
     public RubyString value_der(final ThreadContext context) {
         try {
-            return StringHelper.newString(context.runtime, getRealValueEncoded());
+            return newString(context.runtime, getRealValueEncoded());
         }
         catch (IOException e) {
             throw newExtensionError(context.runtime, e);
@@ -914,7 +915,7 @@ public class X509Extension extends RubyObject {
     @JRubyMethod
     public RubyString to_der() {
         try {
-            return StringHelper.newString(getRuntime(), toDER());
+            return newString(getRuntime(), toDER());
         }
         catch (IOException e) {
             throw newExtensionError(getRuntime(), e);

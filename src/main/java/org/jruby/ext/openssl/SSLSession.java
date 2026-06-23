@@ -48,6 +48,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
 import static org.jruby.ext.openssl.SSL._SSL;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL::SSL::Session
@@ -145,7 +146,7 @@ public class SSLSession extends RubyObject {
 
     @JRubyMethod(name = "id")
     public RubyString id(final ThreadContext context) {
-        return StringHelper.newString(context.runtime, getIdBytes());
+        return newString(context.runtime, getIdBytes());
     }
 
     @JRubyMethod(name = "id=")
@@ -193,7 +194,7 @@ public class SSLSession extends RubyObject {
     @JRubyMethod(name = "to_der")
     public RubyString to_der(final ThreadContext context) {
         try {
-            return StringHelper.newString(context.runtime, buildDERSequence().getEncoded());
+            return newString(context.runtime, buildDERSequence().getEncoded());
         } catch (IOException e) {
             throw context.runtime.newRuntimeError(e.getMessage());
         }
@@ -208,7 +209,7 @@ public class SSLSession extends RubyObject {
             throw context.runtime.newRuntimeError(e.getMessage());
         }
         final String base64 = Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(derBytes);
-        return StringHelper.newString(context.runtime, PEM_BEGIN + "\n" + base64 + "\n" + PEM_END);
+        return newString(context.runtime, PEM_BEGIN + "\n" + base64 + "\n" + PEM_END);
     }
 
     @JRubyMethod(name = "to_text")
@@ -219,7 +220,7 @@ public class SSLSession extends RubyObject {
         text.append("    Session-ID: ").append(toHex(getIdBytes())).append('\n');
         text.append("    Time      : ").append(getTimeInSeconds()).append('\n');
         text.append("    Timeout   : ").append(getTimeout()).append(" (sec)\n");
-        return StringHelper.newString(context.runtime, text);
+        return newString(context.runtime, text);
     }
 
     @Override

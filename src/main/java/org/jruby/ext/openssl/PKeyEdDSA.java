@@ -42,6 +42,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * Wraps EdDSA keys (Ed25519, Ed448) using BouncyCastle's JCA EdDSA provider.
@@ -269,10 +270,10 @@ public class PKeyEdDSA extends PKey {
         final Ruby runtime = getRuntime();
         try {
             if (privateKey != null) {
-                return StringHelper.newString(runtime, privateKey.getEncoded());
+                return newString(runtime, privateKey.getEncoded());
             }
             if (publicKey != null) {
-                return StringHelper.newString(runtime, publicKey.getEncoded());
+                return newString(runtime, publicKey.getEncoded());
             }
             throw newPKeyError(runtime, "no key set");
         }

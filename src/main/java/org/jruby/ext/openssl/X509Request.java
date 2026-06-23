@@ -72,6 +72,7 @@ import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.PKey.supportedSignatureAlgorithm;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newIOError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -217,7 +218,7 @@ public class X509Request extends RubyObject {
     @JRubyMethod
     public RubyString to_der() {
         try {
-            return StringHelper.newString(getRuntime(), toDER());
+            return newString(getRuntime(), toDER());
         }
         catch (IOException ex) {
             throw getRuntime().newIOErrorFromException(ex);
@@ -315,7 +316,7 @@ public class X509Request extends RubyObject {
             }
         }
 
-        return StringHelper.newString(runtime, text);
+        return newString(runtime, text);
     }
 
     @JRubyMethod

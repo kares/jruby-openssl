@@ -38,6 +38,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.KDF.newKDFError;
 import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL::PKCS5
@@ -101,14 +102,14 @@ public class PKCS5 {
         // NOTE: on our own since e.g. "PBKDF2WithHmacMD5" not supported by Java
 
         // key = SecurityHelper.getSecretKeyFactory("PBKDF2WithHmac" + hash).generateSecret(spec);
-        // return StringHelper.newString(runtime, key.getEncoded());
+        // return newString(runtime, key.getEncoded());
 
         final String macAlg = "Hmac" + digestAlg;
 
         final Mac mac = SecurityHelper.getMac( macAlg );
         mac.init( new SimpleSecretKey(macAlg, pass) );
         final byte[] key = deriveKey(mac, salt, iter, keylen);
-        return StringHelper.newString(runtime, key);
+        return newString(runtime, key);
     }
 
     private static String mapDigestName(final String name) {
@@ -125,7 +126,7 @@ public class PKCS5 {
             final byte[] passBytes = pkcs5PasswordToBytes(pass);
             final Mac mac = SecurityHelper.getMac("HmacSHA1");
             mac.init(new SimpleSecretKey("HmacSHA1", passBytes));
-            return StringHelper.newString(runtime, deriveKey(mac, salt, iter, keySize));
+            return newString(runtime, deriveKey(mac, salt, iter, keySize));
         }
         catch (NoSuchAlgorithmException e) {
             throw newRuntimeError(runtime, e); // TODO?

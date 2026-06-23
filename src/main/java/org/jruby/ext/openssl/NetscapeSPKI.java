@@ -57,6 +57,7 @@ import org.jruby.ext.openssl.impl.NetscapeCertRequest;
 
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -120,7 +121,7 @@ public class NetscapeSPKI extends RubyObject {
     @JRubyMethod
     public IRubyObject to_der() {
         try {
-            return StringHelper.newString(getRuntime(), toDER());
+            return newString(getRuntime(), toDER());
         } catch (Exception ex) {
             throw newSPKIError(ex);
         }
@@ -130,7 +131,7 @@ public class NetscapeSPKI extends RubyObject {
     public IRubyObject to_pem() {
         try {
             byte[] derBytes = toDER(); // no Base64.DO_BREAK_LINES option needed for NSPKI
-            return StringHelper.newString(getRuntime(), Base64.encodeBytesToBytes(derBytes));
+            return newString(getRuntime(), Base64.encodeBytesToBytes(derBytes));
         } catch (Exception ex) {
             throw newSPKIError(ex);
         }
@@ -172,7 +173,7 @@ public class NetscapeSPKI extends RubyObject {
         text.append("Netscape SPKI:\n");
 
         final NetscapeCertRequest cert = (NetscapeCertRequest) this.cert;
-        if (cert == null) return StringHelper.newString(runtime, text);
+        if (cert == null) return newString(runtime, text);
 
         // public key algorithm
         final AlgorithmIdentifier keyAlg = cert.getKeyAlgorithm();
@@ -211,7 +212,7 @@ public class NetscapeSPKI extends RubyObject {
         }
         text.append('\n');
 
-        return StringHelper.newString(runtime, text);
+        return newString(runtime, text);
     }
 
     private static String resolveAlgorithmName(final Ruby runtime, final AlgorithmIdentifier algId) {

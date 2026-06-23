@@ -93,6 +93,7 @@ import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import static org.jruby.ext.openssl.impl.PKey.readECPrivateKey;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL::PKey::EC implementation.
@@ -578,7 +579,7 @@ public final class PKeyEC extends PKey {
             Signature signer = SecurityHelper.getSignature("NONEwithECDSA");
             signer.initSign(privateKey);
             signer.update(data.convertToString().getBytes());
-            return StringHelper.newString(context.runtime, signer.sign());
+            return newString(context.runtime, signer.sign());
         }
         catch (Exception ex) {
             throw newECError(context.runtime, ex.toString(), ex);
@@ -655,7 +656,7 @@ public final class PKeyEC extends PKey {
                 agreement.doPhase(ecPublicKey, true);
             }
             final byte[] secret = agreement.generateSecret();
-            return StringHelper.newString(context.runtime, secret);
+            return newString(context.runtime, secret);
         }
         catch (InvalidKeyException ex) {
             throw newECError(context.runtime, "invalid key: " + ex.getMessage());
@@ -816,7 +817,7 @@ public final class PKeyEC extends PKey {
         } catch (Exception e) {
             throw newECError(runtime, e.getMessage(), e);
         }
-        return StringHelper.newString(runtime, bytes);
+        return newString(runtime, bytes);
     }
 
     @Override
@@ -832,7 +833,7 @@ public final class PKeyEC extends PKey {
 
         try {
             byte[] encoded = toPrivateKeyStructure((ECPrivateKey) privateKey, publicKey, false).getEncoded(ASN1Encoding.DER);
-            return StringHelper.newString(runtime, encoded);
+            return newString(runtime, encoded);
         } catch (Exception e) {
             throw newECError(runtime, e.getMessage(), e);
         }
@@ -858,7 +859,7 @@ public final class PKeyEC extends PKey {
                 throw newECError(runtime, e.getMessage(), e);
             }
         }
-        return StringHelper.newString(runtime, encoded);
+        return newString(runtime, encoded);
     }
 
     private static org.bouncycastle.asn1.sec.ECPrivateKey toPrivateKeyStructure(final ECPrivateKey privateKey,
@@ -1163,7 +1164,7 @@ public final class PKeyEC extends PKey {
         @JRubyMethod
         public IRubyObject seed(final ThreadContext context) {
             final byte[] seed = getCurve().getSeed();
-            return seed == null ? context.nil : StringHelper.newString(context.runtime, seed);
+            return seed == null ? context.nil : newString(context.runtime, seed);
         }
 
         @JRubyMethod
@@ -1246,7 +1247,7 @@ public final class PKeyEC extends PKey {
                             ps.getCurve().getSeed());
                     encoded = ecParameters.getEncoded(ASN1Encoding.DER);
                 }
-                return StringHelper.newString(runtime, encoded);
+                return newString(runtime, encoded);
             } catch (IOException e) {
                 throw newGroupError(runtime, e.getMessage());
             }
@@ -1455,7 +1456,7 @@ public final class PKeyEC extends PKey {
         @JRubyMethod
         public IRubyObject to_octet_string(final ThreadContext context, final IRubyObject conversion_form) {
             final PointConversion conversionForm = Group.parse_point_conversion_form(context.runtime, conversion_form);
-            return StringHelper.newString(context.runtime, encodePoint(conversionForm));
+            return newString(context.runtime, encodePoint(conversionForm));
         }
 
         private boolean isInfinity() {

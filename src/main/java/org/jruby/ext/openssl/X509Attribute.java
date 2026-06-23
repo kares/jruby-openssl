@@ -56,6 +56,7 @@ import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.ASN1._ASN1;
 import static org.jruby.ext.openssl.util.RubySupport.newArgumentError;
 import static org.jruby.ext.openssl.util.RubySupport.newIOError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 import static org.jruby.ext.openssl.X509._X509;
 
 /**
@@ -152,7 +153,7 @@ public class X509Attribute extends RubyObject {
     @JRubyMethod
     public IRubyObject to_der(final ThreadContext context) {
         try { // NOTE: likely won't work due Constructive !
-            return StringHelper.newString(context.runtime, toDER(context));
+            return newString(context.runtime, toDER(context));
         }
         catch (IOException e) {
             throw newIOError(context.runtime, e);

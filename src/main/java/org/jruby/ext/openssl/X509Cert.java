@@ -108,6 +108,8 @@ import static org.jruby.ext.openssl.StringHelper.lowerHexBytes;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
+
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
@@ -349,7 +351,7 @@ public class X509Cert extends RubyObject {
     @JRubyMethod
     public IRubyObject to_der() {
         try {
-            return StringHelper.newString(getRuntime(), cert.getEncoded());
+            return newString(getRuntime(), cert.getEncoded());
         }
         catch (CertificateEncodingException ex) {
             throw newCertificateError(getRuntime(), ex);
@@ -371,7 +373,7 @@ public class X509Cert extends RubyObject {
         }
 
         try {
-            return StringHelper.newString(getRuntime(), buildTBSCertificate(publicKeyInfo));
+            return newString(getRuntime(), buildTBSCertificate(publicKeyInfo));
         }
         catch (IOException|CertificateEncodingException ex) {
             throw newCertificateError(getRuntime(), ex);

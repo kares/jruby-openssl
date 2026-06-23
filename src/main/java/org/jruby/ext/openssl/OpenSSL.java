@@ -39,6 +39,7 @@ import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
 
 import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL (methods as well as an entry point)
@@ -102,7 +103,7 @@ public final class OpenSSL {
 
         final byte[] version = { '2','.','2','.','3' }; // C OpenSSL gem version
 
-        _OpenSSL.setConstant("VERSION", StringHelper.newString(runtime, version));
+        _OpenSSL.setConstant("VERSION", newString(runtime, version));
 
         final RubyModule JOpenSSL = runtime.getModule("JOpenSSL");
         final RubyString jVERSION = JOpenSSL.getConstantAt("VERSION").asString();

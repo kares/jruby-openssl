@@ -47,6 +47,7 @@ import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -211,7 +212,7 @@ public class Digest extends RubyObject {
     public RubyString finish() {
         final byte[] hash = digest.digest();
         digest.reset();
-        return StringHelper.newString(getRuntime(), hash);
+        return newString(getRuntime(), hash);
     }
 
     @JRubyMethod

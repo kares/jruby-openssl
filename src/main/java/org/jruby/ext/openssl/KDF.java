@@ -38,6 +38,7 @@ import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.extractKeywordArgs;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * Provides functionality of various KDFs (key derivation function).
@@ -121,7 +122,7 @@ public class KDF {
             offset += copyLength;
         }
 
-        return StringHelper.newString(runtime, okm);
+        return newString(runtime, okm);
     }
 
     private static Mac getMac(final IRubyObject digest) throws NoSuchAlgorithmException {

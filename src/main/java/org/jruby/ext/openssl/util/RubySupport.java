@@ -4,20 +4,59 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.function.Function;
 
+import org.jcodings.specific.ASCIIEncoding;
+import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyBasicObject;
 import org.jruby.RubyClass;
+import org.jruby.RubyEncoding;
 import org.jruby.RubyHash;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.RubySymbol;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.util.ByteList;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
 public abstract class RubySupport {
+
+    public static RubyString newString(final Ruby runtime, final byte[] bytes) {
+        final ByteList byteList = new ByteList(bytes, false);
+        return RubyString.newString(runtime, byteList);
+    }
+
+    public static RubyString newString(final Ruby runtime, final byte[] bytes, final int count) {
+        final ByteList byteList = new ByteList(bytes, 0, count, false);
+        return RubyString.newString(runtime, byteList);
+    }
+
+    public static RubyString newString(final Ruby runtime, final CharSequence chars) {
+        return RubyString.newString(runtime, chars, ASCIIEncoding.INSTANCE);
+    }
+
+    public static ByteList setByteListShared(final RubyString str) {
+        str.setByteListShared();
+        return str.getByteList();
+    }
+
+    public static RubyString newUTF8String(final Ruby runtime, final ByteList bytes) {
+        ByteList byteList = new ByteList(RubyEncoding.encodeUTF8(bytes), UTF8Encoding.INSTANCE, false);
+        return RubyString.newString(runtime, byteList);
+    }
+
+    public static RubyString newUTF8String(final Ruby runtime, final CharSequence chars) {
+        ByteList byteList = new ByteList(RubyEncoding.encodeUTF8(chars), UTF8Encoding.INSTANCE, false);
+        return RubyString.newString(runtime, byteList);
+    }
+
+    public static RubyString newStringFrozen(final Ruby runtime, final CharSequence chars) {
+        final RubyString str = RubyString.newString(runtime, chars);
+        str.setFrozen(true);
+        return str;
+    }
 
     // error/exception factory helpers
 

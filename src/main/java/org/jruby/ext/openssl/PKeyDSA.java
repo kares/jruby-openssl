@@ -70,6 +70,7 @@ import static org.jruby.ext.openssl.impl.PKey.toASN1Primitive;
 import static org.jruby.ext.openssl.impl.PKey.toDerDSAKey;
 import static org.jruby.ext.openssl.impl.PKey.toDerDSAPublicKey;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -327,7 +328,7 @@ public class PKeyDSA extends PKey {
         catch (IOException e) {
             throw newDSAError(getRuntime(), e.getMessage(), e);
         }
-        return StringHelper.newString(context.runtime, bytes);
+        return newString(context.runtime, bytes);
     }
 
     @Override
@@ -346,7 +347,7 @@ public class PKeyDSA extends PKey {
         catch (IOException e) {
             throw newDSAError(getRuntime(), e.getMessage(), e);
         }
-        return StringHelper.newString(getRuntime(), bytes);
+        return newString(getRuntime(), bytes);
     }
 
     @Override

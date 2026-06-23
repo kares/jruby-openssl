@@ -82,6 +82,8 @@ import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
+import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -604,7 +606,7 @@ public class PKCS7 extends RubyObject {
         final RubyArray ary = runtime.newArray(crls.size());
         for (java.security.cert.X509CRL crl : crls) {
             try {
-                RubyString encoded = StringHelper.newString(runtime, crl.getEncoded());
+                RubyString encoded = newString(runtime, crl.getEncoded());
                 ary.append(X509CRL._CRL(runtime).newInstance(context, encoded, Block.NULL_BLOCK));
             }
             catch (CRLException e) {
@@ -758,13 +760,13 @@ public class PKCS7 extends RubyObject {
             LOG.debugStack(getRuntime(), null, ex);
             throw getRuntime().newIOErrorFromException(ex);
         }
-        return StringHelper.newUTF8String(getRuntime(), writer.getBuffer());
+        return newUTF8String(getRuntime(), writer.getBuffer());
     }
 
     @JRubyMethod
     public IRubyObject to_der() {
         try {
-            return StringHelper.newString(getRuntime(), p7.toASN1());
+            return newString(getRuntime(), p7.toASN1());
         }
         catch (IOException e) {
             throw newPKCS7Error(getRuntime(), e.getMessage());
@@ -919,7 +921,7 @@ public class PKCS7 extends RubyObject {
 
         @JRubyMethod
         public IRubyObject enc_key(final ThreadContext context) {
-            return StringHelper.newString(context.runtime, info.getEncKey().getOctets());
+            return newString(context.runtime, info.getEncKey().getOctets());
         }
     }
 

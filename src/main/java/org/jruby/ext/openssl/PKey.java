@@ -68,6 +68,7 @@ import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.Cipher._Cipher;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -483,7 +484,7 @@ public abstract class PKey extends RubyObject {
         if (publicKey == null) {
             throw newPKeyError(runtime, "public key not set");
         }
-        return StringHelper.newString(runtime, publicKey.getEncoded());
+        return newString(runtime, publicKey.getEncoded());
     }
 
     /**
@@ -519,7 +520,7 @@ public abstract class PKey extends RubyObject {
         if (args.length > 0) {
             throw newPKeyError(runtime, "encryption not supported for this key type");
         }
-        return StringHelper.newString(runtime, privateKey.getEncoded());
+        return newString(runtime, privateKey.getEncoded());
     }
 
     /**

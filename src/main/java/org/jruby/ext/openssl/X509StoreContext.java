@@ -57,6 +57,7 @@ import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;
 import static org.jruby.ext.openssl.x509store.X509Utils.verifyCertificateErrorString;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -190,7 +191,7 @@ public class X509StoreContext extends RubyObject {
         final RubyClass _Certificate = _Certificate(runtime);
         try {
             for (X509AuxCertificate x509 : chain) {
-                RubyString encoded = StringHelper.newString(runtime, x509.getEncoded());
+                RubyString encoded = newString(runtime, x509.getEncoded());
                 result.append( _Certificate.newInstance( context, encoded, Block.NULL_BLOCK ) );
             }
         }
@@ -240,7 +241,7 @@ public class X509StoreContext extends RubyObject {
         final RubyClass _CRL = _CRL(runtime);
         try {
             final java.security.cert.X509CRL crl = storeContext.getCurrentCRL();
-            return _CRL.newInstance(context, StringHelper.newString(runtime, crl.getEncoded()), Block.NULL_BLOCK);
+            return _CRL.newInstance(context, newString(runtime, crl.getEncoded()), Block.NULL_BLOCK);
         }
         catch (CRLException e) {
             throw newStoreError(runtime, e);

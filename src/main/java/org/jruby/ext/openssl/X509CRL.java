@@ -89,6 +89,7 @@ import static org.jruby.ext.openssl.X509Extension.newExtension;
 import static org.jruby.ext.openssl.StringHelper.appendGMTDateTime;
 import static org.jruby.ext.openssl.StringHelper.appendLowerHexValue;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -321,7 +322,7 @@ public class X509CRL extends RubyObject {
     @JRubyMethod
     public IRubyObject to_der(final ThreadContext context) {
         try {
-            return StringHelper.newString(context.runtime, getEncoded());
+            return newString(context.runtime, getEncoded());
         }
         catch (IOException|CRLException e) {
             throw newCRLError(context.runtime, e);

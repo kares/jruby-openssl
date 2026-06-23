@@ -102,6 +102,7 @@ import static org.jruby.ext.openssl.impl.PKey.toASN1Primitive;
 import static org.jruby.ext.openssl.impl.PKey.toDerRSAKey;
 import static org.jruby.ext.openssl.impl.PKey.toDerRSAPublicKey;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -399,7 +400,7 @@ public class PKeyRSA extends PKey {
         catch (Exception e) {
             throw newRSAError(getRuntime(), e.getMessage(), e);
         }
-        return StringHelper.newString(context.runtime, bytes);
+        return newString(context.runtime, bytes);
     }
 
     @Override
@@ -415,7 +416,7 @@ public class PKeyRSA extends PKey {
         catch (Exception e) {
             throw newRSAError(getRuntime(), e.getMessage(), e);
         }
-        return StringHelper.newString(getRuntime(), bytes);
+        return newString(getRuntime(), bytes);
     }
 
     @Override
@@ -549,9 +550,9 @@ public class PKeyRSA extends PKey {
                 final OutputEncryptor encryptor = new JcePKCSPBEOutputEncryptorBuilder(cipherOid)
                         .setProvider(SecurityHelper.getSecurityProvider()).build(passwd);
                 final PKCS8EncryptedPrivateKeyInfo enc = new JcaPKCS8EncryptedPrivateKeyInfoBuilder(privateKey).build(encryptor);
-                return StringHelper.newString(context.runtime, enc.getEncoded());
+                return newString(context.runtime, enc.getEncoded());
             }
-            return StringHelper.newString(context.runtime, privateKey.getEncoded());
+            return newString(context.runtime, privateKey.getEncoded());
         }
         catch (NoClassDefFoundError e) {
             throw newRSAError(context.runtime, bcExceptionMessage(e));
@@ -681,7 +682,7 @@ public class PKeyRSA extends PKey {
             javax.crypto.Cipher engine = SecurityHelper.getCipher("RSA" + cipherPadding);
             engine.init(initMode, initKey);
             byte[] output = engine.doFinal(buffer.getBytes());
-            return StringHelper.newString(runtime, output);
+            return newString(runtime, output);
         }
         catch (GeneralSecurityException gse) {
             throw newRSAError(runtime, gse.getMessage());
@@ -718,7 +719,7 @@ public class PKeyRSA extends PKey {
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
                 try {
-                    return StringHelper.newString(runtime, signWithPSS(hashBytes, digestAlg, mgf1Alg, saltLen));
+                    return newString(runtime, signWithPSS(hashBytes, digestAlg, mgf1Alg, saltLen));
                 } catch (IllegalArgumentException | GeneralSecurityException e) {
                     throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
                 } catch (Throwable ex) {
@@ -845,7 +846,7 @@ public class PKeyRSA extends PKey {
                 } catch (Throwable ex) {
                     return handlePotentialOperationError(runtime, ex);
                 }
-                return StringHelper.newString(runtime, signedData);
+                return newString(runtime, signedData);
             }
         }
         return super.sign(digest, data); // PKCS#1 v1.5 fallback
@@ -886,7 +887,7 @@ public class PKeyRSA extends PKey {
         } catch (Throwable ex) {
             return handlePotentialOperationError(runtime, ex);
         }
-        return StringHelper.newString(runtime, signedData);
+        return newString(runtime, signedData);
     }
 
     // verify_pss(digest, signature, data, salt_length:, mgf1_hash:)

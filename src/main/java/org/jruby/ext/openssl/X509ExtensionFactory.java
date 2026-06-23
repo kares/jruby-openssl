@@ -66,6 +66,8 @@ import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.ASN1Registry;
 import static org.jruby.ext.openssl.X509Extension.*;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
+import static org.jruby.ext.openssl.util.RubySupport.newStringFrozen;
 
 /**
  * OpenSSL::X509::ExtensionFactory
@@ -260,9 +262,9 @@ public class X509ExtensionFactory extends RubyObject {
     public IRubyObject create_ext_from_hash(final ThreadContext context, final IRubyObject arg) {
         final RubyHash hash = (RubyHash) arg;
         final Ruby runtime = context.runtime;
-        final IRubyObject oid = hash.op_aref(context, StringHelper.newStringFrozen(runtime, "oid"));
-        final IRubyObject value = hash.op_aref(context, StringHelper.newStringFrozen(runtime, "value"));
-        final IRubyObject critical = hash.op_aref(context, StringHelper.newStringFrozen(runtime, "critical"));
+        final IRubyObject oid = hash.op_aref(context, newStringFrozen(runtime, "oid"));
+        final IRubyObject value = hash.op_aref(context, newStringFrozen(runtime, "value"));
+        final IRubyObject critical = hash.op_aref(context, newStringFrozen(runtime, "critical"));
         return create_ext(context, new IRubyObject[]{oid, value, critical});
     }
 
@@ -271,7 +273,7 @@ public class X509ExtensionFactory extends RubyObject {
     public IRubyObject create_ext_from_string(final ThreadContext context, final IRubyObject arg) {
         final RubyString str = (RubyString) arg;
         final Ruby runtime = context.runtime;
-        RubyInteger i = str.index19(context, StringHelper.newString(runtime, new byte[]{'='})).convertToInteger("to_i");
+        RubyInteger i = str.index19(context, newString(runtime, new byte[]{'='})).convertToInteger("to_i");
         final int ind = (int) i.getLongValue();
         RubyString oid = (RubyString) str.substr19(runtime, 0, ind);
         oid.strip_bang19(context);
@@ -279,7 +281,7 @@ public class X509ExtensionFactory extends RubyObject {
         RubyString value = (RubyString) str.substr19(runtime, ind + 1, len);
         value.lstrip_bang19(context);
         IRubyObject critical = context.nil;
-        if (value.start_with_p(context, StringHelper.newString(runtime, critical__)).isTrue()) {
+        if (value.start_with_p(context, newString(runtime, critical__)).isTrue()) {
             critical = runtime.newBoolean(true); // value[ 0, 'critical, '.length ] = ''
             value.op_aset19(context, runtime.newFixnum(0), runtime.newFixnum(critical__.length), RubyString.newEmptyString(runtime));
         }
@@ -680,7 +682,7 @@ public class X509ExtensionFactory extends RubyObject {
         if ( section == null ) throw new IOException("Malformed CRLDistributionPoints section: " + sectionName + " in @config");
 
         if ( ! oneNamePerEntry ) {
-            final IRubyObject fullName = section.fastARef(StringHelper.newString(context.runtime, "fullname"));
+            final IRubyObject fullName = section.fastARef(newString(context.runtime, "fullname"));
             if ( fullName != null && !fullName.isNil() ) {
                 addDistributionPointToVector(context, points, fullName.toString());
                 return;
@@ -802,7 +804,7 @@ public class X509ExtensionFactory extends RubyObject {
         if (config == null || config.isNil()) { // TODO: support fallback to DEFAULT_CONFIG
             return null;
         }
-        return config.callMethod(context, "[]", StringHelper.newString(context.runtime, key));
+        return config.callMethod(context, "[]", newString(context.runtime, key));
     }
 
     private RubyHash getConfigSection(final ThreadContext context, final String sectionName) {

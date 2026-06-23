@@ -71,6 +71,7 @@ import static javax.crypto.Cipher.DECRYPT_MODE;
 import static javax.crypto.Cipher.ENCRYPT_MODE;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.setByteListShared;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -1470,7 +1471,7 @@ public class Cipher extends RubyObject {
             throw newCipherError(context.runtime, "authentication tag not supported by this cipher");
         }
         final RubyString auth_tag = tag.asString();
-        this.auth_tag = StringHelper.setByteListShared(auth_tag);
+        this.auth_tag = setByteListShared(auth_tag);
         return auth_tag;
     }
 
@@ -1507,7 +1508,7 @@ public class Cipher extends RubyObject {
             throw newCipherError(context.runtime, "authentication data not supported by this cipher");
         }
         final RubyString auth_data = data.asString();
-        this.auth_data = StringHelper.setByteListShared(auth_data);
+        this.auth_data = setByteListShared(auth_data);
         return auth_data;
     }
 

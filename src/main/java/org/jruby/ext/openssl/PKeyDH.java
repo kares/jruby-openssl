@@ -65,6 +65,7 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static org.jruby.ext.openssl.OpenSSL.bcExceptionMessage;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * OpenSSL::PKey::DH implementation.
@@ -386,7 +387,7 @@ public class PKeyDH extends PKey {
         }
         try {
             byte[] bytes = org.jruby.ext.openssl.impl.PKey.toDerDHKey(p, g);
-            return StringHelper.newString(getRuntime(), bytes);
+            return newString(getRuntime(), bytes);
         } catch (NoClassDefFoundError e) {
             throw newDHError(getRuntime(), bcExceptionMessage(e));
         } catch (IOException ioe) {

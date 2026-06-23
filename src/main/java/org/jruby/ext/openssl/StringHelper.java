@@ -29,14 +29,10 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Locale;
 
-import org.jcodings.specific.ASCIIEncoding;
-import org.jcodings.specific.UTF8Encoding;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
-import org.jruby.Ruby;
-import org.jruby.RubyEncoding;
 import org.jruby.RubyFile;
 import org.jruby.RubyIO;
 import org.jruby.RubyString;
@@ -52,47 +48,8 @@ import org.jruby.ext.openssl.x509store.PEMInputOutput;
  */
 abstract class StringHelper {
 
-    static RubyString newString(final Ruby runtime, final byte[] bytes) {
-        final ByteList byteList = new ByteList(bytes, false);
-        return RubyString.newString(runtime, byteList);
-    }
-
-    static RubyString newString(final Ruby runtime, final byte[] bytes, final int count) {
-        final ByteList byteList = new ByteList(bytes, 0, count, false);
-        return RubyString.newString(runtime, byteList);
-    }
-
-    static RubyString newString(final Ruby runtime, final CharSequence chars) {
-        return RubyString.newString(runtime, chars, ASCIIEncoding.INSTANCE);
-    }
-
-    static ByteList setByteListShared(final RubyString str) {
-        str.setByteListShared();
-        return str.getByteList();
-    }
-
-    static RubyString newUTF8String(final Ruby runtime, final ByteList bytes) {
-        ByteList byteList = new ByteList(RubyEncoding.encodeUTF8(bytes), UTF8Encoding.INSTANCE, false);
-        return RubyString.newString(runtime, byteList);
-    }
-
-    static RubyString newUTF8String(final Ruby runtime, final CharSequence chars) {
-        ByteList byteList = new ByteList(RubyEncoding.encodeUTF8(chars), UTF8Encoding.INSTANCE, false);
-        return RubyString.newString(runtime, byteList);
-    }
-
-    static RubyString newStringFrozen(final Ruby runtime, final ByteList bytes) {
-        final RubyString str = RubyString.newStringShared(runtime, bytes);
-        str.setFrozen(true); return str;
-    }
-
-    static RubyString newStringFrozen(final Ruby runtime, final CharSequence chars) {
-        final RubyString str = RubyString.newString(runtime, chars);
-        str.setFrozen(true); return str;
-    }
-
     static byte[] readX509PEM(final ThreadContext context, IRubyObject arg) {
-        final RubyString str = StringHelper.readPossibleDERInput(context, arg);
+        final RubyString str = readPossibleDERInput(context, arg);
         final ByteList bytes = str.getByteList();
         return readX509PEM(bytes.unsafeBytes(), bytes.getBegin(), bytes.getRealSize());
     }
@@ -131,13 +88,8 @@ abstract class StringHelper {
         return arg.asString();
     }
 
-    static final ByteList NEW_LINE = new ByteList(new byte[] { '\n' }, false);
-    static final ByteList COMMA_SPACE = new ByteList(new byte[] { ',',' ' }, false);
-
     static final char[] S20 = new char[] {
-        ' ',' ',' ',' ',  ' ',' ',' ',' ',
-        ' ',' ',' ',' ',  ' ',' ',' ',' ',
-        ' ',' ',' ',' ',
+        ' ',' ',' ',' ',  ' ',' ',' ',' ',  ' ',' ',' ',' ',  ' ',' ',' ',' ',  ' ',' ',' ',' '
     };
 
     private static final DateTimeFormatter ASN_DATE_NO_ZONE =

@@ -67,6 +67,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 @JRubyClass(name = "OpenSSL::PKCS12")
 public class PKCS12 extends RubyObject {
@@ -177,7 +178,7 @@ public class PKCS12 extends RubyObject {
     @JRubyMethod(name = "to_der")
     public IRubyObject to_der(final ThreadContext context) {
         if (storeBytes == null) return context.runtime.getNil();
-        return StringHelper.newString(context.runtime, storeBytes.clone());
+        return newString(context.runtime, storeBytes.clone());
     }
 
     private void generate(final ThreadContext context, final IRubyObject[] args) {
@@ -297,7 +298,7 @@ public class PKCS12 extends RubyObject {
 
     private static IRubyObject readPKey(final ThreadContext context, final byte[] encoded) {
         final Ruby runtime = context.runtime;
-        return PKey.PKeyModule.read(context, PKey._PKey(runtime), StringHelper.newString(runtime, encoded));
+        return PKey.PKeyModule.read(context, PKey._PKey(runtime), newString(runtime, encoded));
     }
 
     static Certificate[] certificateChain(final Ruby runtime, final X509Cert cert, final IRubyObject caArg) {

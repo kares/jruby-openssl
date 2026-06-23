@@ -86,6 +86,7 @@ import org.jruby.runtime.callsite.FunctionalCachingCallSite;
 
 import static org.jruby.ext.openssl.CipherStrings.SuiteToOSSL;
 import static org.jruby.ext.openssl.StringHelper.*;
+import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
 import static org.jruby.ext.openssl.SSL.*;
 import static org.jruby.ext.openssl.X509Cert._Certificate;
 import static org.jruby.ext.openssl.x509store.StoreContext.ossl_ssl_ex_vcb_idx;

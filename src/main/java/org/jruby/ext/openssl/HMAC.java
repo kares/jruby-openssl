@@ -44,6 +44,7 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -199,7 +200,7 @@ public class HMAC extends RubyObject {
 
     @JRubyMethod
     public IRubyObject digest() {
-        return StringHelper.newString(getRuntime(), getSignatureBytes());
+        return newString(getRuntime(), getSignatureBytes());
     }
 
     @JRubyMethod(name = { "hexdigest", "inspect", "to_s" })

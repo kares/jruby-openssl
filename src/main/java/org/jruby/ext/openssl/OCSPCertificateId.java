@@ -60,6 +60,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.Digest._Digest;
 import static org.jruby.ext.openssl.OCSP.*;
+import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**
  * An OpenSSL::OCSP::CertificateId identifies a certificate to the
@@ -271,7 +272,7 @@ public class OCSPCertificateId extends RubyObject {
     public IRubyObject to_der() {
         Ruby runtime = getRuntime();
         try {
-            return StringHelper.newString(runtime, bcCertId.getEncoded(ASN1Encoding.DER));
+            return newString(runtime, bcCertId.getEncoded(ASN1Encoding.DER));
         }
         catch (IOException e) {
             throw newOCSPError(runtime, e);

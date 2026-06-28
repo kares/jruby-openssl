@@ -50,7 +50,6 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.RC2ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.openssl.EncryptionException;
 import org.bouncycastle.openssl.PEMDecryptor;
 import org.bouncycastle.openssl.PEMDecryptorProvider;
@@ -229,7 +228,7 @@ public abstract class PEMUtils {
 
         final PEMWriter pemWriter = new PEMWriter(writer);
 
-        final SecureRandom random = CryptoServicesRegistrar.getSecureRandom();
+        final SecureRandom random = SecurityHelper.getSecureRandom();
 
         pemWriter.writeObject(MiscPEMGeneratorHelper.newGenerator(obj, algorithm, password, random));
         pemWriter.flush();

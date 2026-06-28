@@ -540,6 +540,10 @@ public class X509Name extends RubyObject {
         final String val = value.toString();
         for (int i = 0; i < val.length(); i++) {
             char c = val.charAt(i);
+            if ((i == 0 && (c == ' ' || c == '#')) || (i == val.length() - 1 && c == ' ')) {
+                str.append('\\').append(c);
+                continue;
+            }
             switch (c) {
                 case ',' :
                 case '+' :
@@ -562,7 +566,6 @@ public class X509Name extends RubyObject {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     @JRubyMethod
     public IRubyObject inspect() {
         return ObjectSupport.inspect(this, toFormat(getRuntime(), RFC2253));

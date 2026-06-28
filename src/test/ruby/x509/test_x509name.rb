@@ -53,6 +53,20 @@ class TestX509Name < TestCase
                  name.to_utf8
   end
 
+  def test_rfc2253_escapes_leading_and_trailing_chars
+    name = OpenSSL::X509::Name.new([
+      ['CN', ' leading'],
+      ['OU', 'trailing '],
+      ['O', ' both '],
+      ['DC', '#hash'],
+    ])
+
+    expected = 'DC=\\#hash,O=\\ both\\ ,OU=trailing\\ ,CN=\\ leading'
+    assert_equal expected, name.to_s(OpenSSL::X509::Name::RFC2253)
+    assert_equal expected, name.to_utf8
+    assert_equal "#<OpenSSL::X509::Name #{expected}>", name.inspect
+  end
+
   def test_raise_on_invalid_field_name
     name = OpenSSL::X509::Name.new
     name.add_entry 'invalidName', ''

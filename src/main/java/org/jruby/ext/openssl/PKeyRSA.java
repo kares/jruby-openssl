@@ -38,14 +38,18 @@ import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Signature;
 import java.security.SignatureException;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
+import java.security.spec.MGF1ParameterSpec;
+import java.security.spec.PSSParameterSpec;
 import java.security.spec.RSAKeyGenParameterSpec;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.security.spec.RSAPrivateKeySpec;
@@ -831,7 +835,7 @@ public class PKeyRSA extends PKey {
                 final byte[] signedData;
                 try {
                     signedData = signDataWithPSS(runtime, data.convertToString(), digestAlg, mgf1Alg, saltLen);
-                } catch (IllegalArgumentException | DataLengthException | CryptoException e) {
+                } catch (IllegalArgumentException | GeneralSecurityException e) {
                     throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
                 }
                 return StringHelper.newString(runtime, signedData);
@@ -870,7 +874,7 @@ public class PKeyRSA extends PKey {
         final byte[] signedData;
         try {
             signedData = signDataWithPSS(runtime, args[1].convertToString(), digestAlg, mgf1Alg, saltLen);
-        } catch (IllegalArgumentException | DataLengthException | CryptoException e) {
+        } catch (IllegalArgumentException | GeneralSecurityException e) {
             throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
         }
         return StringHelper.newString(runtime, signedData);
@@ -972,6 +976,49 @@ public class PKeyRSA extends PKey {
         }
     }
 
+    private static String toJcaDigestName(final String digestAlg) {
+        String upper = digestAlg.toUpperCase().replace("-", "");
+        switch (upper) {
+            case "SHA1": case "SHA": return "SHA-1";
+            case "SHA224":           return "SHA-224";
+            case "SHA256":           return "SHA-256";
+            case "SHA384":           return "SHA-384";
+            case "SHA512":           return "SHA-512";
+            default:
+                throw new IllegalArgumentException("Unsupported digest for PSS: " + digestAlg);
+        }
+    }
+
+    private static PSSParameterSpec buildPSSParameterSpec(String digestAlg, String mgf1Alg, int saltLen) {
+        final MGF1ParameterSpec mgfSpec = new MGF1ParameterSpec(toJcaDigestName(mgf1Alg));
+        return new PSSParameterSpec(toJcaDigestName(digestAlg), "MGF1", mgfSpec, saltLen, 1);
+    }
+
+    private static byte[] mgf1(byte[] seed, int maskLen, String digestAlg) throws NoSuchAlgorithmException {
+        MessageDigest digest = SecurityHelper.getMessageDigest(toJcaDigestName(digestAlg));
+        byte[] mask = new byte[maskLen];
+        byte[] counter = new byte[4];
+        int offset = 0;
+
+        for (int c = 0; offset < maskLen; c++) {
+            counter[0] = (byte) (c >>> 24);
+            counter[1] = (byte) (c >>> 16);
+            counter[2] = (byte) (c >>> 8);
+            counter[3] = (byte) c;
+
+            digest.reset();
+            digest.update(seed);
+            digest.update(counter);
+
+            byte[] block = digest.digest();
+            int len = Math.min(block.length, maskLen - offset);
+            System.arraycopy(block, 0, mask, offset, len);
+            offset += len;
+        }
+
+        return mask;
+    }
+
     // Signs pre-hashed bytes using RSA-PSS.  PSSSigner internally reuses the content digest for
     // BOTH hashing the message (phase 1) and hashing mDash (phase 2), so we use PreHashedDigest
     // which passes through pre-hashed bytes verbatim in phase 1 and runs a real SHA hash in phase 2.
@@ -991,6 +1038,18 @@ public class PKeyRSA extends PKey {
     // When rawVerify=false the input is raw data (verify with opts); a real SHA digest is used throughout.
     private static boolean verifyWithPSS(final boolean rawVerify, RSAPublicKey pubKey, byte[] inputBytes,
                                          String digestAlg, String mgf1Alg, int saltLen, byte[] sigBytes) {
+        if (!rawVerify) {
+            try {
+                Signature verifier = SecurityHelper.getSignature("RSASSA-PSS");
+                verifier.setParameter(buildPSSParameterSpec(digestAlg, mgf1Alg, saltLen));
+                verifier.initVerify(pubKey);
+                verifier.update(inputBytes);
+                return verifier.verify(sigBytes);
+            }
+            catch (GeneralSecurityException e) {
+                throw new IllegalStateException(e);
+            }
+        }
         org.bouncycastle.crypto.Digest contentDigest = rawVerify
                 ? new PreHashedDigest(getDigestLength(digestAlg), digestAlg)
                 : createBCDigest(digestAlg);
@@ -1071,14 +1130,13 @@ public class PKeyRSA extends PKey {
 
     // Signs raw (unhashed) data with RSA-PSS; PSSSigner applies the hash internally.
     private byte[] signDataWithPSS(Ruby runtime, RubyString data, String digestAlg, String mgf1Alg, int saltLen)
-        throws CryptoException {
-        org.bouncycastle.crypto.Digest contentDigest = createBCDigest(digestAlg);
-        org.bouncycastle.crypto.Digest mgf1Digest    = createBCDigest(mgf1Alg);
-        PSSSigner signer = new PSSSigner(new RSABlindedEngine(), contentDigest, mgf1Digest, saltLen);
-        signer.init(true, new ParametersWithRandom(toBCPrivateKeyParams(privateKey), getSecureRandom(runtime)));
+        throws GeneralSecurityException {
+        Signature signer = SecurityHelper.getSignature("RSASSA-PSS");
+        signer.setParameter(buildPSSParameterSpec(digestAlg, mgf1Alg, saltLen));
+        signer.initSign(privateKey, getSecureRandom(runtime));
         final ByteList dataBytes = data.getByteList();
         signer.update(dataBytes.unsafeBytes(), dataBytes.getBegin(), dataBytes.getRealSize());
-        return signer.generateSignature();
+        return signer.sign();
     }
 
     // Maximum PSS salt length per RFC 8017 §9.1.1:
@@ -1092,11 +1150,15 @@ public class PKeyRSA extends PKey {
     // Returns -1 if the encoding is invalid (not a well-formed PSS block).
     // This is used to implement salt_length: :auto in verify_pss.
     private static int pssAutoSaltLength(RSAPublicKey pubKey, byte[] sigBytes, String digestAlg, String mgf1Alg) {
-        // Step 1: RSA public-key operation → encoded message (EM)
-        RSAKeyParameters bcPubKey = new RSAKeyParameters(false, pubKey.getModulus(), pubKey.getPublicExponent());
-        RSABlindedEngine rsa = new RSABlindedEngine();
-        rsa.init(false, bcPubKey);
-        byte[] raw = rsa.processBlock(sigBytes, 0, sigBytes.length);
+        final byte[] raw;
+        try {
+            javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
+            rsa.init(DECRYPT_MODE, pubKey);
+            raw = rsa.doFinal(sigBytes);
+        }
+        catch (GeneralSecurityException e) {
+            return -1;
+        }
 
         // emLen = ceil((modBits - 1) / 8) per RFC 8017 §9.1.1
         int emLen = (pubKey.getModulus().bitLength() - 1 + 7) / 8;
@@ -1121,19 +1183,15 @@ public class PKeyRSA extends PKey {
         // Step 2: Recover DB = MGF1(H, dbLen) XOR maskedDB
         byte[] DB = new byte[dbLen];
         System.arraycopy(em, 0, DB, 0, dbLen);
-        org.bouncycastle.crypto.Digest mgfDigest = createBCDigest(mgf1Alg);
-        int mgfHLen  = mgfDigest.getDigestSize();
-        byte[] hBuf  = new byte[mgfHLen];
-        byte[] ctr   = new byte[4];
-        for (int pos = 0, c = 0; pos < dbLen; c++) {
-            ctr[0] = (byte)(c >> 24); ctr[1] = (byte)(c >> 16);
-            ctr[2] = (byte)(c >>  8); ctr[3] = (byte) c;
-            mgfDigest.update(H, 0, hLen);
-            mgfDigest.update(ctr, 0, 4);
-            mgfDigest.doFinal(hBuf, 0);
-            int n = Math.min(mgfHLen, dbLen - pos);
-            for (int i = 0; i < n; i++) DB[pos + i] ^= hBuf[i];
-            pos += n;
+        final byte[] mask;
+        try {
+            mask = mgf1(H, dbLen, mgf1Alg);
+        }
+        catch (NoSuchAlgorithmException e) {
+            return -1;
+        }
+        for (int i = 0; i < dbLen; i++) {
+            DB[i] ^= mask[i];
         }
 
         // Step 3: Clear top bits per RFC 8017 §9.1.2

@@ -21,6 +21,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Signature;
 
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
@@ -56,10 +57,6 @@ import org.bouncycastle.asn1.x9.X962Parameters;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
-import org.bouncycastle.crypto.params.ECDomainParameters;
-import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import org.bouncycastle.crypto.params.ECPublicKeyParameters;
-import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
 import org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
 import org.bouncycastle.jcajce.provider.config.ProviderConfiguration;
@@ -471,30 +468,10 @@ public final class PKeyEC extends PKey {
             throw newECError(context.runtime, "Private EC key needed!");
         }
         try {
-            final ECNamedCurveParameterSpec params = getParameterSpec();
-
-            final ECDSASigner signer = new ECDSASigner();
-            signer.init(true, new ECPrivateKeyParameters(
-                    ((ECPrivateKey) this.privateKey).getS(),
-                    new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH())
-            ));
-
-            BigInteger[] signature = signer.generateSignature(data.convertToString().getBytes()); // [r, s]
-
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            ASN1OutputStream asn1 = ASN1OutputStream.create(bytes, ASN1Encoding.DER);
-
-            ASN1EncodableVector v = new ASN1EncodableVector(2);
-            v.add(new ASN1Integer(signature[0])); // r
-            v.add(new ASN1Integer(signature[1])); // s
-
-            asn1.writeObject(new DERSequence(v));
-            asn1.close();
-
-            return StringHelper.newString(context.runtime, bytes.buffer(), bytes.size());
-        }
-        catch (IOException ex) {
-            throw newECError(context.runtime, ex.getMessage());
+            Signature signer = SecurityHelper.getSignature("NONEwithECDSA");
+            signer.initSign(privateKey);
+            signer.update(data.convertToString().getBytes());
+            return StringHelper.newString(context.runtime, signer.sign());
         }
         catch (Exception ex) {
             throw newECError(context.runtime, ex.toString(), ex);
@@ -505,28 +482,12 @@ public final class PKeyEC extends PKey {
     public IRubyObject dsa_verify_asn1(final ThreadContext context, final IRubyObject data, final IRubyObject sign) {
         final Ruby runtime = context.runtime;
         try {
-            final ECNamedCurveParameterSpec params = getParameterSpec();
-
-            final ECDSASigner signer = new ECDSASigner();
-            signer.init(false, new ECPublicKeyParameters(
-                    EC5Util.convertPoint(publicKey.getParams(), publicKey.getW()),
-                    new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH())
-            ));
-
-            ASN1Primitive vec = new ASN1InputStream(sign.convertToString().getBytes()).readObject();
-
-            if (!(vec instanceof ASN1Sequence)) {
-                throw newECError(runtime, "invalid signature (not a sequence)");
-            }
-
-            ASN1Sequence seq = (ASN1Sequence) vec;
-            ASN1Integer r = ASN1Integer.getInstance(seq.getObjectAt(0));
-            ASN1Integer s = ASN1Integer.getInstance(seq.getObjectAt(1));
-
-            boolean verify = signer.verifySignature(data.convertToString().getBytes(), r.getPositiveValue(), s.getPositiveValue());
-            return runtime.newBoolean(verify);
+            Signature verifier = SecurityHelper.getSignature("NONEwithECDSA");
+            verifier.initVerify(publicKey);
+            verifier.update(data.convertToString().getBytes());
+            return runtime.newBoolean(verifier.verify(sign.convertToString().getBytes()));
         }
-        catch (IOException|IllegalArgumentException|IllegalStateException ex) {
+        catch (GeneralSecurityException ex) {
             throw newECError(runtime, "invalid signature: " + ex.getMessage(), ex);
         }
     }
@@ -549,25 +510,12 @@ public final class PKeyEC extends PKey {
                                   final IRubyObject sign, final IRubyObject data) {
         final Ruby runtime = context.runtime;
         try {
-            final ECNamedCurveParameterSpec params = getParameterSpec();
-
-            final ECDSASigner signer = new ECDSASigner();
-            signer.init(false, new ECPublicKeyParameters(
-                    EC5Util.convertPoint(publicKey.getParams(), publicKey.getW()),
-                    new ECDomainParameters(params.getCurve(), params.getG(), params.getN(), params.getH())
-            ));
-
-            ASN1Primitive vec = new ASN1InputStream(sign.convertToString().getBytes()).readObject();
-            if (!(vec instanceof ASN1Sequence)) return runtime.getFalse();
-
-            ASN1Sequence seq = (ASN1Sequence) vec;
-            ASN1Integer r = ASN1Integer.getInstance(seq.getObjectAt(0));
-            ASN1Integer s = ASN1Integer.getInstance(seq.getObjectAt(1));
-
-            boolean verified = signer.verifySignature(data.convertToString().getBytes(), r.getPositiveValue(), s.getPositiveValue());
-            return runtime.newBoolean(verified);
+            Signature verifier = SecurityHelper.getSignature("NONEwithECDSA");
+            verifier.initVerify(publicKey);
+            verifier.update(data.convertToString().getBytes());
+            return runtime.newBoolean(verifier.verify(sign.convertToString().getBytes()));
         }
-        catch (IOException | IllegalArgumentException | IllegalStateException ex) {
+        catch (GeneralSecurityException ex) {
             debugStackTrace(runtime, ex);
             return runtime.getFalse();
         }

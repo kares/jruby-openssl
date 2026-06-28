@@ -141,6 +141,94 @@ class TestSSLSession < TestCase
     end
   end
 
+  def test_session_new_cb_client
+    called = {}
+    ctx_proc = proc { |ctx|
+      ctx.options &= ~OpenSSL::SSL::OP_NO_TICKET
+    }
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |_server, port|
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      ctx.session_new_cb = lambda { |ary|
+        sock, sess = ary
+        called[:new] = [sock, sess]
+      }
+
+      sock = TCPSocket.new('127.0.0.1', port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+      ssl.puts 'hello'
+      assert_equal "hello\n", ssl.gets
+
+      # session_new_cb should have been called with [ssl_socket, session]
+      assert_not_nil called[:new], 'session_new_cb should have been called'
+      cb_sock, cb_sess = called[:new]
+      assert_same ssl, cb_sock
+      assert_instance_of OpenSSL::SSL::Session, cb_sess
+      assert_equal ssl.session.id, cb_sess.id
+
+      # session_cache_stats should reflect the connection
+      stats = ctx.session_cache_stats
+      assert_operator stats[:connect_good], :>=, 1
+
+      ssl.close
+    end
+  end
+
+  def test_session_new_cb_server
+    called = {}
+    ctx_proc = proc { |ctx|
+      ctx.options &= ~OpenSSL::SSL::OP_NO_TICKET
+      ctx.session_new_cb = lambda { |ary|
+        _sock, sess = ary
+        called[:new] = sess
+      }
+    }
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |_server, port|
+      sock = TCPSocket.new('127.0.0.1', port)
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+      ssl.puts 'hello'
+      assert_equal "hello\n", ssl.gets
+      ssl.close
+    end
+    # server-side session_new_cb should have fired
+    assert_not_nil called[:new], 'server session_new_cb should have been called'
+    assert_instance_of OpenSSL::SSL::Session, called[:new]
+  end
+
+  def test_session_new_cb_not_called_without_setting
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |_server, port|
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      # no session_new_cb set
+      sock = TCPSocket.new('127.0.0.1', port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true
+      ssl.connect
+      ssl.puts 'test'
+      assert_equal "test\n", ssl.gets
+      # should not raise
+      ssl.close
+    end
+  end
+
+  def test_session_cache_mode
+    ctx = OpenSSL::SSL::SSLContext.new
+    # should not raise when getting/setting
+    ctx.session_cache_mode
+    ctx.session_cache_mode = OpenSSL::SSL::SSLContext::SESSION_CACHE_CLIENT
+  end
+
+  def test_session_cache_stats_keys
+    ctx = OpenSSL::SSL::SSLContext.new
+    stats = ctx.session_cache_stats
+    %i[connect connect_good accept accept_good cache_num].each do |key|
+      assert stats.key?(key), "session_cache_stats should contain :#{key}"
+    end
+  end
+
   def test_exposes_session_error
     OpenSSL::SSL::Session::SessionError
   end

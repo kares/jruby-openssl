@@ -292,10 +292,11 @@ public class SSLSocket extends RubyObject {
     }
 
     private IRubyObject connectImpl(final ThreadContext context, final boolean blocking, final boolean exception) {
-
         if ( ! sslContext.isProtocolForClient() ) {
             throw newSSLError(context.runtime, "called a function you should not call");
         }
+
+        sslContext.sessionConnectCount++;
 
         try {
             if ( ! initialHandshake ) {
@@ -305,14 +306,13 @@ public class SSLSocket extends RubyObject {
                 handshakeStatus = engine.getHandshakeStatus();
                 initialHandshake = true;
             }
-            callRenegotiationCallback(context);
+            // MRI only fires renegotiation_cb on the server (accept) side
             final IRubyObject ex = doHandshake(blocking, exception);
             if ( ex != null ) return ex; // :wait_readable | :wait_writable
         }
         catch (SSLHandshakeException e) {
             //debugStackTrace(runtime, e);
-            // unlike server side, client should close outbound channel even if
-            // we have remaining data to be sent.
+            // unlike server side, client should close outbound channel even if we have remaining data to be sent
             forceClose();
             throw newSSLErrorFromHandshake(context.runtime, e);
         }
@@ -325,10 +325,12 @@ public class SSLSocket extends RubyObject {
             throw newErrnoEPIPEError(context.runtime, "SSL_connect");
         }
 
-        // CRuby enforces verify_hostname inside the OpenSSL verify callback
-        // during the handshake (ossl_ssl.c ossl_ssl_verify_callback, depth 0)
+        // MRI enforces verify_hostname inside OpenSSL ossl_ssl_verify_callback during the handshake
         // JSSE has no equivalent hook, so we check after the handshake completes
         verifyHostnameConnectionCheck(context);
+
+        sslContext.sessionConnectGoodCount++;
+        callSessionNewCallback(context);
 
         return this;
     }
@@ -358,10 +360,11 @@ public class SSLSocket extends RubyObject {
     }
 
     private IRubyObject acceptImpl(final ThreadContext context, final boolean blocking, final boolean exception) {
-
         if ( ! sslContext.isProtocolForServer() ) {
             throw newSSLError(context.runtime, "called a function you should not call");
         }
+
+        sslContext.sessionAcceptCount++;
 
         try {
             if ( ! initialHandshake ) {
@@ -416,6 +419,10 @@ public class SSLSocket extends RubyObject {
             }
             throw newSSLError(context.runtime, e);
         }
+
+        sslContext.sessionAcceptGoodCount++;
+        callSessionNewCallback(context);
+
         return this;
     }
 
@@ -705,13 +712,28 @@ public class SSLSocket extends RubyObject {
         }
     }
 
-    // NOTE: gets called on negotiation connect/accept - not really on RE-negotiation as intended?!
+    // fires renegotiation_cb on server-side handshake start (initial + renegotiation)
     private void callRenegotiationCallback(final ThreadContext context) throws RaiseException {
-        IRubyObject renegotiationCallback = sslContext.getInstanceVariable("@renegotiation_cb");
-        if (renegotiationCallback == null || renegotiationCallback.isNil()) return;
-        // the return of the Proc is not important
-        // Can throw ruby exception to "disallow" re-negotiations
-        renegotiationCallback.callMethod(context, "call", this);
+        IRubyObject callback = sslContext.getInstanceVariable("@renegotiation_cb");
+        if (callback == null || callback.isNil()) return;
+        // can throw ruby exception to "disallow" re-negotiations
+        callback.callMethod(context, "call", this);
+    }
+
+    // fires session_new_cb after a successful handshake (both client and server)
+    private void callSessionNewCallback(final ThreadContext context) {
+        IRubyObject callback = sslContext.getInstanceVariable("@session_new_cb");
+        if (callback == null || callback.isNil()) return;
+
+        final javax.net.ssl.SSLSession javaSession = sslSession();
+        if (javaSession == null || isNullSession(javaSession)) return;
+
+        sslContext.sessionCacheNum++;
+
+        final SSLSession session = getSession(context.runtime);
+        final Ruby runtime = context.runtime;
+        // MRI passes [ssl_socket, ssl_session] as a single Array argument
+        callback.callMethod(context, "call", runtime.newArray(this, session));
     }
 
     public int write(ByteBuffer src, boolean blocking) throws SSLException, IOException {
@@ -811,6 +833,10 @@ public class SSLSocket extends RubyObject {
                 handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK ||
                 handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_WRAP ||
                 handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED ) ) {
+            // peer-initiated renegotiation; fire callback (server-side only, matching CRuby)
+            if (!engine.getUseClientMode()) {
+                callRenegotiationCallback(getRuntime().getCurrentContext());
+            }
             IRubyObject wouldBlock = doHandshake(blocking, exception);
             if ( wouldBlock != null ) {
                 if ("wait_writable".equals(wouldBlock.asJavaString())) {

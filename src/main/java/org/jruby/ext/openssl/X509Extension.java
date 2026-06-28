@@ -970,13 +970,6 @@ public class X509Extension extends RubyObject {
         }
     }
 
-    @Override
-    @SuppressWarnings(value = "unchecked")
-    @JRubyMethod
-    public IRubyObject inspect() {
-        return ObjectSupport.inspect(this);
-    }
-
     static RaiseException newExtensionError(Ruby runtime, Exception e) {
         return newError(runtime, _X509(runtime).getClass("ExtensionError"), e);
     }

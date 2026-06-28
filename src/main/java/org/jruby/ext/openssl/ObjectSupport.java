@@ -38,11 +38,6 @@ import org.jruby.runtime.builtin.Variable;
  */
 abstract class ObjectSupport {
 
-    @SuppressWarnings("unchecked")
-    static RubyString inspect(final RubyBasicObject self) {
-        return inspect(self, (List) self.getInstanceVariableList());
-    }
-
     static RubyString inspect(final RubyBasicObject self, final List<Variable> variableList) {
         final Ruby runtime = self.getRuntime();
         return RubyString.newString(runtime, inspect(runtime, self, variableList));

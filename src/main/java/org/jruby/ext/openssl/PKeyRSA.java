@@ -64,17 +64,6 @@ import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.DigestInfo;
-import org.bouncycastle.crypto.CryptoException;
-import org.bouncycastle.crypto.DataLengthException;
-import org.bouncycastle.crypto.digests.SHA1Digest;
-import org.bouncycastle.crypto.digests.SHA256Digest;
-import org.bouncycastle.crypto.digests.SHA384Digest;
-import org.bouncycastle.crypto.digests.SHA512Digest;
-import org.bouncycastle.crypto.engines.RSABlindedEngine;
-import org.bouncycastle.crypto.params.ParametersWithRandom;
-import org.bouncycastle.crypto.params.RSAKeyParameters;
-import org.bouncycastle.crypto.params.RSAPrivateCrtKeyParameters;
-import org.bouncycastle.crypto.signers.PSSSigner;
 import org.bouncycastle.operator.OutputEncryptor;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
@@ -92,7 +81,6 @@ import org.jruby.RubyString;
 import org.jruby.RubySymbol;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
-import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
@@ -700,8 +688,8 @@ public class PKeyRSA extends PKey {
     // sign_raw(digest, data [, opts]) -- signs already-hashed data with this RSA private key.
     // With no opts (or opts without rsa_padding_mode: "pss"), uses PKCS#1 v1.5 padding:
     //   the hash is wrapped in a DigestInfo ASN.1 structure and signed with NONEwithRSA.
-    // With opts containing rsa_padding_mode: "pss", uses RSA-PSS via BC's PSSSigner with
-    //   NullDigest (so the pre-hashed bytes are fed directly without re-hashing).
+    // With opts containing rsa_padding_mode: "pss", uses manual EMSA-PSS encoding over the
+    //   already-computed hash bytes and applies the raw RSA private-key operation.
     @JRubyMethod(name = "sign_raw", required = 2, optional = 1)
     public IRubyObject sign_raw(ThreadContext context, IRubyObject[] args) {
         final Ruby runtime = context.runtime;
@@ -720,7 +708,7 @@ public class PKeyRSA extends PKey {
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
                 try {
                     return StringHelper.newString(runtime, signWithPSS(hashBytes, digestAlg, mgf1Alg, saltLen));
-                } catch (IllegalArgumentException | CryptoException e) {
+                } catch (IllegalArgumentException | GeneralSecurityException e) {
                     throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
                 }
             }
@@ -758,7 +746,7 @@ public class PKeyRSA extends PKey {
                 String mgf1Alg = Utils.extractStringOpt(context, opts, "rsa_mgf1_md", true);
                 if (mgf1Alg == null) mgf1Alg = digestAlg;
                 if (saltLen < 0) saltLen = getDigestLength(digestAlg);
-                // verify_raw: input is already the hash → use PreHashedDigest (pass-through phase 1)
+                // verify_raw: input is already the hash, so verify against the raw EMSA-PSS encoding.
                 return verifyPSS(runtime, true, hashBytes, digestAlg, mgf1Alg, saltLen, sigBytes);
             }
         }
@@ -952,18 +940,6 @@ public class PKeyRSA extends PKey {
         return new AlgorithmIdentifier(oid, DERNull.INSTANCE);
     }
 
-    private static org.bouncycastle.crypto.Digest createBCDigest(String digestAlg) {
-        String upper = digestAlg.toUpperCase().replace("-", "");
-        switch (upper) {
-            case "SHA1": case "SHA": return new SHA1Digest();
-            case "SHA256":           return new SHA256Digest();
-            case "SHA384":           return new SHA384Digest();
-            case "SHA512":           return new SHA512Digest();
-            default:
-                throw new IllegalArgumentException("Unsupported digest for PSS: " + digestAlg);
-        }
-    }
-
     private static int getDigestLength(String digestAlg) {
         String upper = digestAlg.toUpperCase().replace("-", "");
         switch (upper) {
@@ -1019,23 +995,112 @@ public class PKeyRSA extends PKey {
         return mask;
     }
 
-    // Signs pre-hashed bytes using RSA-PSS.  PSSSigner internally reuses the content digest for
-    // BOTH hashing the message (phase 1) and hashing mDash (phase 2), so we use PreHashedDigest
-    // which passes through pre-hashed bytes verbatim in phase 1 and runs a real SHA hash in phase 2.
-    private byte[] signWithPSS(byte[] hashBytes, String digestAlg, String mgf1Alg, int saltLen)
-        throws CryptoException {
-        org.bouncycastle.crypto.Digest contentDigest = new PreHashedDigest(getDigestLength(digestAlg), digestAlg);
-        org.bouncycastle.crypto.Digest mgf1Digest = createBCDigest(mgf1Alg);
-        PSSSigner signer = new PSSSigner(new RSABlindedEngine(), contentDigest, mgf1Digest, saltLen);
-        RSAKeyParameters bcKey = toBCPrivateKeyParams(privateKey);
-        signer.init(true, new ParametersWithRandom(bcKey, getSecureRandom(getRuntime())));
-        signer.update(hashBytes, 0, hashBytes.length);
-        return signer.generateSignature();
+    private static byte[] normalizeEncodedMessage(final byte[] raw, final int emLen) {
+        if (raw.length == emLen) return raw;
+
+        final byte[] em = new byte[emLen];
+        if (raw.length > emLen) {
+            System.arraycopy(raw, raw.length - emLen, em, 0, emLen);
+        }
+        else {
+            System.arraycopy(raw, 0, em, emLen - raw.length, raw.length);
+        }
+        return em;
     }
 
-    // Verifies an RSA-PSS signature.  When rawVerify=true the input is a pre-computed hash (verify_raw);
-    // PreHashedDigest passes it through in phase 1 then uses a real SHA for hashing mDash in phase 2.
-    // When rawVerify=false the input is raw data (verify with opts); a real SHA digest is used throughout.
+    private static byte[] pssHash(final byte[] hashBytes, final byte[] salt, final String digestAlg)
+        throws NoSuchAlgorithmException {
+        final MessageDigest digest = SecurityHelper.getMessageDigest(toJcaDigestName(digestAlg));
+        digest.update(new byte[8]);
+        digest.update(hashBytes);
+        digest.update(salt);
+        return digest.digest();
+    }
+
+    private static byte[] encodeRawPSS(final byte[] hashBytes, final String digestAlg,
+        final String mgf1Alg, final int saltLen, final int emBits, final Ruby runtime)
+        throws GeneralSecurityException {
+
+        final int hLen = getDigestLength(digestAlg);
+        if (hashBytes.length != hLen) {
+            throw new IllegalArgumentException("invalid hash length for " + digestAlg + ": " + hashBytes.length);
+        }
+
+        final int emLen = (emBits + 7) / 8;
+        if (emLen < hLen + saltLen + 2) {
+            throw new IllegalArgumentException("encoding error");
+        }
+
+        final byte[] salt = new byte[saltLen];
+        getSecureRandom(runtime).nextBytes(salt);
+
+        final byte[] h = pssHash(hashBytes, salt, digestAlg);
+        final int dbLen = emLen - hLen - 1;
+        final byte[] db = new byte[dbLen];
+        db[dbLen - saltLen - 1] = 0x01;
+        System.arraycopy(salt, 0, db, dbLen - saltLen, saltLen);
+
+        final byte[] dbMask = mgf1(h, dbLen, mgf1Alg);
+        for (int i = 0; i < dbLen; i++) db[i] ^= dbMask[i];
+
+        final int topBits = 8 * emLen - emBits;
+        if (topBits > 0) db[0] &= (byte) (0xFF >>> topBits);
+
+        final byte[] em = new byte[emLen];
+        System.arraycopy(db, 0, em, 0, dbLen);
+        System.arraycopy(h, 0, em, dbLen, hLen);
+        em[emLen - 1] = (byte) 0xBC;
+        return em;
+    }
+
+    private static boolean verifyRawPSS(final byte[] hashBytes, final byte[] em, final String digestAlg,
+        final String mgf1Alg, final int saltLen, final int emBits) throws GeneralSecurityException {
+
+        final int hLen = getDigestLength(digestAlg);
+        if (hashBytes.length != hLen) return false;
+
+        final int emLen = (emBits + 7) / 8;
+        if (em.length != emLen || emLen < hLen + saltLen + 2 || em[emLen - 1] != (byte) 0xBC) {
+            return false;
+        }
+
+        final int dbLen = emLen - hLen - 1;
+        final byte[] maskedDB = new byte[dbLen];
+        final byte[] h = new byte[hLen];
+        System.arraycopy(em, 0, maskedDB, 0, dbLen);
+        System.arraycopy(em, dbLen, h, 0, hLen);
+
+        final int topBits = 8 * emLen - emBits;
+        if (topBits > 0 && (maskedDB[0] & ~((byte) (0xFF >>> topBits))) != 0) {
+            return false;
+        }
+
+        final byte[] dbMask = mgf1(h, dbLen, mgf1Alg);
+        final byte[] db = new byte[dbLen];
+        for (int i = 0; i < dbLen; i++) db[i] = (byte) (maskedDB[i] ^ dbMask[i]);
+        if (topBits > 0) db[0] &= (byte) (0xFF >>> topBits);
+
+        final int psLen = dbLen - saltLen - 1;
+        for (int i = 0; i < psLen; i++) {
+            if (db[i] != 0x00) return false;
+        }
+        if (db[psLen] != 0x01) return false;
+
+        final byte[] salt = new byte[saltLen];
+        System.arraycopy(db, psLen + 1, salt, 0, saltLen);
+        final byte[] expectedH = pssHash(hashBytes, salt, digestAlg);
+        return MessageDigest.isEqual(h, expectedH);
+    }
+
+    private byte[] signWithPSS(byte[] hashBytes, String digestAlg, String mgf1Alg, int saltLen)
+        throws GeneralSecurityException {
+        final int emBits = privateKey.getModulus().bitLength() - 1;
+        final byte[] em = encodeRawPSS(hashBytes, digestAlg, mgf1Alg, saltLen, emBits, getRuntime());
+        javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
+        rsa.init(ENCRYPT_MODE, privateKey);
+        return rsa.doFinal(em);
+    }
+
     private static boolean verifyWithPSS(final boolean rawVerify, RSAPublicKey pubKey, byte[] inputBytes,
                                          String digestAlg, String mgf1Alg, int saltLen, byte[] sigBytes) {
         if (!rawVerify) {
@@ -1050,85 +1115,20 @@ public class PKeyRSA extends PKey {
                 throw new IllegalStateException(e);
             }
         }
-        org.bouncycastle.crypto.Digest contentDigest = rawVerify
-                ? new PreHashedDigest(getDigestLength(digestAlg), digestAlg)
-                : createBCDigest(digestAlg);
-        org.bouncycastle.crypto.Digest mgf1Digest = createBCDigest(mgf1Alg);
-        PSSSigner verifier = new PSSSigner(new RSABlindedEngine(), contentDigest, mgf1Digest, saltLen);
-        verifier.init(false, new RSAKeyParameters(false, pubKey.getModulus(), pubKey.getPublicExponent()));
-        verifier.update(inputBytes, 0, inputBytes.length);
-        return verifier.verifySignature(sigBytes);
-    }
-
-    /**
-     * Two-phase Digest for PSS raw-sign/verify.
-     *
-     * PSSSigner internally calls the content digest twice:
-     *   Phase 1  - to hash the message content    → we pass pre-computed hash bytes through verbatim.
-     *   Phase 2  - to hash mDash (needs a real hash) → we switch to the actual BC digest algorithm.
-     *
-     * getDigestSize() always returns the fixed hash length so PSSSigner can allocate its internal
-     * buffers correctly even before any data has been accumulated.
-     */
-    private static class PreHashedDigest implements org.bouncycastle.crypto.Digest {
-        private final int hashLen;
-        private final String digestAlg; // algorithm name for the real phase-2 digest
-        private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        private org.bouncycastle.crypto.Digest realDigest; // non-null during phase 2
-
-        PreHashedDigest(int hashLen, String digestAlg) {
-            this.hashLen   = hashLen;
-            this.digestAlg = digestAlg;
+        try {
+            javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
+            rsa.init(DECRYPT_MODE, pubKey);
+            final int emBits = pubKey.getModulus().bitLength() - 1;
+            final int emLen = (emBits + 7) / 8;
+            byte[] em = normalizeEncodedMessage(rsa.doFinal(sigBytes), emLen);
+            return verifyRawPSS(inputBytes, em, digestAlg, mgf1Alg, saltLen, emBits);
         }
-
-        public String getAlgorithmName() { return "PRE-HASHED"; }
-        public int getDigestSize()       { return hashLen; }
-
-        public void update(byte in) {
-            if (realDigest != null) realDigest.update(in);
-            else buf.write(in);
-        }
-
-        public void update(byte[] in, int off, int len) {
-            if (realDigest != null) realDigest.update(in, off, len);
-            else buf.write(in, off, len);
-        }
-
-        public int doFinal(byte[] out, final int off) {
-            if (realDigest == null) {
-                // Phase 1: emit the pre-hashed bytes verbatim, then arm the real digest for phase 2
-                final int len = buf.size();
-                System.arraycopy(buf.buffer(), 0, out, off, len);
-                buf.reset();
-                realDigest = createBCDigest(digestAlg);
-                return len;
-            } else {
-                // Phase 2: emit the real hash of the mDash bytes that PSSSigner fed us
-                final int len = realDigest.doFinal(out, off);
-                realDigest = null; // back to phase 1 for reuse
-                return len;
-            }
-        }
-
-        public void reset() {
-            buf.reset();
-            realDigest = null;
+        catch (GeneralSecurityException e) {
+            return false;
         }
     }
 
-    private static RSAKeyParameters toBCPrivateKeyParams(RSAPrivateKey privKey) {
-        if (privKey instanceof RSAPrivateCrtKey) {
-            RSAPrivateCrtKey crtKey = (RSAPrivateCrtKey) privKey;
-            return new RSAPrivateCrtKeyParameters(
-                    crtKey.getModulus(), crtKey.getPublicExponent(), crtKey.getPrivateExponent(),
-                    crtKey.getPrimeP(), crtKey.getPrimeQ(),
-                    crtKey.getPrimeExponentP(), crtKey.getPrimeExponentQ(),
-                    crtKey.getCrtCoefficient());
-        }
-        return new RSAKeyParameters(true, privKey.getModulus(), privKey.getPrivateExponent());
-    }
-
-    // Signs raw (unhashed) data with RSA-PSS; PSSSigner applies the hash internally.
+    // Signs raw (unhashed) data with RSA-PSS; the Signature implementation applies the hash internally.
     private byte[] signDataWithPSS(Ruby runtime, RubyString data, String digestAlg, String mgf1Alg, int saltLen)
         throws GeneralSecurityException {
         Signature signer = SecurityHelper.getSignature("RSASSA-PSS");

@@ -187,12 +187,6 @@ public class BN extends RubyObject {
         return this;
     }
 
-    @Deprecated
-    public RubyString to_s(IRubyObject[] args) {
-        int argc = Arity.checkArgumentCount(getRuntime(), args, 0, 1);
-        return to_s( argc == 1 ? RubyNumeric.num2int(args[0]) : 10 );
-    }
-
     @Override
     @JRubyMethod(name = "to_s")
     public RubyString to_s() { return to_s(10); }
@@ -910,11 +904,6 @@ public class BN extends RubyObject {
 
     public static BigInteger asBigInteger(final BN arg) {
         return arg.isNil() ? null : arg.value;
-    }
-
-    @Deprecated
-    public static BigInteger getBigInteger(final IRubyObject arg) {
-        return asBigInteger(arg);
     }
 
     /**

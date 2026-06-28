@@ -63,7 +63,6 @@ import org.bouncycastle.asn1.DERUTCTime;
 import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DERUniversalString;
 import org.bouncycastle.asn1.DERVideotexString;
-import org.bouncycastle.asn1.DERVisibleString;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
@@ -161,11 +160,6 @@ public class X509Name extends RubyObject {
         final X509Name name = newName(runtime);
         name.fromASN1Sequence((ASN1Sequence) realName.toASN1Primitive());
         return name;
-    }
-
-    @Deprecated
-    public static X509Name create(final Ruby runtime, org.bouncycastle.asn1.x500.X500Name realName) {
-        return newName(runtime, realName);
     }
 
     static RubyClass _Name(final Ruby runtime) {

@@ -107,7 +107,6 @@ import static org.jruby.ext.openssl.StringHelper.appendLowerHexValue;
 import static org.jruby.ext.openssl.StringHelper.lowerHexBytes;
 import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
-import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
 import static org.jruby.ext.openssl.util.RubySupport.newString;
 
 /**

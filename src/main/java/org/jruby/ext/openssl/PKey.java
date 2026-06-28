@@ -353,7 +353,7 @@ public abstract class PKey extends RubyObject {
             final IRubyObject pubexp = RubySupport.extractOpt(context, options, "rsa_keygen_pubexp", true);
 
             final Ruby runtime = context.runtime;
-            final BigInteger exponent = pubexp == null || pubexp.isNil() ? RSAKeyGenParameterSpec.F4 : BN.getBigInteger(pubexp);
+            final BigInteger exponent = pubexp == null || pubexp.isNil() ? RSAKeyGenParameterSpec.F4 : BN.asBigInteger(pubexp);
             return PKeyRSA.rsaGenerate(context, new PKeyRSA(runtime, PKeyRSA._RSA(runtime)), bits, exponent);
         }
 
@@ -772,14 +772,6 @@ public abstract class PKey extends RubyObject {
         }
         if (obj != null) {
             return new CipherSpec(obj.getCipherInstance(), obj.getName(), obj.getKeyLength() * 8);
-        }
-        return null;
-    }
-
-    @Deprecated
-    protected static char[] password(final IRubyObject pass) {
-        if ( pass != null && ! pass.isNil() ) {
-            return pass.toString().toCharArray();
         }
         return null;
     }

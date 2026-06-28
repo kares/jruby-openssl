@@ -611,17 +611,17 @@ public class PKeyDSA extends PKey {
 
     @JRubyMethod
     public IRubyObject set_pqg(IRubyObject p, IRubyObject q, IRubyObject g) {
-        this.dsa_p = BN.getBigInteger(p);
-        this.dsa_q = BN.getBigInteger(q);
-        this.dsa_g = BN.getBigInteger(g);
+        this.dsa_p = BN.asBigInteger(p);
+        this.dsa_q = BN.asBigInteger(q);
+        this.dsa_g = BN.asBigInteger(g);
         generateKeyInternal();
         return this;
     }
 
     @JRubyMethod
     public IRubyObject set_key(final ThreadContext context, IRubyObject pub_key, IRubyObject priv_key) {
-        this.dsa_y = BN.getBigInteger(pub_key);
-        this.dsa_x = BN.getBigInteger(priv_key);
+        this.dsa_y = BN.asBigInteger(pub_key);
+        this.dsa_x = BN.asBigInteger(priv_key);
         generateKeyInternal();
         return this;
     }
@@ -677,7 +677,7 @@ public class PKeyDSA extends PKey {
     }
 
     private IRubyObject setKeySpecComponent(final int index, final IRubyObject value) {
-        final BigInteger val = BN.getBigInteger(value);
+        final BigInteger val = BN.asBigInteger(value);
         switch (index) {
             case SPEC_X: this.dsa_x = val; break;
             case SPEC_Y: this.dsa_y = val; break;

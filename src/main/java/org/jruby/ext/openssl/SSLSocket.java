@@ -355,11 +355,6 @@ public class SSLSocket extends RubyObject {
         return acceptImpl(context, false, getExceptionOpt(context, opts));
     }
 
-    @Deprecated
-    public SSLSocket acceptCommon(ThreadContext context, boolean blocking) {
-        return (SSLSocket) acceptImpl(context, blocking, true);
-    }
-
     private IRubyObject acceptImpl(final ThreadContext context, final boolean blocking, final boolean exception) {
         if ( ! sslContext.isProtocolForServer() ) {
             throw newSSLError(context.runtime, "called a function you should not call");
@@ -765,7 +760,7 @@ public class SSLSocket extends RubyObject {
         callback.callMethod(context, "call", runtime.newArray(this, session));
     }
 
-    public int write(ByteBuffer src, boolean blocking) throws SSLException, IOException {
+    public int write(ByteBuffer src, boolean blocking) throws IOException {
         if ( initialHandshake ) {
             throw new IOException("Writing not possible during handshake");
         }
@@ -1003,18 +998,6 @@ public class SSLSocket extends RubyObject {
         return sysreadImpl(context, len, buff, true, true);
     }
 
-    @Deprecated // @JRubyMethod(rest = true, required = 1, optional = 1)
-    public IRubyObject sysread(ThreadContext context, IRubyObject[] args) {
-        switch ( args.length) {
-            case 1 :
-                return sysread(context, args[0]);
-            case 2 :
-                return sysread(context, args[0], args[1]);
-        }
-        Arity.checkArgumentCount(context.runtime, args.length, 1, 2);
-        return null; // won't happen as checkArgumentCount raises
-    }
-
     @JRubyMethod
     public IRubyObject sysread_nonblock(ThreadContext context, IRubyObject len) {
         return sysreadImpl(context, len, context.nil, false, true);
@@ -1032,21 +1015,6 @@ public class SSLSocket extends RubyObject {
     @JRubyMethod
     public IRubyObject sysread_nonblock(ThreadContext context, IRubyObject len, IRubyObject buff, IRubyObject opts) {
         return sysreadImpl(context, len, buff, false, getExceptionOpt(context, opts));
-    }
-
-
-    @Deprecated // @JRubyMethod(rest = true, required = 1, optional = 2)
-    public IRubyObject sysread_nonblock(ThreadContext context, IRubyObject[] args) {
-        switch ( args.length) {
-            case 1 :
-                return sysread_nonblock(context, args[0]);
-            case 2 :
-                return sysread_nonblock(context, args[0], args[1]);
-            case 3 :
-                return sysread_nonblock(context, args[0], args[1], args[2]);
-        }
-        Arity.checkArgumentCount(context.runtime, args.length, 1, 3);
-        return null; // won't happen as checkArgumentCount raises
     }
 
     private IRubyObject syswriteImpl(final ThreadContext context,
@@ -1164,11 +1132,6 @@ public class SSLSocket extends RubyObject {
         return context.nil;
     }
 
-    @Deprecated
-    public final IRubyObject cert() {
-        return cert(getRuntime().getCurrentContext());
-    }
-
     @JRubyMethod
     public IRubyObject peer_cert(final ThreadContext context) {
         if ( engine == null ) return context.nil;
@@ -1186,11 +1149,6 @@ public class SSLSocket extends RubyObject {
             LOG.debug(context.runtime, "peer_cert", e);
         }
         return context.nil;
-    }
-
-    @Deprecated
-    public final IRubyObject peer_cert() {
-        return peer_cert(getRuntime().getCurrentContext());
     }
 
     @JRubyMethod
@@ -1213,11 +1171,6 @@ public class SSLSocket extends RubyObject {
             LOG.debug(runtime, "peer_cert_chain", e);
         }
         return runtime.getNil();
-    }
-
-    @Deprecated
-    public final IRubyObject peer_cert_chain() {
-        return peer_cert_chain(getRuntime().getCurrentContext());
     }
 
     @JRubyMethod

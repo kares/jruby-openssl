@@ -44,8 +44,18 @@ class TestOpenSSL < TestCase
   def test_stubs
     OpenSSL.deprecated_warning_flag
     OpenSSL.check_func(:func, :header)
-    OpenSSL.fips_mode = false
-    assert !OpenSSL.fips_mode
+  end
+
+  def test_fips_mode
+    if fips?
+      assert_equal true, OpenSSL.fips_mode
+      OpenSSL.fips_mode = true
+      assert_equal true, OpenSSL.fips_mode
+    else
+      assert_equal false, OpenSSL.fips_mode
+      OpenSSL.fips_mode = false
+      assert_equal false, OpenSSL.fips_mode
+    end
   end
 
   def test_Digest
@@ -53,23 +63,4 @@ class TestOpenSSL < TestCase
     assert_equal OpenSSL::Digest::MD5, digest
   end
 
-end # unless defined? OpenSSL::OPENSSL_DUMMY
-
-
-class TestOpenSSLStub < TestCase
-
-  def test_autoload_consts_error
-    assert_raise(LoadError) { OpenSSL::ASN1 }
-    assert_raise(LoadError) { OpenSSL::BN }
-    assert_raise(LoadError) { OpenSSL::Cipher }
-    assert_raise(LoadError) { OpenSSL::Config }
-    assert_raise(LoadError) { OpenSSL::Netscape }
-    assert_raise(LoadError) { OpenSSL::PKCS7 }
-    assert_raise(LoadError) { OpenSSL::PKey }
-    assert_raise(LoadError) { OpenSSL::Random }
-    assert_raise(LoadError) { OpenSSL::SSL }
-    assert_raise(LoadError) { OpenSSL::X509 }
-  end
-
-end if defined? OpenSSL::OPENSSL_DUMMY
-# This test only makes sense if the gem isn't installed
+end

@@ -1261,7 +1261,10 @@ public class PKeyRSA extends PKey {
     @JRubyMethod(name="p=")
     public synchronized IRubyObject set_p(final ThreadContext context, IRubyObject value) {
         if ( privateKey != null ) {
-            throw newRSAError(context.runtime, "illegal modification");
+            if ( privateKey instanceof RSAPrivateCrtKey ) {
+                throw newRSAError(context.runtime, "illegal modification");
+            }
+            privateKey = null; // allow rebuild with CRT params
         }
         rsa_p = BN.asBigInteger(value);
         generatePrivateKeyIfParams(context);
@@ -1271,7 +1274,10 @@ public class PKeyRSA extends PKey {
     @JRubyMethod(name="q=")
     public synchronized IRubyObject set_q(final ThreadContext context, IRubyObject value) {
         if ( privateKey != null ) {
-            throw newRSAError(context.runtime, "illegal modification");
+            if ( privateKey instanceof RSAPrivateCrtKey ) {
+                throw newRSAError(context.runtime, "illegal modification");
+            }
+            privateKey = null;
         }
         rsa_q = BN.asBigInteger(value);
         generatePrivateKeyIfParams(context);
@@ -1281,7 +1287,10 @@ public class PKeyRSA extends PKey {
     @JRubyMethod(name="dmp1=")
     public synchronized IRubyObject set_dmp1(final ThreadContext context, IRubyObject value) {
         if ( privateKey != null ) {
-            throw newRSAError(context.runtime, "illegal modification");
+            if ( privateKey instanceof RSAPrivateCrtKey ) {
+                throw newRSAError(context.runtime, "illegal modification");
+            }
+            privateKey = null;
         }
         rsa_dmp1 = BN.asBigInteger(value);
         generatePrivateKeyIfParams(context);
@@ -1291,7 +1300,10 @@ public class PKeyRSA extends PKey {
     @JRubyMethod(name="dmq1=")
     public synchronized IRubyObject set_dmq1(final ThreadContext context, IRubyObject value) {
         if ( privateKey != null ) {
-            throw newRSAError(context.runtime, "illegal modification");
+            if ( privateKey instanceof RSAPrivateCrtKey ) {
+                throw newRSAError(context.runtime, "illegal modification");
+            }
+            privateKey = null;
         }
         rsa_dmq1 = BN.asBigInteger(value);
         generatePrivateKeyIfParams(context);
@@ -1301,7 +1313,10 @@ public class PKeyRSA extends PKey {
     @JRubyMethod(name="iqmp=")
     public synchronized IRubyObject set_iqmp(final ThreadContext context, IRubyObject value) {
         if ( privateKey != null ) {
-            throw newRSAError(context.runtime, "illegal modification");
+            if ( privateKey instanceof RSAPrivateCrtKey ) {
+                throw newRSAError(context.runtime, "illegal modification");
+            }
+            privateKey = null;
         }
         rsa_iqmp = BN.asBigInteger(value);
         generatePrivateKeyIfParams(context);

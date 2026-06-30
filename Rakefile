@@ -50,7 +50,13 @@ namespace 'net-http' do
     sh "cd #{net_http_dir} && bundle install --without sig"
   end
 
-  desc "Run net-http HTTPS tests against jruby-openssl"
+  task :bundle_check do
+    unless File.exist?(File.join(net_http_dir, 'Gemfile.lock'))
+      fail "bundle not installed, run `rake net-http:bundle'"
+    end
+  end
+
+  desc "Run net-http (HTTPS) tests against jruby-openssl"
   Rake::TestTask.new(:test) do |task|
     task.libs = [ 'lib', File.join(net_http_dir, 'lib'), File.join(net_http_dir, 'test/lib') ]
     test_files = %w[test/net/http/test_https.rb test/net/http/test_https_proxy.rb]
@@ -60,7 +66,42 @@ namespace 'net-http' do
     task.ruby_opts = [ '-v', '-C', net_http_dir, '-rhelper' ]
   end
 
-  task :test => ['lib/jopenssl.jar']
+  task :test => ['lib/jopenssl.jar', :bundle_check]
+end
+
+namespace 'ruby-jwt' do
+  jwt_dir = File.expand_path('ruby-jwt', File.dirname(__FILE__))
+
+  desc "Install ruby-jwt gem dependencies"
+  task :bundle do
+    sh "cd #{jwt_dir} && bundle install"
+  end
+
+  task :bundle_check do
+    unless File.exist?(File.join(jwt_dir, 'Gemfile.lock'))
+      fail "bundle not installed, run `rake ruby-jwt:bundle'"
+    end
+  end
+
+  desc "Run ruby-jwt (OpenSSL) tests against jruby-openssl"
+  task :test => ['lib/jopenssl.jar', :bundle_check] do
+    lib_path = File.expand_path('lib', File.dirname(__FILE__))
+    spec_files = [
+      'spec/jwt/jwt_spec.rb',
+      'spec/jwt/jwa_spec.rb',
+      'spec/jwt/jwa/ecdsa_spec.rb',
+      'spec/jwt/jwa/hmac_spec.rb',
+      'spec/jwt/jwa/rsa_spec.rb',
+      'spec/jwt/jwk_spec.rb',
+      'spec/jwt/jwk/decode_with_jwk_spec.rb',
+      'spec/jwt/jwk/ec_spec.rb',
+      'spec/jwt/jwk/rsa_spec.rb',
+      'spec/jwt/x5c_key_finder_spec.rb',
+      'spec/integration/readme_examples_spec.rb'
+    ].map { |file| File.expand_path(file, jwt_dir) }
+
+    ruby "-C #{jwt_dir} -I#{lib_path} -S rspec -I#{lib_path} #{spec_files.join(' ')}"
+  end
 end
 
 namespace :integration do

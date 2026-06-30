@@ -1,3 +1,6 @@
 [submodule "net-http"]
 	path = net-http
 	url = https://github.com/ruby/net-http.git
+[submodule "ruby-jwt"]
+	path = ruby-jwt
+	url = https://github.com/jwt/ruby-jwt.git

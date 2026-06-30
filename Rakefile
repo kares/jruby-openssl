@@ -33,17 +33,17 @@ file('pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class') do
 end
 
 Rake::TestTask.new do |task|
-  task.libs << File.expand_path('src/test/ruby', File.dirname(__FILE__))
-  test_files = FileList['src/test/ruby/**/test*.rb'].to_a
-  task.test_files = test_files.map { |path| path.sub('src/test/ruby/', '') }
+  task.libs << File.expand_path('test', File.dirname(__FILE__))
+  test_files = FileList['test/**/test*.rb'].to_a
+  task.test_files = test_files.map { |path| path.sub('test/', '') }
   task.verbose = false # using -v directly instead due issues with rake
   task.loader = :direct
-  task.ruby_opts = [ '-v', '-C', 'src/test/ruby', '-rbundler/setup' ]
+  task.ruby_opts = [ '-v', '-C', 'test', '-rbundler/setup' ]
 end
 task :test => ['lib/jopenssl.jar', 'pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class']
 
 namespace :integration do
-  it_path = File.expand_path('../src/test/integration', __FILE__)
+  it_path = File.expand_path('src/test/integration', File.dirname(__FILE__))
   task :install do
     ruby "-C #{it_path} -S bundle install"
   end

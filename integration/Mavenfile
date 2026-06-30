@@ -49,7 +49,7 @@ jruby_plugin :runit do
   execute_goal( :test,
                 :env => { 'BC_VERSION' => '${bc.version}' },
                 :jrubySwitches => '-I../../lib',
-                :runitDirectory => '../../src/test/ruby/**/test_*.rb',
+                :runitDirectory => '../../test/**/test_*.rb',
                 :versions => '${jruby.versions}',
                 :modes => '${jruby.modes}' )
 end

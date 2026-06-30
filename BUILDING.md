@@ -20,7 +20,7 @@ NOTE: the ext .jar needs to be build (see the Building section above on `rake ja
 
 The full unit test suite can be boostraped using Rake: `jruby -S rake test`
 
-Tests can also be run individually e.g. `jruby -Ilib:src/test/ruby src/test/ruby/test_bn.rb`
+Tests can also be run individually e.g. `jruby -Ilib:test test/test_bn.rb`
 
 NOTE: make sure to **-Ilib** otherwise you end up using the OpenSSL default gem shipped with JRuby.
 

@@ -110,7 +110,7 @@
                 <BC_VERSION>${bc.version}</BC_VERSION>
               </env>
               <jrubySwitches>-I../../lib</jrubySwitches>
-              <runitDirectory>../../src/test/ruby/**/test_*.rb</runitDirectory>
+              <runitDirectory>../../test/**/test_*.rb</runitDirectory>
               <versions>${jruby.versions}</versions>
               <modes>${jruby.modes}</modes>
             </configuration>

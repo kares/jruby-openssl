@@ -71,7 +71,7 @@ DO NOT MODIFY - GENERATED CODE
     <mavengem.wagon.version>2.0.2</mavengem.wagon.version>
     <polyglot.dump.pom>pom.xml</polyglot.dump.pom>
     <polyglot.dump.readonly>false</polyglot.dump.readonly>
-    <runit.dir>src/test/ruby/**/test_*.rb</runit.dir>
+    <runit.dir>test/**/test_*.rb</runit.dir>
     <skipRunit>true</skipRunit>
   </properties>
   <dependencies>
@@ -273,6 +273,7 @@ DO NOT MODIFY - GENERATED CODE
         <configuration>
           <source>1.8</source>
           <target>1.8</target>
+          <release>8</release>
           <encoding>UTF-8</encoding>
           <debug>true</debug>
           <showWarnings>true</showWarnings>

@@ -38,7 +38,7 @@ Rake::TestTask.new do |task|
   task.test_files = test_files.map { |path| path.sub('test/', '') }
   task.verbose = false # using -v directly instead due issues with rake
   task.loader = :direct
-  task.ruby_opts = [ '-v', '-C', 'test', '-rbundler/setup' ]
+  task.ruby_opts = [ '-v', '-rbundler/setup' ]
 end
 task :test => ['lib/jopenssl.jar', 'pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class']
 

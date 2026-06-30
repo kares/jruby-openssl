@@ -1,0 +1,3 @@
+[submodule "net-http"]
+	path = net-http
+	url = https://github.com/ruby/net-http.git

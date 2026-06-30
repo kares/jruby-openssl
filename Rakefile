@@ -42,6 +42,27 @@ Rake::TestTask.new do |task|
 end
 task :test => ['lib/jopenssl.jar', 'pkg/test-classes/org/jruby/ext/openssl/SecurityHelperTest.class']
 
+namespace 'net-http' do
+  net_http_dir = File.expand_path('net-http', File.dirname(__FILE__))
+
+  desc "Install net-http gem dependencies"
+  task :bundle do
+    sh "cd #{net_http_dir} && bundle install --without sig"
+  end
+
+  desc "Run net-http HTTPS tests against jruby-openssl"
+  Rake::TestTask.new(:test) do |task|
+    task.libs = [ 'lib', File.join(net_http_dir, 'lib'), File.join(net_http_dir, 'test/lib') ]
+    test_files = %w[test/net/http/test_https.rb test/net/http/test_https_proxy.rb]
+    task.test_files = test_files.map { |path| File.expand_path(path, net_http_dir) }
+    task.verbose = false
+    task.loader = :direct
+    task.ruby_opts = [ '-v', '-C', net_http_dir, '-rhelper' ]
+  end
+
+  task :test => ['lib/jopenssl.jar']
+end
+
 namespace :integration do
   it_path = File.expand_path('src/test/integration', File.dirname(__FILE__))
   task :install do

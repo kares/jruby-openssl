@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 
 import org.bouncycastle.asn1.ASN1BMPString;
 import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1GeneralString;
 import org.bouncycastle.asn1.ASN1GraphicString;
 import org.bouncycastle.asn1.ASN1IA5String;
@@ -44,6 +45,8 @@ import org.bouncycastle.asn1.ASN1VideotexString;
 import org.bouncycastle.asn1.ASN1VisibleString;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.DERTaggedObject;
+import org.bouncycastle.asn1.x509.Validity;
+import org.bouncycastle.asn1.x509.Time;
 
 public final class ASN1Shim {
 
@@ -82,6 +85,13 @@ public final class ASN1Shim {
     /** create a DERTaggedObject with explicit tag class */
     public static ASN1TaggedObject newDERTaggedObject(boolean explicit, int tagClass, int tagNo, ASN1Encodable obj) {
         return new DERTaggedObject(explicit, tagClass, tagNo, obj);
+    }
+
+    /**
+     * Create an X.509 Validity SEQUENCE (notBefore + notAfter).
+     */
+    public static ASN1Encodable newValidity(final Time notBefore, final Time notAfter) {
+        return new Validity(notBefore, notAfter);
     }
 
     /**

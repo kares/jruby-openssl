@@ -68,7 +68,6 @@ import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
 import org.bouncycastle.asn1.x509.Time;
-import org.bouncycastle.asn1.x509.Validity;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
@@ -89,6 +88,7 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.impl.ASN1Registry;
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
 import org.jruby.runtime.Block;
@@ -391,7 +391,7 @@ public class X509Cert extends RubyObject {
         vec.add(new ASN1Integer(serial));
         vec.add(certTBS.getSignature());
         vec.add(issuer == null ? certTBS.getIssuer() : ((X509Name) issuer).getX500Name());
-        vec.add(new Validity(
+        vec.add(ASN1Shim.newValidity(
             new Time(not_before != null ? not_before.getJavaDate() : new Date(0)),
             new Time(not_after != null ? not_after.getJavaDate() : new Date(0)))
         );

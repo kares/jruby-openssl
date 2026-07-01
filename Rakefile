@@ -104,6 +104,48 @@ namespace 'ruby-jwt' do
   end
 end
 
+namespace 'sigstore' do
+  sigstore_dir = File.expand_path('sigstore-ruby', File.dirname(__FILE__))
+
+  desc "Install sigstore-ruby gem dependencies"
+  task :bundle do
+    sh "cd #{sigstore_dir} && bundle install"
+  end
+
+  task :bundle_check do
+    unless File.exist?(File.join(sigstore_dir, 'Gemfile.lock'))
+      fail "bundle not installed, run `rake sigstore:bundle'"
+    end
+  end
+
+  desc "Run sigstore-ruby (OpenSSL) tests against jruby-openssl"
+  Rake::TestTask.new(:test) do |task|
+    test_files = [
+      'test/sigstore/verifier_test.rb',
+      'test/sigstore/tuf/trusted_metadata_set_test.rb',
+      'test/sigstore/tuf/timestamp_test.rb',
+      'test/sigstore/tuf/root_test.rb',
+      'test/sigstore/tuf/snapshot_test.rb',
+      'test/sigstore/tuf/targets_test.rb',
+      'test/sigstore/trusted_root_test.rb',
+      'test/sigstore/transparency_test.rb',
+      'test/sigstore/policy_test.rb',
+      'test/sigstore/models_test.rb',
+      'test/sigstore/internal/x509_test.rb',
+      'test/sigstore/internal/merkle_test.rb',
+      'test/sigstore/internal/keyring_test.rb'
+    ]
+
+    task.libs = [ File.expand_path('lib', File.dirname(__FILE__)), File.join(sigstore_dir, 'lib'), File.join(sigstore_dir, 'test') ]
+    task.test_files = test_files.map { |path| File.expand_path(path, sigstore_dir) }
+    task.verbose = false
+    task.loader = :direct
+    task.ruby_opts = [ '-v', '-C', sigstore_dir, '-rbundler/setup', '-rtest_helper' ]
+  end
+
+  task :test => ['lib/jopenssl.jar', :bundle_check]
+end
+
 namespace :integration do
   it_path = File.expand_path('src/test/integration', File.dirname(__FILE__))
   task :install do

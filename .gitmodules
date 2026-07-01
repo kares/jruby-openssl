@@ -4,3 +4,6 @@
 [submodule "ruby-jwt"]
 	path = ruby-jwt
 	url = https://github.com/jwt/ruby-jwt.git
+[submodule "sigstore-ruby"]
+	path = sigstore-ruby
+	url = https://github.com/sigstore/sigstore-ruby.git

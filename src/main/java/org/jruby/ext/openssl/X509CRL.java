@@ -361,7 +361,7 @@ public class X509CRL extends RubyObject {
             text.append("\nRevoked Certificates:\n");
             for ( int i = 0; i < revoked.size(); i++ ) {
                 final X509Revoked rev = (X509Revoked) revoked.entry(i);
-                final String serial = rev.serial.toString(16);
+                final String serial = rev.getSerial().toString(16);
                 text.append(S16,0,4).append("Serial Number: ");
                 if ( serial.length() % 2 == 0 ) text.append(serial).append('\n');
                 else text.append('0').append(serial).append('\n');

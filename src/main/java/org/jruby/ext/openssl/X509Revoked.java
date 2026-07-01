@@ -95,14 +95,14 @@ public class X509Revoked extends RubyObject {
         final X509CRLEntry entry, final String extOID, final boolean critical) {
         try {
             final IRubyObject extension = newExtension(context, extOID, entry, critical);
-            if ( extension != null ) extensions().append( extension );
+            if ( extension != null ) add_extension(context, extension);
         }
         catch (IOException e) { throw newExtensionError(context.runtime, e); }
     }
 
-    BN serial;
-    RubyArray extensions;
-    RubyTime time;
+    private BN serial;
+    private RubyArray extensions;
+    private RubyTime time;
 
     public X509Revoked(Ruby runtime, RubyClass type) {
         super(runtime,type);
@@ -114,8 +114,8 @@ public class X509Revoked extends RubyObject {
         return this;
     }
 
-    BigInteger getSerial() {
-        return this.serial.getValue();
+    BN getSerial() {
+        return serial;
     }
 
     @JRubyMethod

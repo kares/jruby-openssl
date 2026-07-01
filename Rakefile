@@ -120,21 +120,8 @@ namespace 'sigstore' do
 
   desc "Run sigstore-ruby (OpenSSL) tests against jruby-openssl"
   Rake::TestTask.new(:test) do |task|
-    test_files = [
-      'test/sigstore/verifier_test.rb',
-      'test/sigstore/tuf/trusted_metadata_set_test.rb',
-      'test/sigstore/tuf/timestamp_test.rb',
-      'test/sigstore/tuf/root_test.rb',
-      'test/sigstore/tuf/snapshot_test.rb',
-      'test/sigstore/tuf/targets_test.rb',
-      'test/sigstore/trusted_root_test.rb',
-      'test/sigstore/transparency_test.rb',
-      'test/sigstore/policy_test.rb',
-      'test/sigstore/models_test.rb',
-      'test/sigstore/internal/x509_test.rb',
-      'test/sigstore/internal/merkle_test.rb',
-      'test/sigstore/internal/keyring_test.rb'
-    ]
+    test_files = FileList[File.join(sigstore_dir, 'test/sigstore/**/*_test.rb')].to_a
+    test_files = test_files.reject { |f| f.include?('conformance_test') }
 
     task.libs = [ File.expand_path('lib', File.dirname(__FILE__)), File.join(sigstore_dir, 'lib'), File.join(sigstore_dir, 'test') ]
     task.test_files = test_files.map { |path| File.expand_path(path, sigstore_dir) }

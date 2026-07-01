@@ -48,10 +48,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -64,6 +64,8 @@ import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.Extensions;
 
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x509.TBSCertificate;
@@ -249,31 +251,24 @@ public class X509Cert extends RubyObject {
         } // "hot" path e.g. sha256WithRSAEncryption
         this.sig_alg = RubyString.newString(runtime, sigAlgorithm);
 
-        final Set<String> criticalExtOIDs = cert.getCriticalExtensionOIDs();
-        if ( criticalExtOIDs != null ) {
-            for ( final String extOID : criticalExtOIDs ) {
-                addExtension(context, extOID, true);
-            }
-        }
-
-        final Set<String> nonCriticalExtOIDs = cert.getNonCriticalExtensionOIDs();
-        if ( nonCriticalExtOIDs != null ) {
-            for ( final String extOID : nonCriticalExtOIDs ) {
-                addExtension(context, extOID, false);
-            }
-        }
+        addExtensions(context, cert);
         changed = false;
     }
 
-    private void addExtension(final ThreadContext context,
-        final String extOID, final boolean critical) {
+    private void addExtensions(final ThreadContext context, final X509Certificate cert) {
         try {
-            final byte[] extValue = cert.getExtensionValue(extOID);
-            if ( extValue == null ) return;
-            final X509Extension[] extension = newExtension(context, extOID, extValue, critical);
-            for ( int i = 0; i < extension.length; i++ ) this.extensions.add( extension[i] );
+            final Extensions extensions = new X509CertificateHolder(cert.getEncoded()).getExtensions();
+            if ( extensions == null ) return;
+
+            for ( Enumeration<?> oids = extensions.oids(); oids.hasMoreElements(); ) {
+                final ASN1ObjectIdentifier oid = (ASN1ObjectIdentifier) oids.nextElement();
+                final Extension extension = extensions.getExtension(oid);
+                this.extensions.add(newExtension(context.runtime, oid, extension.getExtnValue(), extension.isCritical()));
+            }
         }
-        catch (IOException e) { throw newCertificateError(context.runtime, e); }
+        catch (IOException|CertificateEncodingException e) {
+            throw newCertificateError(context.runtime, e);
+        }
     }
 
     private static RubyClass _CertificateError(final Ruby runtime) {

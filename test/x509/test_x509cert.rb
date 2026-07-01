@@ -1020,4 +1020,19 @@ EOF
     assert_equal cert.subject.to_s, cert2.subject.to_s
     assert_equal cert.serial, cert2.serial
   end
+
+  def test_extension_order_preserved
+    cert_path = File.expand_path('digicert.pem', File.dirname(__FILE__))
+    cert = OpenSSL::X509::Certificate.new(File.read(cert_path))
+
+    cert_oids = cert.extensions.map(&:oid)
+    refute cert_oids.empty?, 'cert must have extensions'
+
+    cert2 = OpenSSL::X509::Certificate.new(cert.to_der)
+    cert2_oids = cert2.extensions.map(&:oid)
+    assert_equal cert_oids, cert2_oids,
+      "extension order changed after DER round-trip:\n" \
+      "  original: #{cert_oids.inspect}\n" \
+      "  after:    #{cert2_oids.inspect}"
+  end
 end

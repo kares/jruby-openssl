@@ -246,15 +246,15 @@ public class SSLSession extends RubyObject {
 
     private DERSequence buildDERSequence() {
         final ASN1EncodableVector v = new ASN1EncodableVector();
-        v.add(new ASN1Integer(1));
-        v.add(new ASN1Integer(versionFromProtocol(getProtocol())));
+        v.add(new ASN1Integer(1L));
+        v.add(new ASN1Integer((long) versionFromProtocol(getProtocol())));
         v.add(new DEROctetString(new byte[] { 0x00, 0x00 }));
         v.add(new DEROctetString(getIdBytes()));
         v.add(new DEROctetString(new byte[0]));
 
         final long time = getTimeInSeconds();
         v.add(new DERTaggedObject(true, 1, new ASN1Integer(time)));
-        v.add(new DERTaggedObject(true, 2, new ASN1Integer(getTimeout())));
+        v.add(new DERTaggedObject(true, 2, new ASN1Integer((long) getTimeout())));
         return new DERSequence(v);
     }
 

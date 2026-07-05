@@ -382,7 +382,7 @@ public class X509Cert extends RubyObject {
 
         final int version = this.version == null ? 0 : RubyNumeric.fix2int(this.version);
         final ASN1EncodableVector vec = new ASN1EncodableVector(10);
-        if ( version != 0 ) vec.add(new DERTaggedObject(true, 0, new ASN1Integer(version)));
+        if ( version != 0 ) vec.add(new DERTaggedObject(true, 0, new ASN1Integer((long) version)));
         vec.add(new ASN1Integer(serial));
         vec.add(certTBS.getSignature());
         vec.add(issuer == null ? certTBS.getIssuer() : ((X509Name) issuer).getX500Name());

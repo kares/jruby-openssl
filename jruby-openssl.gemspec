@@ -28,10 +28,11 @@ Gem::Specification.new do |s|
 
   s.required_ruby_version = '>= 2.5.0' # JRuby >= 9.2
 
-  s.requirements << "jar org.bouncycastle:bcprov-jdk18on, #{bc_version}" # Provider
-  s.requirements << "jar org.bouncycastle:bcpkix-jdk18on, #{bc_version}" # PKIX/CMS/EAC/PKCSOCSP/TSP/OPENSSL
-  s.requirements << "jar org.bouncycastle:bctls-jdk18on,  #{bc_version}" # DTLS/TLS API/JSSE Provider
-  s.requirements << "jar org.bouncycastle:bcutil-jdk18on, #{bc_version}"
+  bc_supported_version = "[1.80,#{bc_version}]"
+  s.requirements << "jar org.bouncycastle:bcprov-jdk18on, #{bc_supported_version}" # Provider
+  s.requirements << "jar org.bouncycastle:bcpkix-jdk18on, #{bc_supported_version}" # PKIX/CMS/EAC/PKCSOCSP/TSP/OPENSSL
+  s.requirements << "jar org.bouncycastle:bctls-jdk18on,  #{bc_supported_version}" # DTLS/TLS API/JSSE Provider
+  s.requirements << "jar org.bouncycastle:bcutil-jdk18on, #{bc_supported_version}"
 
 end
 

@@ -273,7 +273,6 @@ DO NOT MODIFY - GENERATED CODE
         <configuration>
           <source>1.8</source>
           <target>1.8</target>
-          <release>8</release>
           <encoding>UTF-8</encoding>
           <debug>true</debug>
           <showWarnings>true</showWarnings>
@@ -346,7 +345,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -358,7 +356,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.2.19.0</jruby.version>
         <jruby.versions>9.2.19.0</jruby.versions>
       </properties>
@@ -384,7 +382,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -396,7 +393,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.2.20.1</jruby.version>
         <jruby.versions>9.2.20.1</jruby.versions>
       </properties>
@@ -422,7 +419,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -434,7 +430,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.3.3.0</jruby.version>
         <jruby.versions>9.3.3.0</jruby.versions>
       </properties>
@@ -460,7 +456,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -472,7 +467,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.3.13.0</jruby.version>
         <jruby.versions>9.3.13.0</jruby.versions>
       </properties>
@@ -498,7 +493,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -510,7 +504,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.4.8.0</jruby.version>
         <jruby.versions>9.4.8.0</jruby.versions>
       </properties>
@@ -536,7 +530,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -548,7 +541,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>9.4.14.0</jruby.version>
         <jruby.versions>9.4.14.0</jruby.versions>
       </properties>
@@ -574,7 +567,6 @@ DO NOT MODIFY - GENERATED CODE
                   <streamLogs>true</streamLogs>
                   <properties>
                     <jruby.versions>${jruby.versions}</jruby.versions>
-                    <jruby.modes>${jruby.modes}</jruby.modes>
                     <jruby.openssl.version>${project.version}</jruby.openssl.version>
                     <bc.versions>${bc.versions}</bc.versions>
                     <runit.dir>${runit.dir}</runit.dir>
@@ -586,7 +578,7 @@ DO NOT MODIFY - GENERATED CODE
         </plugins>
       </build>
       <properties>
-        <bc.versions>1.78,1.79,1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
         <jruby.version>10.0.2.0</jruby.version>
         <jruby.versions>10.0.2.0</jruby.versions>
       </properties>

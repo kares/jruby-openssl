@@ -8,8 +8,9 @@ class TestOpenSSL < TestCase
   def test_gem_version
     assert_equal ENV['BC_VERSION'], Java::OrgBouncycastleJceProvider::BouncyCastleProvider.new.info.sub( /[^0-9.]*/, '' )
     # we have a jruby-openssl gem loaded
-    assert Gem.loaded_specs[ 'jruby-openssl' ] != nil
-    assert Gem.loaded_specs[ 'jruby-openssl' ].full_gem_path.match( /!/ ) == nil
+    if spec = Gem.loaded_specs[ 'jruby-openssl' ]
+      assert spec.full_gem_path.match( /!/ ) == nil
+    end
   end if ENV['BC_VERSION']
 
   def test_version

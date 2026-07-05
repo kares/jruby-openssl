@@ -5,22 +5,11 @@ rescue LoadError
 end
 
 if bc_version = ENV['BC_VERSION']
-  require 'jar-dependencies'
-  require_jar 'org.bouncycastle', 'bcpkix-jdk15on', bc_version
-  require_jar 'org.bouncycastle', 'bcprov-jdk15on', bc_version
-  Jars.freeze_loading if defined? Jars.freeze_loading
-
-  puts org.bouncycastle.jce.provider::BouncyCastleProvider.new.info if $VERBOSE
-else
-  # base_dir = File.expand_path('../../..', File.dirname(__FILE__))
-  #
-  # jar = File.join(base_dir, 'lib/jopenssl.jar')
-  # fail("jopenssl.jar jar not found") unless jar # $CLASSPATH << jar
-
-  # jar = Dir[File.join(base_dir, 'vendor/org/bouncycastle/**/bcprov-*.jar')].first
-  # raise "bcprov jar not found" unless jar; $CLASSPATH << jar
-  # jar = Dir[File.join(base_dir, 'vendor/org/bouncycastle/**/bcpkix-*.jar')].first
-  # raise "bcpkix jar not found" unless jar; $CLASSPATH << jar
+  bc_version_str = org.bouncycastle.jce.provider::BouncyCastleProvider.new.info.sub(/[^0-9.]*/, '')
+  if bc_version_str != bc_version
+    fail "Loaded BC provider version '#{bc_version_str}' does not match expected '#{bc_version}'"
+  end
+  puts "BC version #{bc_version_str} loaded" if $VERBOSE
 end if defined? JRUBY_VERSION
 
 require 'test/unit'

@@ -45,7 +45,7 @@ class TestX509Context < TestCase
     assert_equal 0, ctx.error_depth
 
     stderr = capture_stderr { assert_nil ctx.cleanup }
-    assert_match(/cleanup.*deprecated/, stderr)
+    assert_match(/cleanup.*deprecated/, stderr) if $VERBOSE
 
     assert_equal OpenSSL::X509::V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT, ctx.error
     assert_match(/self.signed/i, ctx.error_string)

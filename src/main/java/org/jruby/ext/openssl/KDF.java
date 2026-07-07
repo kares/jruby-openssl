@@ -134,8 +134,8 @@ public class KDF {
         return newError(runtime, _KDF(runtime).getClass("KDFError"), message);
     }
 
-    static RubyClass _KDF(final Ruby runtime) {
-        return (RubyClass) runtime.getModule("OpenSSL").getConstant("KDF");
+    static RubyModule _KDF(final Ruby runtime) {
+        return (RubyModule) runtime.getModule("OpenSSL").getConstant("KDF"); // KDF is a module, not a class
     }
 
 }

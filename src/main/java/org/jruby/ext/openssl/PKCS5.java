@@ -56,8 +56,7 @@ public class PKCS5 {
     // def pbkdf2_hmac_sha1(pass, salt, iter, keylen)
     @JRubyMethod(module = true, required = 4)
     public static IRubyObject pbkdf2_hmac_sha1(final IRubyObject self, final IRubyObject[] args) {
-        //final byte[] pass = args[0].asString().getBytes();
-        final char[] pass = args[0].asString().toString().toCharArray();
+        final byte[] pass = args[0].asString().getBytes();
         final byte[] salt = args[1].asString().getBytes();
         final int iter = (int) args[2].convertToInteger().getLongValue();
         final int keySize = (int) args[3].convertToInteger().getLongValue(); // e.g. 64
@@ -90,6 +89,8 @@ public class PKCS5 {
         final int iter = RubyNumeric.num2int(args[2]);
         final int keylen = RubyNumeric.num2int(args[3]);
 
+        checkIterations(runtime, iter);
+
         final String digestAlg;
         final IRubyObject digest = args[4];
         if ( digest instanceof Digest ) {
@@ -121,11 +122,11 @@ public class PKCS5 {
     }
 
     static RubyString generatePBEKey(final Ruby runtime,
-        final char[] pass, final byte[] salt, final int iter, final int keySize) {
+        final byte[] pass, final byte[] salt, final int iter, final int keySize) {
+        checkIterations(runtime, iter);
         try {
-            final byte[] passBytes = pkcs5PasswordToBytes(pass);
             final Mac mac = SecurityHelper.getMac("HmacSHA1");
-            mac.init(new SimpleSecretKey("HmacSHA1", passBytes));
+            mac.init(new SimpleSecretKey("HmacSHA1", pass));
             return newString(runtime, deriveKey(mac, salt, iter, keySize));
         }
         catch (NoSuchAlgorithmException e) {
@@ -136,12 +137,9 @@ public class PKCS5 {
         }
     }
 
-    private static byte[] pkcs5PasswordToBytes(final char[] pass) {
-        final byte[] bytes = new byte[pass.length];
-        for (int i = 0; i < pass.length; i++) {
-            bytes[i] = (byte) pass[i];
-        }
-        return bytes;
+    // PBKDF2 requires at least one iteration; guard against silently returning an all-zero key
+    private static void checkIterations(final Ruby runtime, final int iter) {
+        if (iter < 1) throw newKDFError(runtime, "iterations must be at least 1");
     }
 
     public static byte[] deriveKey( final Mac prf, byte[] salt, int iterationCount, int dkLen ) {

@@ -80,4 +80,31 @@ class TestPKCS5 < TestCase
     assert_equal(value1, value2)
   end
 
+  # pbkdf2_hmac_sha1 must use the raw password bytes, not a char->byte cast
+  def test_pbkdf2_hmac_sha1_non_ascii_password_matches_pbkdf2_hmac
+    omit_on_fips 'test vector uses HMAC key shorter than 112 bits'
+
+    pass = "päss" # "päss" (UTF-8: 70 c3 a4 73 73)
+    salt = 'salt'
+    legacy  = OpenSSL::PKCS5.pbkdf2_hmac_sha1(pass, salt, 1000, 20)
+    generic = OpenSSL::PKCS5.pbkdf2_hmac(pass, salt, 1000, 20, 'SHA1')
+    assert_equal generic, legacy
+  end
+
+  # iterations < 1 must raise, not silently return an all-zero key
+  def test_pbkdf2_rejects_non_positive_iterations
+    assert_raise(OpenSSL::KDF::KDFError) do
+      OpenSSL::PKCS5.pbkdf2_hmac_sha1('password', 'salt', 0, 20)
+    end
+    assert_raise(OpenSSL::KDF::KDFError) do
+      OpenSSL::PKCS5.pbkdf2_hmac('password', 'salt', 0, 32, 'SHA256')
+    end
+    assert_raise(OpenSSL::KDF::KDFError) do
+      OpenSSL::KDF.pbkdf2_hmac('password', salt: 'salt', iterations: 0, length: 32, hash: 'SHA256')
+    end
+    assert_raise(OpenSSL::KDF::KDFError) do
+      OpenSSL::PKCS5.pbkdf2_hmac_sha1('password', 'salt', -1, 20)
+    end
+  end
+
 end

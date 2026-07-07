@@ -244,4 +244,21 @@ class TestSSLContext < TestCase
     assert_equal context.ciphers, ciphers
   end
 
+  def test_dup_and_clone_are_undefined
+    context = OpenSSL::SSL::SSLContext.new
+    assert_raise(NoMethodError) { context.dup }
+    assert_raise(NoMethodError) { context.clone }
+  end
+
+  # once set up (frozen) security-affecting writers must not weaken the context
+  def test_frozen_context_rejects_weakening
+    context = OpenSSL::SSL::SSLContext.new
+    context.min_version = OpenSSL::SSL::TLS1_2_VERSION
+    context.freeze # SSLSocket setup freezes the context in the same way
+    assert_raise(FrozenError) { context.ciphers = "ALL" }
+    assert_raise(FrozenError) { context.ssl_version = :SSLv3 }
+    assert_raise(FrozenError) { context.options = 0 }
+    assert_raise(FrozenError) { context.min_version = OpenSSL::SSL::TLS1_VERSION }
+  end
+
 end

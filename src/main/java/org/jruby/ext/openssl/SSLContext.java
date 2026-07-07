@@ -258,6 +258,9 @@ public class SSLContext extends RubyObject {
         SSLContext.defineAlias("ssl_timeout=", "timeout=");
 
         SSLContext.defineAnnotatedMethods(SSLContext.class);
+        // an SSLContext must not be copied
+        SSLContext.undefineMethod("dup");
+        SSLContext.undefineMethod("clone");
 
         final Set<String> methodKeys = SSL_VERSION_OSSL2JSSE.keySet();
         final RubyArray methods = runtime.newArray( methodKeys.size() );
@@ -333,14 +336,6 @@ public class SSLContext extends RubyObject {
         assert this.options == OP_ALL; // self.options |= OpenSSL::SSL::OP_ALL
         if ( args.length > 0 ) set_ssl_version(args[0]); // self.ssl_version = version if version
         return initializeImpl();
-    }
-
-    @JRubyMethod(visibility = Visibility.PRIVATE)
-    @Override // NOTE: instance variables (no internal state) on #dup
-    public IRubyObject initialize_copy(IRubyObject original) {
-        SSLContext copy = (SSLContext) super.initialize_copy(original);
-        copy.options = ((SSLContext) original).options;
-        return copy;
     }
 
     final SSLContext initializeImpl() { return this; }
@@ -564,6 +559,7 @@ public class SSLContext extends RubyObject {
 
     @JRubyMethod(name = "ciphers=")
     public IRubyObject set_ciphers(final ThreadContext context, final IRubyObject ciphers) {
+        checkFrozen(); // a set-up (frozen) context must not be weakened
         String cipherString;
         if ( ciphers.isNil() ) {
             cipherString = CipherStrings.SSL_DEFAULT_CIPHER_LIST;
@@ -604,6 +600,7 @@ public class SSLContext extends RubyObject {
 
     @JRubyMethod(name = "ssl_version=")
     public IRubyObject set_ssl_version(IRubyObject method) {
+        checkFrozen();
         final String version;
         if ( method instanceof RubySymbol ) {
             version = method.toString();
@@ -622,6 +619,7 @@ public class SSLContext extends RubyObject {
 
     @JRubyMethod(name = "set_minmax_proto_version", visibility = Visibility.PRIVATE)
     public IRubyObject set_minmax_proto_version(ThreadContext context, IRubyObject minVersion, IRubyObject maxVersion) {
+        checkFrozen();
         minProtocolVersion = parseProtoVersion(minVersion);
         maxProtocolVersion = parseProtoVersion(maxVersion);
 
@@ -927,6 +925,7 @@ public class SSLContext extends RubyObject {
 
     @JRubyMethod(name = "options=")
     public IRubyObject options_set(final IRubyObject options) {
+        checkFrozen();
         if (options.isNil()) {
             this.options = OP_ALL;
         } else {

@@ -85,19 +85,18 @@ class TestSSLSocket < TestCase
     end
   end if RUBY_VERSION > '2.2'
 
-  def test_read_nonblock_without_session
-    start_server(OpenSSL::SSL::VERIFY_PEER, false) { |_, port|
-      sock = TCPSocket.new("127.0.0.1", port)
-      ssl = OpenSSL::SSL::SSLSocket.new(sock)
-      ssl.sync_close = true
-
-      assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
-      ssl.write("abc\n")
-      IO.select [ssl]
-      assert_equal('a', ssl.read_nonblock(1))
-      assert_equal("bc\n", ssl.read_nonblock(100))
-      assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
-      ssl.close
+  def test_read_nonblock
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) { |_, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION # avoid TLS 1.3 post-handshake records (see test_read_nonblock_tls13)
+      server_connect(port, ctx) do |ssl|
+        assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
+        ssl.write("abc\n")
+        IO.select [ssl]
+        assert_equal('a', ssl.read_nonblock(1))
+        assert_equal("bc\n", ssl.read_nonblock(100))
+        assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
+      end
     }
   end
 

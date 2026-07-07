@@ -554,19 +554,18 @@ class TestSSL < TestCase
     end
   end
 
-  def test_read_nonblock_without_session
-    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, false) do |server, port|
-      sock = TCPSocket.new("127.0.0.1", port)
-      ssl = OpenSSL::SSL::SSLSocket.new(sock)
-      ssl.sync_close = true
-
-      assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
-      ssl.write("abc\n")
-      IO.select [ssl]
-      assert_equal('a', ssl.read_nonblock(1))
-      assert_equal("bc\n", ssl.read_nonblock(100))
-      assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
-      ssl.close
+  def test_read_nonblock
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION # avoid TLS 1.3 post-handshake records (see test_read_nonblock_tls13)
+      server_connect(port, ctx) do |ssl|
+        assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
+        ssl.write("abc\n")
+        IO.select [ssl]
+        assert_equal('a', ssl.read_nonblock(1))
+        assert_equal("bc\n", ssl.read_nonblock(100))
+        assert_equal :wait_readable, ssl.read_nonblock(100, exception: false)
+      end
     end
   end
 
@@ -959,6 +958,27 @@ Ob8VZRzI9neWagqNdwvYkQsEjgfbKbYK7p2CNTUQ
         ssl.puts "hello"
         assert_equal "hello\n", ssl.gets
       end
+    end
+  end
+
+  def test_sysread_syswrite_raise_before_handshake
+    require 'socket'
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    begin
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock)
+      begin
+        err = assert_raise(OpenSSL::SSL::SSLError) { ssl.syswrite("plaintext") }
+        assert_match(/SSL session is not started/, err.message)
+        err = assert_raise(OpenSSL::SSL::SSLError) { ssl.sysread(16) }
+        assert_match(/SSL session is not started/, err.message)
+      ensure
+        ssl.close rescue nil
+        sock.close rescue nil
+      end
+    ensure
+      server.close rescue nil
     end
   end
 

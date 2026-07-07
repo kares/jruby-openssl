@@ -931,6 +931,9 @@ public class SSLSocket extends RubyObject {
         if ( length < 0 ) {
             throw runtime.newArgumentError("negative string size (or size too big)");
         }
+        if ( engine == null ) { // connect/accept never ran: never read plaintext off the raw channel
+            throw newSSLError(runtime, "SSL session is not started yet");
+        }
 
         try {
             // Flush pending write data before reading (after write_nonblock encrypted bytes may still be buffered)
@@ -951,11 +954,7 @@ public class SSLSocket extends RubyObject {
             int read = -1;
             // ensure > 0 bytes read; sysread is blocking read
             while ( read <= 0 ) {
-                if ( engine == null ) {
-                    read = socketChannelImpl().read(dst);
-                } else {
-                    read = read(dst, blocking, exception);
-                }
+                read = read(dst, blocking, exception);
 
                 if ( read == -1 ) {
                     if ( exception ) throw runtime.newEOFError();
@@ -1022,18 +1021,16 @@ public class SSLSocket extends RubyObject {
         final Ruby runtime = context.runtime;
         try {
             checkClosed();
+            if ( engine == null ) { // connect/accept never ran: never write plaintext to the raw channel
+                throw newSSLError(runtime, "SSL session is not started yet");
+            }
 
             final Object ex = waitSelect(SelectionKey.OP_WRITE, blocking, exception);
             if ( ex instanceof IRubyObject ) return (IRubyObject) ex; // :wait_writable
 
             ByteList bytes = arg.asString().getByteList();
             ByteBuffer buff = ByteBuffer.wrap(bytes.getUnsafeBytes(), bytes.getBegin(), bytes.getRealSize());
-            final int written;
-            if ( engine == null ) {
-                written = writeToChannel(buff, blocking);
-            } else {
-                written = write(buff, blocking);
-            }
+            final int written = write(buff, blocking);
 
             io_flush(context); // io.flush
 

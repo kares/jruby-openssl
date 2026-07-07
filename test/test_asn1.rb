@@ -1298,6 +1298,19 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
     assert_equal 12345678901234567890, i.value.to_i
   end
 
+  # deeply nested constructed data must raise ASN1Error, not overflow the Java stack
+  def test_traverse_deeply_nested_raises
+    deep = ("\x30\x80".b * 5000) + ("\x00\x00".b * 5000)
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.traverse(deep) { |*a| } }
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.decode(deep) }
+  end
+
+  # truncated/empty input must raise ASN1Error (was a bare RuntimeError)
+  def test_decode_truncated_raises_asn1error
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.decode("".b) }
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.decode("\x30".b) }
+  end
+
   def test_decode_from_to_der_object
     int = OpenSSL::ASN1::Integer.new(42)
     obj = Object.new

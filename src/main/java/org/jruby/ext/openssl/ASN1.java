@@ -1114,6 +1114,9 @@ public class ASN1 {
             LOG.debugStack(context.runtime, null, e);
             throw (RaiseException) context.runtime.newArgumentError(e.getMessage()).initCause(e);
         }
+        catch (IndexOutOfBoundsException e) { // truncated header
+            throw newASN1Error(context.runtime, "not enough data");
+        }
         catch (RuntimeException e) {
 
             LOG.debugStack(context.runtime, null, e);
@@ -1254,6 +1257,8 @@ public class ASN1 {
         return context.nil;
     }
 
+    private static final int MAX_NESTING = 30; // matches OpenSSL ASN1_MAX_CONSTRUCTED_NEST / BC decode
+
     private static TraverseResult traverse(final ThreadContext context,
                                            final byte[] bytes, final int begin, final int end,
                                            final int base, final int depth,
@@ -1261,6 +1266,7 @@ public class ASN1 {
 
         final Ruby runtime = context.runtime;
 
+        if (depth > MAX_NESTING) throw newASN1Error(runtime, "nested too deep");
         if (begin >= end) throw newASN1Error(runtime, "header too short");
 
         int cursor = begin;

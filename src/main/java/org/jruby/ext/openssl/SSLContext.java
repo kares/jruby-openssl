@@ -428,6 +428,8 @@ public class SSLContext extends RubyObject {
         }
 
         final Store store = certStore != null ? certStore.getStore() : new Store();
+        // a raw store (ca_file/ca_path path) needs the verify callback fn so verify_callback is honored
+        if (certStore == null) store.setVerifyCallbackFunction(X509Store.verifyCallback);
 
         final String caFile = getCaFile();
         final String caPath = getCaPath();

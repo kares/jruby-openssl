@@ -251,6 +251,44 @@ class TestSSL < TestCase
     end
   end
 
+  # verify_callback must be honored on the ca_file/ca_path path (not only when a cert_store is set):
+  # a callback rejecting an otherwise valid chain must fail the connection
+  def test_verify_callback_honored_with_ca_file
+    require 'tempfile'
+    ca_file = Tempfile.new(['ca', '.pem'])
+    ca_file.write(@ca_cert.to_pem); ca_file.flush; ca_file.close
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      # callback rejects -> connection must fail
+      called = false
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.ca_file = ca_file.path
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.verify_callback = lambda { |ok, sctx| called = true; false }
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+      assert called, "verify_callback was not invoked on the ca_file path"
+      ssl.close rescue nil; sock.close rescue nil
+
+      # callback accepts (passes preverify through) -> connection succeeds
+      called = false
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.ca_file = ca_file.path
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.verify_callback = lambda { |ok, sctx| called = true; ok }
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.connect
+      assert called
+      assert_equal OpenSSL::X509::V_OK, ssl.verify_result
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+      ca_file.unlink rescue nil
+    end
+  end
+
   def test_verify_result_with_verify_peer_self_signed
     # VERIFY_PEER with self-signed cert: connect should fail
     self_key = OpenSSL::PKey::RSA.new(2048)

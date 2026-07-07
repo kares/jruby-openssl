@@ -268,7 +268,7 @@ public class X509Store extends RubyObject {
         return result;
     }
 
-    private static Store.VerifyCallbackFunction verifyCallback = new Store.VerifyCallbackFunction() {
+    static final Store.VerifyCallbackFunction verifyCallback = new Store.VerifyCallbackFunction() {
 
         public int call(final StoreContext context, final Integer outcome) {
             int preverify_ok = outcome.intValue();

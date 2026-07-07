@@ -1425,9 +1425,11 @@ public class Cipher extends RubyObject {
     private byte[] updateBuffer;
     private int updateBufferPos;
 
-    // True when we need manual block buffering to match OpenSSL's EVP_EncryptUpdate flush behavior
+    // True when we need manual block buffering to match OpenSSL's EVP_EncryptUpdate flush behavior;
+    // only genuine block modes (CBC, ECB) hold back a complete block in Java's Cipher, feedback/counter modes
+    // (CFB, OFB, CTR) already flush immediately and must NOT be manually re-chained from a ciphertext block
     private boolean switchToManualBlockUpdateBuffer() {
-        if ( isStreamCipher() || isAuthDataMode() ) return false;
+        if ( ! "CBC".equalsIgnoreCase(cryptoMode) && ! "ECB".equalsIgnoreCase(cryptoMode) ) return false;
         return ( encryptMode && "PKCS5Padding".equals(paddingType) ) ||
                 ( ! encryptMode && "NoPadding".equals(paddingType) );
     }

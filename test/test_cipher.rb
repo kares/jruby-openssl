@@ -234,6 +234,28 @@ class TestCipher < TestCase
     assert_equal data, pt
   end
 
+  # the manual block-buffering must not touch feedback/counter stream modes
+  def test_stream_mode_decrypt_roundtrip
+    key = "0123456789abcdef"; iv = "fedcba9876543210"
+    # lengths that are not clean block multiples exercised the broken re-chaining
+    data = ("The quick brown fox jumps over the lazy dog!!" * 3) # 135 bytes
+    %w[AES-128-CTR AES-128-OFB AES-128-CFB AES-128-CFB8].each do |algo|
+      enc = OpenSSL::Cipher.new(algo).encrypt; enc.key = key; enc.iv = iv
+      ct = enc.update(data) + enc.final
+
+      # single-shot decrypt
+      dec = OpenSSL::Cipher.new(algo).decrypt; dec.key = key; dec.iv = iv
+      assert_equal data, dec.update(ct) + dec.final, "#{algo} single-shot decrypt"
+
+      # block-by-block decrypt (stresses the per-update path)
+      dec2 = OpenSSL::Cipher.new(algo).decrypt; dec2.key = key; dec2.iv = iv
+      out = "".b
+      (0...ct.bytesize).step(16) { |o| out << dec2.update(ct[o, 16]) }
+      out << dec2.final
+      assert_equal data, out, "#{algo} chunked decrypt"
+    end
+  end
+
   # Ensure encrypt-decrypt on the same object still works
   def test_encrypt_then_decrypt_same_object
     key, iv = "0123456789abcdef", "fedcba9876543210"

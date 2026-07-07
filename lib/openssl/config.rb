@@ -80,7 +80,9 @@ module OpenSSL
         section = 'default'
         data = {section => {}}
         io_stack = [io]
-        while definition = get_definition(io_stack)
+        # absolute paths of the currently-open .include chain, to break include cycles
+        included = [nil]
+        while definition = get_definition(io_stack, included)
           definition = clear_comments(definition)
           next if definition.empty?
           case definition
@@ -100,11 +102,16 @@ module OpenSSL
             end
 
             files.each do |filename|
+              real = File.expand_path(filename)
+              if included.include?(real)
+                raise ConfigError, "include cycle detected: '%s'" % filename
+              end
               begin
                 io_stack << StringIO.new(File.read(filename))
               rescue
                 raise ConfigError, "could not include file '%s'" % filename
               end
+              included << real
             end
           when /\A([^:\s]*)(?:::([^:\s]*))?\s*=(.*)\z/
             if $2
@@ -229,10 +236,10 @@ module OpenSSL
         scanned.join
       end
 
-      def get_definition(io_stack)
-        if line = get_line(io_stack)
+      def get_definition(io_stack, included = nil)
+        if line = get_line(io_stack, included)
           while /[^\\]\\\z/ =~ line
-            if extra = get_line(io_stack)
+            if extra = get_line(io_stack, included)
               line += extra
             else
               break
@@ -242,12 +249,13 @@ module OpenSSL
         end
       end
 
-      def get_line(io_stack)
+      def get_line(io_stack, included = nil)
         while io = io_stack.last
           if line = io.gets
             return line.gsub(/[\r\n]*/, '')
           end
           io_stack.pop
+          included.pop if included
         end
       end
     end

@@ -346,6 +346,33 @@ class TestRSA < TestCase
     end
   end
 
+  # a salt length that resolves negative (e.g. :max on a key too small for the digest)
+  def test_sign_pss_negative_salt_raises
+    key = OpenSSL::PKey::RSA.new(512) # SHA-512 max salt = 64 - 2 - 64 = -2
+    data = "Sign me!"
+    assert_pkey_error do # JCE path (content digest == mgf1 digest)
+      key.sign_pss("SHA512", data, salt_length: :max, mgf1_hash: "SHA512")
+    end
+    assert_pkey_error do # raw EMSA-PSS path (content digest != mgf1 digest)
+      key.sign_pss("SHA512", data, salt_length: :max, mgf1_hash: "SHA256")
+    end
+  end
+
+  def test_verify_pss_negative_salt_returns_false
+    key = OpenSSL::PKey::RSA.new(512)
+    sig = "\x00".b * 64
+    assert_equal false, key.verify_pss("SHA512", sig, "data", salt_length: :max, mgf1_hash: "SHA512")
+    assert_equal false, key.verify_pss("SHA256", sig, "data", salt_length: -5, mgf1_hash: "SHA256")
+  end
+
+  # omitting salt_length must round-trip (sign and verify share the same default)
+  def test_sign_verify_pss_default_salt_roundtrips
+    key = Fixtures.pkey("rsa2048")
+    data = "Sign me!"
+    sig = key.sign_pss("SHA256", data)
+    assert_equal true, key.verify_pss("SHA256", sig, data)
+  end
+
   # Regression test: verify_pss with salt_length: :auto must handle RSA raw
   # output shorter than emLen (leading zero bytes stripped by BigInteger).
   # The hardcoded signature below was produced by sign_pss with the rsa2048

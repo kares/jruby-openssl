@@ -880,7 +880,7 @@ public class PKeyRSA extends PKey {
         } else if (saltLenArg != null && !saltLenArg.isNil()) {
             saltLen = RubyNumeric.fix2int(saltLenArg);
         } else {
-            saltLen = maxSalt;
+            saltLen = getDigestLength(digestAlg);
         }
 
         final byte[] signedData;
@@ -927,6 +927,8 @@ public class PKeyRSA extends PKey {
         } else {
             saltLen = getDigestLength(digestAlg);
         }
+        // a signature can't carry a negative-length salt -> can't verify
+        if (saltLen < 0) return runtime.getFalse();
 
         return verifyPSS(runtime, false, dataBytes, digestAlg, mgf1Alg, saltLen, sigBytes);
     }
@@ -1055,7 +1057,8 @@ public class PKeyRSA extends PKey {
         }
 
         final int emLen = (emBits + 7) / 8;
-        if (emLen < hLen + saltLen + 2) throw new IllegalArgumentException("encoding error");
+        // reject a negative salt (e.g. :max on a too-small key) before new byte[saltLen] throws
+        if (saltLen < 0 || emLen < hLen + saltLen + 2) throw new IllegalArgumentException("invalid salt length");
 
         final byte[] salt = new byte[saltLen];
         getSecureRandom(getRuntime().getCurrentContext()).nextBytes(salt);
@@ -1087,7 +1090,7 @@ public class PKeyRSA extends PKey {
         if (hashBytes.length != hLen) return false;
 
         final int emLen = (emBits + 7) / 8;
-        if (em.length != emLen || emLen < hLen + saltLen + 2 || em[emLen - 1] != (byte) 0xBC) {
+        if (saltLen < 0 || em.length != emLen || emLen < hLen + saltLen + 2 || em[emLen - 1] != (byte) 0xBC) {
             return false;
         }
 

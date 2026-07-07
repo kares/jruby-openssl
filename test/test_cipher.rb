@@ -451,7 +451,7 @@ class TestCipher < TestCase
     c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
     c.key = "0123456789abcdef"
     # default GCM nonce is 12 bytes; 16-byte IV would previously truncate to leading 12
-    assert_raise(OpenSSL::Cipher::CipherError) { c.iv = "0123456789abcdef" } # 16 bytes
+    assert_raise(ArgumentError) { c.iv = "0123456789abcdef" } # 16 bytes
   end
 
   def test_gcm_exact_length_iv_works
@@ -475,7 +475,7 @@ class TestCipher < TestCase
     [iv1, iv2].each do |iv|
       c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
       c.key = key
-      assert_raise(OpenSSL::Cipher::CipherError) { c.iv = iv }
+      assert_raise(ArgumentError) { c.iv = iv }
     end
   end
 
@@ -483,7 +483,18 @@ class TestCipher < TestCase
     c = OpenSSL::Cipher.new("AES-128-CCM").encrypt
     c.key = "0123456789abcdef"
     # default CCM nonce is 12 bytes here; a longer IV without iv_len= must raise (not truncate)
-    assert_raise(OpenSSL::Cipher::CipherError) { c.iv = ["00000003020100a0a1a2a3a4a5"].pack("H*") } # 13 bytes
+    assert_raise(ArgumentError) { c.iv = ["00000003020100a0a1a2a3a4a5"].pack("H*") } # 13 bytes
+  end
+
+  # iv_len= / auth_tag_len= are AEAD-only (match CRuby); non-AEAD ciphers must reject them
+  def test_aead_only_setters_reject_non_aead
+    c = OpenSSL::Cipher.new("AES-128-CBC").encrypt
+    assert_raise(OpenSSL::Cipher::CipherError) { c.iv_len = 16 }
+    assert_raise(OpenSSL::Cipher::CipherError) { c.auth_tag_len = 8 }
+    assert_raise(OpenSSL::Cipher::CipherError) { c.auth_data = "aad" }
+
+    g = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    assert_nothing_raised { g.iv_len = 16; g.auth_tag_len = 12; g.auth_data = "aad" }
   end
 
   # key= rejects any length mismatch (OpenSSL >= 2.0); a too-long key must not be silently truncated
@@ -494,17 +505,13 @@ class TestCipher < TestCase
     assert_raise(ArgumentError) { c.key = "\x01" * 33 }
   end
 
-  def test_non_aead_over_length_iv_behavior_unchanged
-    key = "0123456789abcdef"
-    long_iv = "0123456789abcdef" + "EXTRA-IGNORED" # > 16 bytes
+  # non-AEAD (CBC) over-length IV must raise, not silently truncate (OpenSSL >= 2.0)
+  def test_non_aead_rejects_over_length_iv
     enc = OpenSSL::Cipher.new("AES-128-CBC").encrypt
-    enc.key = key
-    assert_nothing_raised { enc.iv = long_iv }
-    ct = enc.update("some secret data") + enc.final
-
-    dec = OpenSSL::Cipher.new("AES-128-CBC").decrypt
-    dec.key = key; dec.iv = long_iv
-    assert_equal "some secret data", dec.update(ct) + dec.final
+    enc.key = "0123456789abcdef"
+    assert_raise(ArgumentError) { enc.iv = "0123456789abcdef" + "EXTRA-IGNORED" } # > 16 bytes
+    assert_raise(ArgumentError) { enc.iv = "short" } # < 16 bytes
+    assert_nothing_raised      { enc.iv = "0123456789abcdef" } # exactly 16 bytes
   end
 
   @@test_encrypt_decrypt_des_variations = nil
@@ -539,7 +546,7 @@ class TestCipher < TestCase
         c = OpenSSL::Cipher.new name
         c.encrypt
         c.key = key[0, c.key_len] # pkcs5_keyivgen below derives the actual key/iv
-        c.iv = iv
+        c.iv = iv[0, c.iv_len] # empty for ECB variants
         c.pkcs5_keyivgen(key, iv)
 
         assert_equal expected, c.update(data) + c.final, "failed: #{name}"

@@ -853,6 +853,9 @@ public class Cipher extends RubyObject {
 
     @JRubyMethod(name = "iv_len=", required = 1)
     public final IRubyObject set_iv_len(IRubyObject len) {
+      if ( ! isAuthDataMode() ) {
+          throw newCipherError(getRuntime(), "cipher does not support AEAD");
+      }
       this.ivLength = RubyNumeric.fix2int(len);
       return len;
     }
@@ -896,13 +899,9 @@ public class Cipher extends RubyObject {
             LOG.debugStack(runtime, null, e);
             throw newCipherError(runtime, e);
         }
-        if ( ivBytes.getRealSize() < ivLength ) {
-            throw newCipherError(context.runtime, "iv length too short");
-        }
-        // for an authenticated mode (GCM/CCM) a longer IV must not be silently truncated
-        // require exact length here (a non-default nonce length stays selectable via iv_len=)
-        if ( ivBytes.getRealSize() > ivLength && isAuthDataMode() ) {
-            throw newCipherError(context.runtime, "iv must be " + ivLength + " bytes");
+        // reject too-short and too-long (OpenSSL >= 2.0); for AEAD ivLength tracks iv_len=
+        if ( ivBytes.getRealSize() != ivLength ) {
+            throw context.runtime.newArgumentError("iv must be " + ivLength + " bytes");
         }
         // EVP_CipherInit_ex uses leading IV length of given sequence.
         final byte[] i = new byte[ivLength];
@@ -1500,6 +1499,9 @@ public class Cipher extends RubyObject {
 
     @JRubyMethod(name = "auth_tag_len=")
     public IRubyObject set_auth_tag_len(IRubyObject tag_len) {
+        if ( ! isAuthDataMode() ) {
+            throw newCipherError(getRuntime(), "AEAD not supported by this cipher");
+        }
         this.auth_tag_len = tag_len.convertToInteger().getIntValue();
         return tag_len;
     }
@@ -1528,7 +1530,7 @@ public class Cipher extends RubyObject {
     @JRubyMethod(name = "auth_data=")
     public IRubyObject set_auth_data(final ThreadContext context, final IRubyObject data) {
         if ( ! isAuthDataMode() ) {
-            throw newCipherError(context.runtime, "authentication data not supported by this cipher");
+            throw newCipherError(context.runtime, "AEAD not supported by this cipher");
         }
         final RubyString auth_data = data.asString();
         this.auth_data = setByteListShared(auth_data);

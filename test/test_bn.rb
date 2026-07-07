@@ -194,4 +194,23 @@ class TestBN < TestCase
     assert_equal(true, OpenSSL::BN.new((2 ** 127 - 1).to_s(16), 16).prime?(1))
   end
 
+  def test_pseudo_rand
+    50.times do
+      r = OpenSSL::BN.pseudo_rand(64).to_i
+      assert_operator r, :>=, 0
+      assert_operator r.bit_length, :<=, 64
+    end
+    assert_equal 128, OpenSSL::BN.pseudo_rand(128, 0).to_i.bit_length # top=0 forces MSB set
+    assert OpenSSL::BN.pseudo_rand(128, 0, true).to_i.odd?            # bottom=true forces odd
+  end
+
+  def test_pseudo_rand_range
+    limit = 1 << 64
+    50.times do
+      r = OpenSSL::BN.pseudo_rand_range(OpenSSL::BN.new(limit)).to_i
+      assert_operator r, :>=, 0
+      assert_operator r, :<, limit
+    end
+  end
+
 end

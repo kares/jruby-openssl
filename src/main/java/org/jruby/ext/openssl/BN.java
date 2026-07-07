@@ -760,7 +760,8 @@ public class BN extends RubyObject {
 
     @JRubyMethod(name = "pseudo_rand", meta = true, rest = true)
     public static IRubyObject pseudo_rand(IRubyObject recv, IRubyObject[] args) {
-        return getRandomBN(recv.getRuntime(), args, getRandom());
+        // modern OpenSSL aliases BN_pseudo_rand to the CSPRNG BN_rand
+        return getRandomBN(recv.getRuntime(), args, getSecureRandom());
     }
 
     public static BN getRandomBN(Ruby runtime, IRubyObject[] args, Random random) {
@@ -839,7 +840,7 @@ public class BN extends RubyObject {
 
     @JRubyMethod(name = "pseudo_rand_range", meta = true)
     public static IRubyObject pseudo_rand_range(IRubyObject recv, IRubyObject arg) {
-        return randomValueInRange(recv.getRuntime(), asBigInteger(arg), getRandom());
+        return randomValueInRange(recv.getRuntime(), asBigInteger(arg), getSecureRandom());
     }
 
     private static BN randomValueInRange(Ruby runtime, BigInteger limit, Random random) {
@@ -863,16 +864,6 @@ public class BN extends RubyObject {
             value = new BigInteger(bits, random);
         } while (value.compareTo(limit) >= 0);
         return value;
-    }
-
-    private static Random random;
-
-    private static Random getRandom() {
-        final Random rnd;
-        if ( ( rnd = BN.random ) != null ) {
-            return rnd;
-        }
-        return BN.random = new Random();
     }
 
     private static SecureRandom secureRandom;

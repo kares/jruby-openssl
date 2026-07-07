@@ -360,6 +360,58 @@ class TestCipher < TestCase
     assert_equal data, d.update(ct) + d.final
   end
 
+  def test_gcm_rejects_over_length_iv
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = "0123456789abcdef"
+    # default GCM nonce is 12 bytes; 16-byte IV would previously truncate to leading 12
+    assert_raise(OpenSSL::Cipher::CipherError) { c.iv = "0123456789abcdef" } # 16 bytes
+  end
+
+  def test_gcm_exact_length_iv_works
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = "0123456789abcdef"
+    assert_nothing_raised { c.iv = "0123456789ab" } # exactly 12 bytes
+  end
+
+  # MRI-compatible escape hatch for a non-default nonce length: set iv_len= before iv=
+  def test_gcm_custom_nonce_length_via_iv_len
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = "0123456789abcdef"
+    c.iv_len = 16
+    assert_nothing_raised { c.iv = "0123456789abcdef" } # 16 bytes, now the expected length
+  end
+
+  def test_gcm_over_length_ivs_do_not_collapse_to_same_nonce
+    key = "0123456789abcdef"
+    iv1 = "0123456789ab" + "0001"
+    iv2 = "0123456789ab" + "0002"
+    [iv1, iv2].each do |iv|
+      c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+      c.key = key
+      assert_raise(OpenSSL::Cipher::CipherError) { c.iv = iv }
+    end
+  end
+
+  def test_ccm_rejects_over_length_iv_without_iv_len
+    c = OpenSSL::Cipher.new("AES-128-CCM").encrypt
+    c.key = "0123456789abcdef"
+    # default CCM nonce is 12 bytes here; a longer IV without iv_len= must raise (not truncate)
+    assert_raise(OpenSSL::Cipher::CipherError) { c.iv = ["00000003020100a0a1a2a3a4a5"].pack("H*") } # 13 bytes
+  end
+
+  def test_non_aead_over_length_iv_behavior_unchanged
+    key = "0123456789abcdef"
+    long_iv = "0123456789abcdef" + "EXTRA-IGNORED" # > 16 bytes
+    enc = OpenSSL::Cipher.new("AES-128-CBC").encrypt
+    enc.key = key
+    assert_nothing_raised { enc.iv = long_iv }
+    ct = enc.update("some secret data") + enc.final
+
+    dec = OpenSSL::Cipher.new("AES-128-CBC").decrypt
+    dec.key = key; dec.iv = long_iv
+    assert_equal "some secret data", dec.update(ct) + dec.final
+  end
+
   @@test_encrypt_decrypt_des_variations = nil
 
   def test_encrypt_decrypt_des_variations
@@ -553,8 +605,10 @@ class TestCipher < TestCase
   def test_aes_128_gcm
     cipher = OpenSSL::Cipher.new('aes-128-gcm')
     assert_equal cipher, cipher.encrypt
+    assert_equal 16, cipher.key_len
+    assert_equal 12, cipher.iv_len
     cipher.key = '01' * 8
-    cipher.iv = '0' * 16
+    cipher.iv = '0' * 12 # default 96-bit GCM nonce
 
     bytes = '0000' * 4
     expected = "\xAC\xC8\x0E\xEDbX,\xB4\xCD\x02\x06O(p\xF8u" # from MRI
@@ -567,49 +621,15 @@ class TestCipher < TestCase
     end
     assert_equal "", cipher.final unless defined? JRUBY_VERSION
 
-    cipher = OpenSSL::Cipher.new('aes-128-gcm')
-    assert_equal cipher, cipher.encrypt
-    cipher.key = '01' * 8
-    cipher.iv = '012345678' * 2
-
-    bytes = '0000' * 4
-    expected = "\xF3\xEF\xE6K\xBAJ\xAB=7m'\b\xE0\x06U\x9B" # from MRI
-    actual = cipher.update(bytes)
-    if fips?
-      assert_equal "", actual
-      assert_equal expected, cipher.final
-    else
-      assert_equal expected, actual
-    end
-    #assert_equal "", cipher.final unless defined? JRUBY_VERSION
-
-    cipher = OpenSSL::Cipher.new('aes-128-gcm')
-    assert_equal cipher, cipher.encrypt
-    assert_equal 16, cipher.key_len
-    assert_equal 12, cipher.iv_len
-    cipher.key = '01' * 8
-    cipher.iv = '0' * 12
-
-    bytes = '0000' * 4
-    expected = "\xAC\xC8\x0E\xEDbX,\xB4\xCD\x02\x06O(p\xF8u" # from MRI
-    actual = cipher.update(bytes)
-    if fips?
-      assert_equal "", actual
-      assert_equal expected, cipher.final
-    else
-      assert_equal expected, actual
-    end
-    #assert_equal "", cipher.final
-
     cipher = OpenSSL::Cipher.new('aes-256-gcm')
     assert_equal cipher, cipher.encrypt
     assert_equal 32, cipher.key_len
     assert_equal 12, cipher.iv_len
     cipher.key = '01245678' * 4
-    cipher.iv = '0123456' * 2
+    cipher.iv = '0' * 12 # default 96-bit GCM nonce
 
     bytes = '0101' * 8
-    expected = "\xA8I0\xF8\xCD?Z\xFD\x8E\"T\xF5\xF2\xC5\xC8\x05\xD4b\x85\xA3}'\xC99]\xC1\x16\x8B\x13\x9E-)" # from MRI
+    expected = ["3bb2feeb20c6db802ac5d61c55067d6908d1a96223d41dd7dd6b4535c6a19ac6"].pack("H*") # from MRI/OpenSSL
     actual = cipher.update(bytes)
     if fips?
       assert_equal "", actual
@@ -617,7 +637,30 @@ class TestCipher < TestCase
     else
       assert_equal expected, actual
     end
-    #assert_equal "", cipher.final
+  end
+
+  # GCM with a non-default (non-96-bit) nonce length must be declared via iv_len= first; a longer IV
+  # passed straight to iv= is now rejected instead of silently truncated to the leading nonce bytes
+  # (which would reuse them and match MRI's ciphertext for the *shorter* nonce -- a nonce-reuse trap).
+  # omitted on FIPS where the provider's GCM nonce-length policy differs.
+  def test_aes_gcm_non_default_nonce_length
+    omit_on_fips 'FIPS provider restricts GCM nonce length'
+
+    [[16, '0' * 16,        "c0c2b5559e4a66c314bfa831c577e219"],
+     [18, '012345678' * 2, "852e210c357f5716ec54ccaec5385059"]].each do |iv_len, iv, hex|
+      cipher = OpenSSL::Cipher.new('aes-128-gcm').encrypt
+      cipher.key = '01' * 8
+      cipher.iv_len = iv_len
+      cipher.iv = iv
+      assert_equal [hex].pack("H*"), cipher.update('0000' * 4) # from MRI/OpenSSL
+    end
+
+    cipher = OpenSSL::Cipher.new('aes-256-gcm').encrypt
+    cipher.key = '01245678' * 4
+    cipher.iv_len = 14
+    cipher.iv = '0123456' * 2
+    expected = ["a6f70ea1a025a121e14d800f1355b5c7c96633f38e2a314cf11cbff9615ffc0f"].pack("H*") # from MRI/OpenSSL
+    assert_equal expected, cipher.update('0101' * 8)
   end
 
   def test_aes_gcm_custom

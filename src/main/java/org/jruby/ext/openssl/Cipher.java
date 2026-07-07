@@ -895,6 +895,11 @@ public class Cipher extends RubyObject {
         if ( ivBytes.getRealSize() < ivLength ) {
             throw newCipherError(context.runtime, "iv length too short");
         }
+        // for an authenticated mode (GCM/CCM) a longer IV must not be silently truncated
+        // require exact length here (a non-default nonce length stays selectable via iv_len=)
+        if ( ivBytes.getRealSize() > ivLength && isAuthDataMode() ) {
+            throw newCipherError(context.runtime, "iv must be " + ivLength + " bytes");
+        }
         // EVP_CipherInit_ex uses leading IV length of given sequence.
         final byte[] i = new byte[ivLength];
         System.arraycopy(ivBytes.unsafeBytes(), ivBytes.getBegin(), i, 0, ivLength);

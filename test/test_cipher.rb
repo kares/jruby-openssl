@@ -256,6 +256,47 @@ class TestCipher < TestCase
     end
   end
 
+  # NIST SP 800-38A known-answer vectors (AES-128) for the feedback/counter stream modes
+  def test_aes_stream_modes_nist_kat
+    key = ['2b7e151628aed2a6abf7158809cf4f3c'].pack('H*')
+    iv  = ['000102030405060708090a0b0c0d0e0f'].pack('H*')
+    ctr = ['f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff'].pack('H*')
+    pt  = ['6bc1bee22e409f96e93d7e117393172a' \
+           'ae2d8a571e03ac9c9eb76fac45af8e51' \
+           '30c81c46a35ce411e5fbc1191a0a52ef' \
+           'f69f2445df4f9b17ad2b417be66c3710'].pack('H*')
+
+    { # algo => [iv, expected ciphertext (NIST SP 800-38A)]
+      'aes-128-cfb' => [iv,  '3b3fd92eb72dad20333449f8e83cfb4a' \
+                             'c8a64537a0b3a93fcde3cdad9f1ce58b' \
+                             '26751f67a3cbb140b1808cf187a4f4df' \
+                             'c04b05357c5d1c0eeac4c66f9ff7f2e6'],
+      'aes-128-ofb' => [iv,  '3b3fd92eb72dad20333449f8e83cfb4a' \
+                             '7789508d16918f03f53c52dac54ed825' \
+                             '9740051e9c5fecf64344f7a82260edcc' \
+                             '304c6528f659c77866a510d9c1d6ae5e'],
+      'aes-128-ctr' => [ctr, '874d6191b620e3261bef6864990db6ce' \
+                             '9806f66b7970fdff8617187bb9fffdff' \
+                             '5ae4df3edbd5d35e5b4f09020db03eab' \
+                             '1e031dda2fbe03d1792170a0f3009cee'],
+    }.each do |algo, (ivv, ct_hex)|
+      expected_ct = [ct_hex].pack('H*')
+
+      enc = OpenSSL::Cipher.new(algo).encrypt; enc.key = key; enc.iv = ivv
+      assert_equal expected_ct, enc.update(pt) + enc.final, "#{algo} encrypt KAT"
+
+      dec = OpenSSL::Cipher.new(algo).decrypt; dec.key = key; dec.iv = ivv
+      assert_equal pt, dec.update(expected_ct) + dec.final, "#{algo} decrypt KAT"
+
+      # block-by-block decrypt guards the manual-buffer regression against a fixed vector
+      dec2 = OpenSSL::Cipher.new(algo).decrypt; dec2.key = key; dec2.iv = ivv
+      out = "".b
+      (0...expected_ct.bytesize).step(16) { |o| out << dec2.update(expected_ct[o, 16]) }
+      out << dec2.final
+      assert_equal pt, out, "#{algo} chunked decrypt KAT"
+    end
+  end
+
   # Ensure encrypt-decrypt on the same object still works
   def test_encrypt_then_decrypt_same_object
     key, iv = "0123456789abcdef", "fedcba9876543210"
@@ -708,6 +749,38 @@ class TestCipher < TestCase
     assert_predicate(cipher, :authenticated?)
     cipher = OpenSSL::Cipher.new('aes-128-cbc')
     assert_not_predicate(cipher, :authenticated?)
+  end
+
+  # AEAD authenticity: GCM decryption must reject a forged tag, tampered ciphertext, or tampered AAD.
+  def test_gcm_rejects_forged_tag_and_tampered_input
+    key = '0123456789abcdef'; iv = '0123456789ab'; aad = 'header'; pt = 'authenticated secret msg'
+
+    enc = OpenSSL::Cipher.new('aes-128-gcm').encrypt
+    enc.key = key; enc.iv = iv; enc.auth_data = aad
+    ct = enc.update(pt) + enc.final
+    tag = enc.auth_tag
+
+    # baseline: an untampered decrypt succeeds
+    good = OpenSSL::Cipher.new('aes-128-gcm').decrypt
+    good.key = key; good.iv = iv; good.auth_data = aad; good.auth_tag = tag
+    assert_equal pt, good.update(ct) + good.final
+
+    # forged tag (flip one bit)
+    forged = tag.dup; forged.setbyte(-1, forged.getbyte(-1) ^ 0x01)
+    d1 = OpenSSL::Cipher.new('aes-128-gcm').decrypt
+    d1.key = key; d1.iv = iv; d1.auth_data = aad; d1.auth_tag = forged
+    assert_raise(OpenSSL::Cipher::CipherError) { d1.update(ct) + d1.final }
+
+    # tampered ciphertext
+    bad_ct = ct.dup; bad_ct.setbyte(0, bad_ct.getbyte(0) ^ 0x01)
+    d2 = OpenSSL::Cipher.new('aes-128-gcm').decrypt
+    d2.key = key; d2.iv = iv; d2.auth_data = aad; d2.auth_tag = tag
+    assert_raise(OpenSSL::Cipher::CipherError) { d2.update(bad_ct) + d2.final }
+
+    # tampered AAD
+    d3 = OpenSSL::Cipher.new('aes-128-gcm').decrypt
+    d3.key = key; d3.iv = iv; d3.auth_data = 'HEADER'; d3.auth_tag = tag
+    assert_raise(OpenSSL::Cipher::CipherError) { d3.update(ct) + d3.final }
   end
 
   def new_random_encryptor(algo)

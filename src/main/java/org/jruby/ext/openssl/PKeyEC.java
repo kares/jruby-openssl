@@ -532,7 +532,35 @@ public final class PKeyEC extends PKey {
 
     @JRubyMethod
     public IRubyObject check_key(final ThreadContext context) {
-        return context.runtime.getTrue(); // TODO not implemented stub
+        final Ruby runtime = context.runtime;
+        if (publicKey == null) {
+            throw newECError(runtime, "invalid key: no public key");
+        }
+        try {
+            final ECParameterSpec spec = publicKey.getParams();
+            final BigInteger order = spec.getOrder();
+            final org.bouncycastle.math.ec.ECPoint pub = toBCPoint(spec, publicKey.getW()).normalize();
+
+            if (pub.isInfinity()) throw newECError(runtime, "point at infinity");
+            if (!pub.isValid()) throw newECError(runtime, "point is not on curve");
+            if (!pub.multiply(order).isInfinity()) throw newECError(runtime, "invalid point order");
+
+            if (privateKey instanceof ECPrivateKey) {
+                final BigInteger s = ((ECPrivateKey) privateKey).getS();
+                if (s.signum() <= 0 || s.compareTo(order) >= 0) {
+                    throw newECError(runtime, "invalid private key");
+                }
+                final org.bouncycastle.math.ec.ECPoint gen = toBCPoint(spec, spec.getGenerator());
+                if (!gen.multiply(s).normalize().equals(pub)) {
+                    throw newECError(runtime, "public key does not match private key");
+                }
+            }
+        }
+        catch (RaiseException e) { throw e; }
+        catch (Exception e) {
+            throw newECError(runtime, e.getMessage(), e);
+        }
+        return runtime.getTrue();
     }
 
     @JRubyMethod(name = "generate_key!", alias = "generate_key")

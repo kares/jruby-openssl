@@ -431,6 +431,28 @@ class TestEC < TestCase
     end
   end
 
+  def test_check_key_public_only
+    key = Fixtures.pkey("p256")
+    pub = OpenSSL::PKey.read(key.public_to_der)
+    assert_equal false, pub.private?
+    assert_equal true, pub.check_key
+  end
+
+  # public key does not correspond to the private key -> must raise
+  def test_check_key_mismatched_public_key
+    omit_on_fips
+
+    ec_key_data = <<~EOF
+    -----BEGIN EC PRIVATE KEY-----
+    MHcCAQEEIP+TT0V8Fndsnacji9tyf6hmhHywcOWTee9XkiBeJoVloAoGCCqGSM49
+    AwEHoUQDQgAEBkhhJIU/2/YdPSlY2I1k25xjK4trr5OXSgXvBC21PtY0HQ7lor7A
+    jzT0giJITqmcd81fwGw5+96zLcdxTF1hVQ==
+    -----END EC PRIVATE KEY-----
+    EOF
+    key = OpenSSL::PKey.read(ec_key_data)
+    assert_raise(OpenSSL::PKey::ECError) { key.check_key }
+  end
+
   def test_sign_verify
     p256 = Fixtures.pkey("p256")
     data = "Sign me!"

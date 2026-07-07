@@ -446,18 +446,10 @@ public class SSLContext extends RubyObject {
         }
 
         value = getInstanceVariable("@verify_callback");
-        if ( value != null && ! value.isNil() ) {
-            store.setExtraData(ossl_ssl_ex_vcb_idx, value);
-        } else {
-            store.setExtraData(ossl_ssl_ex_vcb_idx, null);
-        }
+        final IRubyObject verifyCallback = ( value != null && ! value.isNil() ) ? value : null;
 
         value = getInstanceVariable("@verify_depth");
-        if ( value != null && ! value.isNil() ) {
-            store.setDepth(RubyNumeric.fix2int(value));
-        } else {
-            store.setDepth(-1);
-        }
+        final int verifyDepth = ( value != null && ! value.isNil() ) ? RubyNumeric.fix2int(value) : -1;
 
         value = getInstanceVariable("@servername_cb");
         if ( value != null && ! value.isNil() ) {
@@ -514,7 +506,7 @@ public class SSLContext extends RubyObject {
 
         try {
             internalContext = createInternalContext(context, cert, key, store, clientCert, extraChainCert,
-                                                    verifyMode, timeout, alpnProtocols, alpnSelectCb);
+                                                    verifyMode, verifyCallback, verifyDepth, timeout, alpnProtocols, alpnSelectCb);
         }
         catch (GeneralSecurityException e) {
             throw newSSLError(runtime, e);
@@ -986,9 +978,9 @@ public class SSLContext extends RubyObject {
     private InternalContext createInternalContext(ThreadContext context,
         final X509Cert xCert, final PKey pKey, final Store store,
         final List<X509AuxCertificate> clientCert, final List<X509AuxCertificate> extraChainCert,
-        final int verifyMode, final int timeout,
+        final int verifyMode, final IRubyObject verifyCallback, final int verifyDepth, final int timeout,
         final String[] alpnProtocols, final RubyProc alpnSelectCb) throws NoSuchAlgorithmException, KeyManagementException {
-        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCert, extraChainCert, verifyMode, timeout, alpnProtocols, alpnSelectCb);
+        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCert, extraChainCert, verifyMode, verifyCallback, verifyDepth, timeout, alpnProtocols, alpnSelectCb);
         internalContext.initSSLContext(context);
         return internalContext;
     }
@@ -1005,6 +997,8 @@ public class SSLContext extends RubyObject {
             final List<X509AuxCertificate> clientCert,
             final List<X509AuxCertificate> extraChainCert,
             final int verifyMode,
+            final IRubyObject verifyCallback,
+            final int verifyDepth,
             final int timeout,
             final String[] alpnProtocols,
             final RubyProc alpnSelectCallback) throws NoSuchAlgorithmException {
@@ -1024,6 +1018,8 @@ public class SSLContext extends RubyObject {
             this.clientCert = clientCert;
             this.extraChainCert = extraChainCert;
             this.verifyMode = verifyMode;
+            this.verifyCallback = verifyCallback;
+            this.verifyDepth = verifyDepth;
             this.timeout = timeout;
             this.alpnProtocols = alpnProtocols;
             this.alpnSelectCallback = alpnSelectCallback;
@@ -1064,6 +1060,8 @@ public class SSLContext extends RubyObject {
         final PrivateKey privateKey;
 
         final int verifyMode;
+        final IRubyObject verifyCallback; // null when unset
+        final int verifyDepth; // -1 when unset
 
         final List<X509AuxCertificate> clientCert; // assumed always != null
         final List<X509AuxCertificate> extraChainCert; // empty assumed == null
@@ -1082,10 +1080,12 @@ public class SSLContext extends RubyObject {
             final StoreContext storeContext = new StoreContext(store);
             if ( storeContext.init(null, null) == 0 ) return null;
 
-            // for verify_cb
-            storeContext.setExtraData(ossl_ssl_ex_vcb_idx, store.getExtraData(ossl_ssl_ex_vcb_idx));
+            // for verify_cb: prefer this context's callback; else fall back to the store's own
+            storeContext.setExtraData(ossl_ssl_ex_vcb_idx,
+                verifyCallback != null ? verifyCallback : store.getExtraData(ossl_ssl_ex_vcb_idx));
             if ( purpose != null ) storeContext.setDefault(purpose);
             storeContext.getParam().inherit(store.getParam());
+            if ( verifyDepth >= 0 ) storeContext.setDepth(verifyDepth);
             return storeContext;
         }
 

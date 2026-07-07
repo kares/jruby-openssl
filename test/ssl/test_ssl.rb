@@ -289,6 +289,39 @@ class TestSSL < TestCase
     end
   end
 
+  # a verify_callback on one context must not be clobbered by another context
+  # sharing the same X509::Store (e.g. the process-global DEFAULT_CERT_STORE)
+  def test_verify_callback_not_clobbered_by_shared_store
+    shared_store = OpenSSL::X509::Store.new # DEFAULT_CERT_STORE
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      seen = []
+      mkctx = lambda do |tag|
+        c = OpenSSL::SSL::SSLContext.new
+        c.cert_store = shared_store
+        c.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        c.verify_callback = lambda { |ok, sctx| seen << tag; true } # accept regardless
+        c.session_cache_mode = OpenSSL::SSL::SSLContext::SESSION_CACHE_OFF
+        c.max_version = OpenSSL::SSL::TLS1_2_VERSION # force a full handshake (no 1.3 resumption)
+        c
+      end
+      ctx_a = mkctx.call(:a)
+      ctx_b = mkctx.call(:b)
+
+      connect = lambda do |ctx|
+        sock = TCPSocket.new("127.0.0.1", port)
+        ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+        ssl.connect
+        ssl.close rescue nil; sock.close rescue nil
+      end
+
+      connect.call(ctx_a) # sets up ctx_a
+      connect.call(ctx_b) # sets up ctx_b -> would clobber the shared store
+      seen.clear
+      connect.call(ctx_a) # must still use ctx_a's own callback
+      assert_equal [:a], seen.uniq, "ctx_a verify_callback was clobbered by ctx_b via shared store"
+    end
+  end
+
   def test_verify_result_with_verify_peer_self_signed
     # VERIFY_PEER with self-signed cert: connect should fail
     self_key = OpenSSL::PKey::RSA.new(2048)

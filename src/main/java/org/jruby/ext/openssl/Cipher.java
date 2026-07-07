@@ -649,17 +649,21 @@ public class Cipher extends RubyObject {
                     // NOTE: we can NOT handle 12 for non GCM mode
                     if ( "GCM".equals(mode) || "CCM".equals(mode) ) ivLength = 12;
                 }
-                //else if ( "DES".equals(base) ) {
-                //    ivLength = 8;
-                //}
-                //else if ( "RC4".equals(base) ) {
-                //    ivLength = 8;
-                //}
                 else {
-                    ivLength = 8;
+                    ivLength = getBlockSize();
                 }
             }
             return ivLength;
+        }
+
+        // IV length equals the block size; 8 for stream ciphers or on lookup failure
+        private int getBlockSize() {
+            try {
+                final int blockSize = SecurityHelper.getCipher(getRealName()).getBlockSize();
+                if ( blockSize > 0 ) return blockSize;
+            }
+            catch (GeneralSecurityException e) { }
+            return 8;
         }
 
         public int getKeyLength() {

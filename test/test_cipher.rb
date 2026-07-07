@@ -161,6 +161,30 @@ class TestCipher < TestCase
   end
 
 
+  # 128-bit-block non-AES ciphers (Camellia, SEED, CAST6) must report a 16-byte IV
+  # (they were reporting 8, which truncated the IV and broke CBC/CFB/OFB)
+  def test_non_aes_block_cipher_iv_len_and_roundtrip
+    skip_fips_unapproved_ciphers
+    {
+      'camellia-128-cbc' => 16,
+      'camellia-256-cbc' => 16,
+      'seed-cbc' => 16,
+      'cast6-cbc' => 16,
+      'cast5-cbc' => 8,
+      'bf-cbc' => 8,
+      'rc2-cbc' => 8,
+      'des-cbc' => 8
+    }.each do |algo, iv_len|
+      assert_equal iv_len, OpenSSL::Cipher.new(algo).iv_len, "#{algo} iv_len"
+
+      data = "block cipher round-trip test!! .."  # 32 bytes
+      enc = OpenSSL::Cipher.new(algo).encrypt; enc.key = "k" * enc.key_len; enc.iv = "v" * iv_len
+      ct = enc.update(data) + enc.final
+      dec = OpenSSL::Cipher.new(algo).decrypt; dec.key = "k" * dec.key_len; dec.iv = "v" * iv_len
+      assert_equal data, dec.update(ct) + dec.final, "#{algo} round-trip"
+    end
+  end
+
   # jruby/jruby#5776: reset without key should not raise
   def test_reset_without_key
     c = OpenSSL::Cipher.new("AES-128-CBC")

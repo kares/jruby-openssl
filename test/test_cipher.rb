@@ -486,6 +486,14 @@ class TestCipher < TestCase
     assert_raise(OpenSSL::Cipher::CipherError) { c.iv = ["00000003020100a0a1a2a3a4a5"].pack("H*") } # 13 bytes
   end
 
+  # key= rejects any length mismatch (OpenSSL >= 2.0); a too-long key must not be silently truncated
+  def test_key_rejects_wrong_length
+    c = OpenSSL::Cipher.new("AES-256-CBC").encrypt
+    assert_raise(ArgumentError) { c.key = "\x01" * 31 }
+    assert_nothing_raised      { c.key = "\x01" * 32 }
+    assert_raise(ArgumentError) { c.key = "\x01" * 33 }
+  end
+
   def test_non_aead_over_length_iv_behavior_unchanged
     key = "0123456789abcdef"
     long_iv = "0123456789abcdef" + "EXTRA-IGNORED" # > 16 bytes
@@ -530,7 +538,7 @@ class TestCipher < TestCase
     }.each do |name, expected|
         c = OpenSSL::Cipher.new name
         c.encrypt
-        c.key = key
+        c.key = key[0, c.key_len] # pkcs5_keyivgen below derives the actual key/iv
         c.iv = iv
         c.pkcs5_keyivgen(key, iv)
 
@@ -576,9 +584,9 @@ class TestCipher < TestCase
     skip_fips_unapproved_ciphers
 
     cipher = OpenSSL::Cipher.new('DES-EDE3')
-    cipher.encrypt # calculated on MRI :
-    cipher.key = "\x1F\xFF&\xA4k\x8F^\xC80\txq'S\x93\xD2\xE3A\xEDT\xDCs\xFD<=G\a\x8F=\x8FhE"
-    cipher.iv = "o\x15# \xD1\a\x90\xC7ZO\r[\xE2\x8F\v)# I6;\xE6\xB7h\xD3M\xDA\xA0\xD1\xDCy\xD2"
+    cipher.encrypt # calculated on MRI (key/iv truncated to the cipher's lengths) :
+    cipher.key = "\x1F\xFF&\xA4k\x8F^\xC80\txq'S\x93\xD2\xE3A\xEDT\xDCs\xFD<=G\a\x8F=\x8FhE"[0, cipher.key_len]
+    cipher.iv = "o\x15# \xD1\a\x90\xC7ZO\r[\xE2\x8F\v)# I6;\xE6\xB7h\xD3M\xDA\xA0\xD1\xDCy\xD2"[0, cipher.iv_len]
     assert_equal "\xE1\x8DZ>MEq\xEF\x1A\xAC\xB1ab\x0Ea\x81", (cipher.update('sup3rs33kr3t') + cipher.final)
   end
 

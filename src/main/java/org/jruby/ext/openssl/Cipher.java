@@ -874,8 +874,8 @@ public class Cipher extends RubyObject {
             LOG.debugStack(runtime, null, e);
             throw newCipherError(runtime, e);
         }
-        if ( keyBytes.getRealSize() < keyLength ) {
-            throw newCipherError(context.runtime, "key length too short");
+        if ( keyBytes.getRealSize() != keyLength ) { // reject too-short and too-long (OpenSSL >= 2.0)
+            throw context.runtime.newArgumentError("key must be " + keyLength + " bytes");
         }
 
         final byte[] k = new byte[keyLength];

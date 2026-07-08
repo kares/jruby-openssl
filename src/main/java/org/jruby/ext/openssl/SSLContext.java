@@ -320,7 +320,8 @@ public class SSLContext extends RubyObject {
 
     private int verifyResult = X509Utils.V_OK; // C OpenSSL initializes to X509_V_OK
 
-    private int sessionCacheSize; // 20480
+    // 20480 (SSL_SESSION_CACHE_MAX_SIZE_DEFAULT) in OpenSSL
+    private int sessionCacheSize = 0; // leaving this to provider/engine defaults
 
     // session cache stats counters
     transient volatile int sessionConnectCount;
@@ -419,7 +420,7 @@ public class SSLContext extends RubyObject {
             timeout = RubyNumeric.fix2int(value);
         }
         else {
-            timeout = 0;
+            timeout = 7200; // OpenSSL default (2h)
         }
 
         final Store store = certStore != null ? certStore.getStore() : new Store();
@@ -802,9 +803,21 @@ public class SSLContext extends RubyObject {
     private String[] getEnabledCipherSuites(final SSLEngine engine, final String[] protocols) {
         final String[] supported = engine.getSupportedCipherSuites();
         Collection<CipherStrings.Def> cipherDefs = CipherStrings.matchingCiphers(this.ciphers, supported, true);
-        final String[] result = new String[ cipherDefs.size() ]; int i = 0;
-        for ( CipherStrings.Def def : cipherDefs ) result[ i++ ] = def.getCipherSuite();
-        return result;
+        final ArrayList<String> result = new ArrayList<>(cipherDefs.size());
+        for ( CipherStrings.Def def : cipherDefs ) result.add( def.getCipherSuite() );
+        // ciphers= only controls TLS <= 1.2; a TLS 1.2 whitelist must NOT disable TLS 1.3
+        // (a protocol downgrade the app never requested)
+        if ( arrayContains(protocols, "TLSv1.3") ) {
+            for ( final String suite : supported ) {
+                if ( isTLSv13CipherSuite(suite) && !result.contains(suite) ) result.add(suite);
+            }
+        }
+        return result.toArray(new String[result.size()]);
+    }
+
+    // TLS 1.3 suite names have no key-exchange component (no "_WITH_"): TLS_AES_*, TLS_CHACHA20_*
+    private static boolean isTLSv13CipherSuite(final String suite) {
+        return suite.startsWith("TLS_") && ! suite.contains("_WITH_");
     }
 
     private String[] getEnabledProtocols(final SSLEngine engine) {

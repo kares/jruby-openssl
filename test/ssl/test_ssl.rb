@@ -484,12 +484,23 @@ class TestSSL < TestCase
     start_server(OpenSSL::SSL::VERIFY_NONE, true, { use_anon_cipher: true }) { |server, port|
       ctx = OpenSSL::SSL::SSLContext.new
       ctx.ciphers = "aNULL"
+      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION # anon suites exist only <= TLS 1.2
       server_connect(port, ctx) { |ssl|
         msg = "Peer verification enabled, but no certificate received. Anonymous cipher suite " \
           "ADH-AES256-GCM-SHA384 was negotiated. Anonymous suites must be disabled to use peer verification."
         assert_raise_with_message(OpenSSL::SSL::SSLError, msg){ssl.post_connection_check("localhost.localdomain")}
       }
     }
+  end
+
+  def test_ciphers_does_not_disable_tls13
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.ciphers = "ECDHE-RSA-AES128-GCM-SHA256" # a TLS 1.2 suite; TLS 1.3 must stay enabled
+      server_connect(port, ctx) do |ssl|
+        assert_equal "TLSv1.3", ssl.ssl_version
+      end
+    end
   end
 
   def test_parallel

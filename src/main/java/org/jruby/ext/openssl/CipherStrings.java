@@ -2293,7 +2293,7 @@ public class CipherStrings {
         SuiteToOSSL.put("TLS_AES_128_CCM_8_SHA256", name = "TLS_AES_128_CCM_8_SHA256");
         CipherNames.put(name, new Def(name,
                 SSL_AES|SSL_SHA|SSL_TLSV1,
-                SSL_NOT_EXP, 256, 384, SSL_ALL_CIPHERS, SSL_ALL_STRENGTHS
+                SSL_NOT_EXP, 128, 256, SSL_ALL_CIPHERS, SSL_ALL_STRENGTHS // 128-bit AES suite
         ));
 
         for ( Def def : Ciphers ) CipherNames.put(def.name, def);

@@ -652,7 +652,7 @@ public abstract class PKey extends RubyObject {
         if (myPub == null || otherPub == null) {
             return runtime.getFalse();
         }
-        return runtime.newBoolean(java.util.Arrays.equals(myPub.getEncoded(), otherPub.getEncoded()));
+        return runtime.newBoolean(MessageDigest.isEqual(myPub.getEncoded(), otherPub.getEncoded()));
     }
 
     static String getDigestAlgName(IRubyObject digest) {

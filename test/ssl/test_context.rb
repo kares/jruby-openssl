@@ -244,6 +244,13 @@ class TestSSLContext < TestCase
     assert_equal context.ciphers, ciphers
   end
 
+  def test_set_params_preserves_user_options
+    ctx = OpenSSL::SSL::SSLContext.new
+    ctx.options = OpenSSL::SSL::OP_NO_TLSv1
+    ctx.set_params(verify_mode: OpenSSL::SSL::VERIFY_NONE)
+    assert_operator ctx.options & OpenSSL::SSL::OP_NO_TLSv1, :!=, 0
+  end
+
   def test_dup_and_clone_are_undefined
     context = OpenSSL::SSL::SSLContext.new
     assert_raise(NoMethodError) { context.dup }

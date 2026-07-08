@@ -783,6 +783,14 @@ public class CipherStrings {
     private final static Map<String, Def> CipherNames;
     final static Map<String, String> SuiteToOSSL;
 
+    /**
+     * @param cipherSuite JSSE cipher-suite name (e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+     */
+    static Def suiteToDef(final String cipherSuite) {
+        final String ossl = SuiteToOSSL.get(cipherSuite);
+        return ossl == null ? null : CipherNames.get(ossl);
+    }
+
     static {
         Definitions = new HashMap<String, Def>( 48, 1 );
         // TODO review base on OpenSSL's static const SSL_CIPHER cipher_aliases[] ?!

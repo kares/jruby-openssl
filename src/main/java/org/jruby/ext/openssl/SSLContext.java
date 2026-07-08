@@ -64,7 +64,6 @@ import org.jruby.RubyObject;
 import org.jruby.RubySymbol;
 import org.jruby.RubyProc;
 import org.jruby.anno.JRubyMethod;
-import org.jruby.common.IRubyWarnings.ID;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.CallBlock;
 import org.jruby.runtime.ObjectAllocator;
@@ -85,7 +84,6 @@ import org.jruby.ext.openssl.x509store.X509Utils;
 import org.jruby.runtime.callsite.FunctionalCachingCallSite;
 
 import static org.jruby.ext.openssl.CipherStrings.SuiteToOSSL;
-import static org.jruby.ext.openssl.StringHelper.*;
 import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
 import static org.jruby.ext.openssl.SSL.*;
 import static org.jruby.ext.openssl.X509Cert._Certificate;
@@ -540,12 +538,7 @@ public class SSLContext extends RubyObject {
 
             int i = 0;
             for ( CipherStrings.Def def : cipherDefs ) {
-                cipherList[i++] = runtime.newArrayNoCopy(
-                    newUTF8String(runtime, def.name).freeze(context), // 0
-                    newUTF8String(runtime, sslVersionString(def.algorithms)).freeze(context), // 1
-                    runtime.newFixnum(def.algStrengthBits), // 2
-                    runtime.newFixnum(def.algBits) // 3
-                ).freeze(context);
+                cipherList[i++] = cipherInfo(context, def).freeze(context);
             }
             return runtime.newArrayNoCopy(cipherList);
         }
@@ -856,6 +849,23 @@ public class SSLContext extends RubyObject {
     private static final byte[] TLSv1 = { 'T','L','S','v','1' };
     private static final byte[] SSLv2 = { 'S','S','L','v','2' };
     private static final byte[] SSLv3 = { 'S','S','L','v','3' };
+
+    // a cipher 4-tuple [name, version, bits, alg_bits] (MRI: SSL_CIPHER info)
+    RubyArray cipherInfo(final ThreadContext context, final CipherStrings.Def def) {
+        final Ruby runtime = context.runtime;
+        return runtime.newArrayNoCopy(
+            newUTF8String(runtime, def.name).freeze(context),
+            newUTF8String(runtime, sslVersionString(def.algorithms)).freeze(context),
+            runtime.newFixnum(def.algStrengthBits),
+            runtime.newFixnum(def.algBits)
+        );
+    }
+
+    RubyArray currentCipherInfo(final ThreadContext context, final String cipherSuite) {
+        final CipherStrings.Def def = CipherStrings.suiteToDef(cipherSuite);
+        if (def != null) return cipherInfo(context, def);
+        return context.runtime.newArray(newUTF8String(context.runtime, cipherSuite));
+    }
 
     private ByteList sslVersionString(long bits) {
         final ByteList str = new ByteList(18);

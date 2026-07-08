@@ -1171,9 +1171,9 @@ public class SSLSocket extends RubyObject {
     }
 
     @JRubyMethod
-    public IRubyObject cipher() {
-        if ( engine == null ) return getRuntime().getNil();
-        return getRuntime().newString( engine.getSession().getCipherSuite() );
+    public IRubyObject cipher(final ThreadContext context) {
+        if ( engine == null ) return context.nil;
+        return sslContext.currentCipherInfo(context, engine.getSession().getCipherSuite());
     }
 
     @JRubyMethod

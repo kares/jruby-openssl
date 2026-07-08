@@ -12,6 +12,23 @@ class TestSSLSocket < TestCase
     assert_nil socket.cipher
   end
 
+  # a connected socket's #cipher is [name, version, bits, alg_bits]
+  # and the tuple must match an entry in ctx.ciphers so using_anon_cipher? works
+  def test_cipher_connected_returns_tuple
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      server_connect(port, ctx) do |ssl|
+        c = ssl.cipher
+        assert_instance_of Array, c
+        assert_equal 4, c.size
+        assert_instance_of String, c[0] # cipher name
+        assert_kind_of Integer, c[2]    # bits
+        assert_kind_of Integer, c[3]    # alg_bits
+        assert_include ctx.ciphers, c # foundation of using_anon_cipher?
+      end
+    end
+  end
+
   def test_attr_methods
     io_stub = File.new __FILE__
     socket = OpenSSL::SSL::SSLSocket.new(io_stub)

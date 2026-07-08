@@ -448,7 +448,7 @@ public class StoreContext {
      */
     public final Object getExtraData(final int idx) {
         if (extraData == null) return null;
-        if (extraData.size() < idx) return null;
+        if (extraData.size() <= idx) return null;
         return extraData.get(idx);
     }
 

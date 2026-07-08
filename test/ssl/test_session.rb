@@ -98,6 +98,13 @@ class TestSSLSession < TestCase
     end
   end
 
+  def test_session_reused_before_handshake_raises
+    sock = File.new(__FILE__)
+    ssl = OpenSSL::SSL::SSLSocket.new(sock)
+    err = assert_raise(RuntimeError) { ssl.session_reused? }
+    assert_equal 'SSL is not initialized', err.message
+  end
+
   def test_session_to_der_and_to_pem
     start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |_server, port|
       sock = TCPSocket.new('127.0.0.1', port)

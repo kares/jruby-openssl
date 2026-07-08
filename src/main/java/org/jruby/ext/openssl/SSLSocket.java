@@ -731,7 +731,7 @@ public class SSLSocket extends RubyObject {
         initialHandshake = false;
 
         final javax.net.ssl.SSLSession session = engine.getSession();
-        if (session.getValue(SESSION_SOCKET_ID) != null) {
+        if (session.getValue(SESSION_SOCKET_ID) == null) {
             session.putValue(SESSION_SOCKET_ID, getObjectId());
         }
     }
@@ -1210,6 +1210,9 @@ public class SSLSocket extends RubyObject {
 
     @JRubyMethod(name = "session_reused?")
     public IRubyObject session_reused_p() {
+        if (engine == null) {
+            throw getRuntime().newRuntimeError("SSL is not initialized");
+        }
         if (reusableSSLEngine()) {
             if (!engine.getEnableSessionCreation()) {
                 // if session creation is disabled we can be sure its to be re-used

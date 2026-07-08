@@ -1535,18 +1535,24 @@ public class StoreContext {
             /* check_purpose() makes the callback as needed */
             if (purpose > 0 && check_purpose(x, purpose, i, must_be_ca) == 0)
                 return 0;
-            /* Check pathlen if not self issued */
+            /*
+             * Check pathlen.
+             *
+             * getBasicConstraints() folds CA-ness into **ex_pathlen** :
+             * MAX_VALUE means "CA without pathlen", -1 means "not a CA"
+             * together these match C ex_pathlen == -1 (no path length constraint present)
+             */
             final int ex_pathlen = x.getBasicConstraints();
-            if ((i > 1) && (x.getExFlags() & EXFLAG_SI) == 0
+            if ((i > 1)
                     && ex_pathlen != Integer.MAX_VALUE
                     && ex_pathlen != -1
-                    && (plen > (ex_pathlen + proxy_path_length + 1))) {
+                    && (plen > (ex_pathlen + proxy_path_length))) {
                 if (verify_cb_cert(x, i, V_ERR_PATH_LENGTH_EXCEEDED) == 0)
                     return 0;
             }
 
-            /* Increment path length if not self issued */
-            if ((x.getExFlags() & EXFLAG_SI) == 0) plen++;
+            /* Increment path length if not a self issued intermediate CA */
+            if (i > 0 && (x.getExFlags() & EXFLAG_SI) == 0) plen++;
 
             /*
              * If this certificate is a proxy certificate, the next certificate

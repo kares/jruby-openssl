@@ -628,6 +628,68 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_OK, store2.error
   end
 
+  def test_verify_path_length_constraint
+    now = Time.now
+    ca0_exts = [["basicConstraints","CA:TRUE,pathlen:0",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ca1_exts = [["basicConstraints","CA:TRUE,pathlen:1",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ca_exts  = [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ee_exts  = [["basicConstraints","CA:FALSE",true],["keyUsage","keyEncipherment,digitalSignature",true]]
+
+    inter_key = OpenSSL::PKey::RSA.new(2048)
+    ee_key = OpenSSL::PKey::RSA.new(2048)
+
+    # self-signed root with pathlen:0 must not allow an intermediate CA below it
+    root0_key = OpenSSL::PKey::RSA.new(2048)
+    root0 = issue_cert(OpenSSL::X509::Name.parse("/CN=Root0"), root0_key, 1, ca0_exts, nil, nil,
+                       not_before: now, not_after: now + 3600)
+    inter0 = issue_cert(OpenSSL::X509::Name.parse("/CN=Inter0"), inter_key, 2, ca_exts,
+                        root0, root0_key, not_before: now, not_after: now + 3600)
+    leaf0 = issue_cert(OpenSSL::X509::Name.parse("/CN=Leaf0"), ee_key, 3, ee_exts,
+                       inter0, inter_key, not_before: now, not_after: now + 1800)
+    store = OpenSSL::X509::Store.new
+    store.add_cert(root0)
+    assert_equal false, store.verify(leaf0, [inter0])
+    assert_equal OpenSSL::X509::V_ERR_PATH_LENGTH_EXCEEDED, store.error
+
+    # same root issuing an end-entity cert directly is within pathlen:0
+    leaf0_direct = issue_cert(OpenSSL::X509::Name.parse("/CN=Leaf0Direct"), ee_key, 4, ee_exts,
+                              root0, root0_key, not_before: now, not_after: now + 1800)
+    store_d = OpenSSL::X509::Store.new
+    store_d.add_cert(root0)
+    assert_equal true, store_d.verify(leaf0_direct)
+    assert_equal OpenSSL::X509::V_OK, store_d.error
+
+    # pathlen:1 allows a single intermediate CA
+    root1_key = OpenSSL::PKey::RSA.new(2048)
+    root1 = issue_cert(OpenSSL::X509::Name.parse("/CN=Root1"), root1_key, 1, ca1_exts, nil, nil,
+                       not_before: now, not_after: now + 3600)
+    inter1 = issue_cert(OpenSSL::X509::Name.parse("/CN=Inter1"), inter_key, 2, ca_exts,
+                        root1, root1_key, not_before: now, not_after: now + 3600)
+    leaf1 = issue_cert(OpenSSL::X509::Name.parse("/CN=Leaf1"), ee_key, 3, ee_exts,
+                       inter1, inter_key, not_before: now, not_after: now + 1800)
+    store1 = OpenSSL::X509::Store.new
+    store1.add_cert(root1)
+    assert_equal true, store1.verify(leaf1, [inter1])
+    assert_equal OpenSSL::X509::V_OK, store1.error
+
+    # a non-self-issued intermediate carrying pathlen:0 is also enforced
+    rootD_key = OpenSSL::PKey::RSA.new(2048)
+    interA_key = OpenSSL::PKey::RSA.new(2048)
+    interB_key = OpenSSL::PKey::RSA.new(2048)
+    rootD = issue_cert(OpenSSL::X509::Name.parse("/CN=RootD"), rootD_key, 1, ca_exts, nil, nil,
+                       not_before: now, not_after: now + 3600)
+    interA = issue_cert(OpenSSL::X509::Name.parse("/CN=InterA"), interA_key, 2, ca0_exts,
+                        rootD, rootD_key, not_before: now, not_after: now + 3600)
+    interB = issue_cert(OpenSSL::X509::Name.parse("/CN=InterB"), interB_key, 3, ca_exts,
+                        interA, interA_key, not_before: now, not_after: now + 3600)
+    leafD = issue_cert(OpenSSL::X509::Name.parse("/CN=LeafD"), ee_key, 4, ee_exts,
+                       interB, interB_key, not_before: now, not_after: now + 1800)
+    storeD = OpenSSL::X509::Store.new
+    storeD.add_cert(rootD)
+    assert_equal false, storeD.verify(leafD, [interA, interB])
+    assert_equal OpenSSL::X509::V_ERR_PATH_LENGTH_EXCEEDED, storeD.error
+  end
+
   private
 
   def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)

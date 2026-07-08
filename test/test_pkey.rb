@@ -201,6 +201,8 @@ class TestPKey < TestCase
   end
 
   def test_generate_parameters_dsa
+    omit_on_fips 'DSA key generation is not FIPS-approved'
+
     pkey = OpenSSL::PKey.generate_parameters("DSA", {
       "dsa_paramgen_bits" => 1024
     })
@@ -274,6 +276,8 @@ class TestPKey < TestCase
   end
 
   def test_generate_key_dsa_with_options
+    omit_on_fips 'DSA key generation is not FIPS-approved'
+
     pkey = OpenSSL::PKey.generate_key("DSA", {
       "dsa_paramgen_bits" => 1024
     })

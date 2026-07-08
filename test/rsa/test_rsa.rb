@@ -183,6 +183,8 @@ class TestRSA < TestCase
   end
 
   def test_sign_verify_options_mgf1_digest_differs
+    omit_on_fips 'mismatched content/MGF1 digest PSS falls back to raw RSA, which is not FIPS-approved'
+
     key = Fixtures.pkey('rsa2048')
     data = 'Sign me!'
     pssopts = {
@@ -245,6 +247,9 @@ class TestRSA < TestCase
     assert_pkey_error {
       key.sign_raw("SHA1", "x" * (key.n.num_bytes + 1))
     }
+
+    # sign_raw's PSS mode falls back to raw RSA, which is not FIPS-approved
+    return if fips?
 
     # RSA-PSS: sign_raw with pss options, verify with both verify and verify_raw
     pssopts = {
@@ -312,6 +317,8 @@ class TestRSA < TestCase
   end
 
   def test_sign_verify_pss_mgf1_digest_differs
+    omit_on_fips 'mismatched content/MGF1 digest PSS falls back to raw RSA, which is not FIPS-approved'
+
     key = Fixtures.pkey('rsa2048')
     data = 'Sign me!'
     invalid_data = 'Sign me?'
@@ -348,6 +355,8 @@ class TestRSA < TestCase
 
   # a salt length that resolves negative (e.g. :max on a key too small for the digest)
   def test_sign_pss_negative_salt_raises
+    omit_on_fips 'RSA-512 key generation is not FIPS-approved'
+
     key = OpenSSL::PKey::RSA.new(512) # SHA-512 max salt = 64 - 2 - 64 = -2
     data = "Sign me!"
     assert_pkey_error do # JCE path (content digest == mgf1 digest)
@@ -359,6 +368,8 @@ class TestRSA < TestCase
   end
 
   def test_verify_pss_negative_salt_returns_false
+    omit_on_fips 'RSA-512 key generation is not FIPS-approved'
+
     key = OpenSSL::PKey::RSA.new(512)
     sig = "\x00".b * 64
     assert_equal false, key.verify_pss("SHA512", sig, "data", salt_length: :max, mgf1_hash: "SHA512")

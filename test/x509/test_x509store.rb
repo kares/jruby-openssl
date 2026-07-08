@@ -472,6 +472,7 @@ class TestX509Store < TestCase
   end
 
   def test_verify_same_subject_ca
+    omit_on_fips 'DSA key generation is not FIPS-approved'
 
     puts JOpenSSL::VERSION if defined? JRUBY_VERSION
 

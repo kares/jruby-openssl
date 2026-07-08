@@ -51,9 +51,11 @@ class TestX509Request < TestCase
   end
 
   def test_sign_and_verify_rsa_md5
+    omit_on_fips 'MD5 digest is not FIPS-approved'
+
     setup!
     req = issue_csr(0, @dn, @rsa2048, OpenSSL::Digest.new('MD5'))
-    assert_equal(fips? ? nil : false, req.verify(@rsa1024))
+    assert_equal(false, req.verify(@rsa1024))
     assert_equal(true, req.verify(@rsa2048))
     assert_equal(false, request_error_returns_false { req.verify(@dsa256) })
     assert_equal(false, request_error_returns_false { req.verify(@dsa512) })

@@ -467,6 +467,7 @@ public class SSLSocket extends RubyObject {
             setInstanceVariable("@verified_hostname", hostname);
         } else if (!result.isNil()) { // false
             sslContext.setLastVerifyResult(verifyResult = X509Utils.V_ERR_HOSTNAME_MISMATCH);
+            forceClose(); // tear down like the handshake-failure paths (client sends close_notify)
             throw newSSLError(context.runtime, // same as `post_connection_check(hostname)`
                     "hostname \"" + hostname + "\" does not match the server certificate");
         }

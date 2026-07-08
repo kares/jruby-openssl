@@ -30,13 +30,18 @@ package org.jruby.ext.openssl.x509store;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.cert.X509Certificate;
 import javax.security.auth.x500.X500Principal;
 
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.DERUTF8String;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
-
+import org.bouncycastle.asn1.x500.X500NameBuilder;
+import org.bouncycastle.asn1.x500.style.BCStyle;
 
 import org.jruby.ext.openssl.SecurityHelper;
 
@@ -112,7 +117,7 @@ public class Name {
 
     public final long hash() {
         try {
-            return hash == 0 ? hash = hash(name) : hash;
+            return hash == 0 ? hash = hash(canonical(name)) : hash;
         }
         catch (IOException e) {
             return 0;
@@ -120,6 +125,49 @@ public class Name {
         catch (RuntimeException e) {
             return 0;
         }
+    }
+
+    // X509_NAME_canon: hashed-dir lookups must match OpenSSL's canonical form
+    static X500Name canonical(final X500Name name) {
+        final X500NameBuilder builder = new X500NameBuilder(BCStyle.INSTANCE);
+        for (RDN rdn : name.getRDNs()) {
+            final AttributeTypeAndValue[] tvs = rdn.getTypesAndValues();
+            final ASN1ObjectIdentifier[] oids = new ASN1ObjectIdentifier[tvs.length];
+            final ASN1Encodable[] values = new ASN1Encodable[tvs.length];
+            for (int i = 0; i < tvs.length; i++) {
+                oids[i] = tvs[i].getType();
+                values[i] = canonicalize(tvs[i].getValue());
+            }
+            builder.addMultiValuedRDN(oids, values);
+        }
+        return builder.build();
+    }
+
+    private static ASN1Encodable canonicalize(final ASN1Encodable value) {
+        if (value instanceof ASN1String) {
+            return new DERUTF8String(canonicalize(((ASN1String) value)));
+        }
+        return value;
+    }
+
+    // asn1_string_canon: trim, lower-case, collapse spaces
+    private static String canonicalize(ASN1String string) {
+        final String content = string.getString().trim();
+        if (content.length() == 0) return content;
+
+        final StringBuilder out = new StringBuilder(content.length());
+        int i = 0;
+        while (i < content.length()) {
+            final char c = content.charAt(i);
+            if (Character.isWhitespace(c)) {
+                out.append(' ');
+                while (i < content.length() && Character.isWhitespace(content.charAt(i))) i++;
+            } else {
+                out.append(Character.toLowerCase(c));
+                i++;
+            }
+        }
+        return out.toString();
     }
 
     /**

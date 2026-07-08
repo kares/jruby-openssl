@@ -21,9 +21,9 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SecurityHelperTest {
 
     @BeforeAll
-    public static void setFipsMode() {
+    public static void reset() {
         resetProvidersState();
-        SecurityHelper.setFipsMode(false);
+        setFipsMode(false, true);
     }
 
     @AfterAll
@@ -592,7 +592,11 @@ public class SecurityHelperTest {
     }
 
     private static void forceFipsMode(final boolean fipsMode) {
-        SecurityHelper.FIPS_MODE.set(0); // reset flag
+        setFipsMode(fipsMode, true);
+    }
+
+    public static void setFipsMode(final boolean fipsMode, final boolean reset) {
+        if (reset) SecurityHelper.FIPS_MODE.set(0); // reset flag
         SecurityHelper.setFipsMode(fipsMode);
     }
 

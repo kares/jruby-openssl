@@ -31,7 +31,9 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
+import java.security.cert.CRLReason;
 import java.security.cert.X509CRL;
+import java.security.cert.X509CRLEntry;
 import java.security.cert.X509Certificate;
 import java.security.cert.X509Extension;
 import java.util.ArrayList;
@@ -2282,24 +2284,41 @@ public class StoreContext {
         return 1;
     };
 
+    // Critical CRL extensions OpenSSL processes (x_crl.c crl_cb): a critical
+    // extension outside this set makes the CRL unusable for revocation.
+    private static final Set<String> HANDLED_CRITICAL_CRL_EXTENSIONS = new HashSet<>(4);
+    static {
+        HANDLED_CRITICAL_CRL_EXTENSIONS.add("2.5.29.28"); // issuingDistributionPoint
+        HANDLED_CRITICAL_CRL_EXTENSIONS.add("2.5.29.35"); // authorityKeyIdentifier
+        HANDLED_CRITICAL_CRL_EXTENSIONS.add("2.5.29.27"); // deltaCRLIndicator
+    }
+
+    private static boolean hasUnhandledCriticalExtension(final X509CRL crl) {
+        final Set<String> criticalOIDs = crl.getCriticalExtensionOIDs();
+        if (criticalOIDs == null) return false;
+        for (final String oid : criticalOIDs) {
+            if (!HANDLED_CRITICAL_CRL_EXTENSIONS.contains(oid)) return true;
+        }
+        return false;
+    }
+
     /**
      * x509_vfy.c: static int cert_crl(X509_STORE_CTX *ctx, X509_CRL *crl, X509 *x)
      */
     final static Store.CertificateCRLFunction defaultCertificateCRL = (ctx, crl, x) -> {
-        int ok;
-        if ( crl.getRevokedCertificate( x.getSerialNumber() ) != null ) {
-            ctx.error = X509Utils.V_ERR_CERT_REVOKED;
-            ok = ctx.verifyCallback.call(ctx, ZERO);
-            if ( ok == 0 ) return 0;
+        // previously if a CRL contained unhandled critical extensions it could still be used to
+        // indicate a certificate was revoked; this has since been changed since critical extensions
+        // can change the meaning of CRL entries
+        if ((ctx.verifyParameter.flags & X509Utils.V_FLAG_IGNORE_CRITICAL) == 0
+                && hasUnhandledCriticalExtension(crl)
+                && ctx.verify_cb_crl(V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION) == 0) {
+            return 0;
         }
-        if ( (ctx.verifyParameter.flags & X509Utils.V_FLAG_IGNORE_CRITICAL) != 0 ) {
-            return 1;
-        }
-        final Set<String> critialExtOIDs = crl.getCriticalExtensionOIDs();
-        if ( critialExtOIDs != null && critialExtOIDs.size() > 0 ) {
-            ctx.error = X509Utils.V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION;
-            ok = ctx.verifyCallback.call(ctx, ZERO);
-            if ( ok == 0 ) return 0;
+        // look for serial number of certificate in CRL - make sure the reason is not removeFromCRL
+        final X509CRLEntry rev = crl.getRevokedCertificate(x.getSerialNumber());
+        if (rev != null) {
+            if (rev.getRevocationReason() == CRLReason.REMOVE_FROM_CRL) return 2;
+            if (ctx.verify_cb_crl(V_ERR_CERT_REVOKED) == 0) return 0;
         }
         return 1;
     };

@@ -690,6 +690,69 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_ERR_PATH_LENGTH_EXCEEDED, storeD.error
   end
 
+  def test_cert_crl_unhandled_critical_extension
+    now = Time.now
+    ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]]
+    ee_exts = [["basicConstraints","CA:FALSE",true],["keyUsage","keyEncipherment,digitalSignature",true]]
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    root = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLRoot"), root_key, 1, ca_exts, nil, nil,
+                      not_before: now, not_after: now + 3600)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+    leaf = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLLeaf"), leaf_key, 42, ee_exts,
+                      root, root_key, not_before: now, not_after: now + 1800)
+
+    verify = lambda do |crl|
+      # DER round-trip so the critical-extension flags are computed as for a wire CRL
+      crl = OpenSSL::X509::CRL.new(crl.to_der)
+      store = OpenSSL::X509::Store.new
+      store.add_cert(root); store.add_crl(crl)
+      store.flags = OpenSSL::X509::V_FLAG_CRL_CHECK
+      [store.verify(leaf), store.error]
+    end
+
+    build_crl = lambda do |revoke: false, reason: nil, crit_oid: nil, crit_val: nil|
+      crl = OpenSSL::X509::CRL.new
+      crl.version = 1; crl.issuer = root.subject
+      crl.last_update = now - 60; crl.next_update = now + 3600
+      if revoke
+        rev = OpenSSL::X509::Revoked.new; rev.serial = leaf.serial; rev.time = now - 60
+        rev.add_extension(OpenSSL::X509::Extension.new("CRLReason", OpenSSL::ASN1::Enumerated(reason))) if reason
+        crl.add_revoked(rev)
+      end
+      crl.add_extension(OpenSSL::X509::Extension.new(crit_oid, crit_val, true)) if crit_oid
+      crl.sign(root_key, OpenSSL::Digest.new('SHA256'))
+      crl
+    end
+
+    idp = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Boolean.new(true, 1, :IMPLICIT, :CONTEXT_SPECIFIC)]).to_der
+    arbitrary = OpenSSL::ASN1::OctetString.new("x").to_der
+
+    # a critical issuingDistributionPoint is handled - the CRL is usable
+    v, e = verify.call(build_crl.call(crit_oid: "2.5.29.28", crit_val: idp))
+    assert_equal true, v
+    assert_equal OpenSSL::X509::V_OK, e
+
+    # a truly unhandled critical extension makes the CRL unusable
+    v, e = verify.call(build_crl.call(crit_oid: "1.2.3.4.5.6.7.8", crit_val: arbitrary))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION, e
+
+    # unhandled critical extension is reported before revocation
+    v, e = verify.call(build_crl.call(revoke: true, crit_oid: "1.2.3.4.5.6.7.8", crit_val: arbitrary))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION, e
+
+    # an entry with reason removeFromCRL means the certificate is not revoked
+    v, e = verify.call(build_crl.call(revoke: true, reason: 8))
+    assert_equal true, v
+    assert_equal OpenSSL::X509::V_OK, e
+
+    # sanity: a plain revocation still fails
+    v, e = verify.call(build_crl.call(revoke: true))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_CERT_REVOKED, e
+  end
+
   private
 
   def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)

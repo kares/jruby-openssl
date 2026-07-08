@@ -1158,6 +1158,9 @@ public class StoreContext {
      * Given a STACK_OF(X509) find the issuer of cert (if any)
      *
      * x509_vfy.c: static X509 *find_issuer(X509_STORE_CTX *ctx, STACK_OF(X509) *sk, X509 *x)
+     *
+     * NOTE: we omit C sk_X509_contains(ctx->chain, issuer) loop guard:
+     * build_chain removes each picked issuer from sktmp, so an issuer already in the chain can't be re-selected here
      */
     private X509AuxCertificate find_issuer(List<X509AuxCertificate> sk, X509AuxCertificate x) throws Exception {
         X509AuxCertificate rv = null;
@@ -1921,23 +1924,9 @@ public class StoreContext {
      * x509_vfy.c: static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
      */
     final static Store.CheckIssuedFunction check_issued = (ctx, x, issuer) -> {
-        int ret;
+        // fast path: a cert is issued by itself only when self-signed (by name)
         if (x.equals(issuer)) return ctx.cert_self_signed(x) ? 1 : 0;
-        ret = checkIfIssuedBy(issuer, x);
-        if (ret == V_OK) {
-            /* Special case: single self signed certificate */
-            if (ctx.cert_self_signed(x) && ctx.chain.size() == 1) return 1;
-
-            //for (int i = 0; i < chain.size(); i++) {
-            //    X509AuxCertificate ch = chain.get(i);
-            //    if (ch == issuer || ch.equals(issuer)) {
-            //        ret = V_ERR_PATH_LOOP;
-            //        break;
-            //    }
-            //}
-        }
-
-        return (ret == V_OK) ? 1 : 0;
+        return checkIfIssuedBy(issuer, x) == V_OK ? 1 : 0; // x509_likely_issued
     };
 
     /**
@@ -1987,10 +1976,13 @@ public class StoreContext {
          */
         while ( n >= 0 ) {
             /*
-             * Skip signature check for self signed certificates unless explicitly
-             * asked for.  It doesn't add any security and just wastes time.  If
-             * the issuer's public key is unusable, report the issuer certificate
-             * and its depth (rather than the depth of the subject).
+             * Skip signature check for self-signed certificates unless explicitly asked for;
+             * if the issuer's public key is unusable, report the issuer certificate and its depth
+             * (rather than the depth of the subject)
+             *
+             * NOTE: unlike C, we don't call x509_signing_allowed(xi, xs) here: the issuer keyCertSign requirement
+             * is already enforced by check_issued (see X509Utils.checkIfIssuedBy) during build_chain,
+             * so a non-CA issuer is rejected earlier (as UNABLE_TO_GET_ISSUER rather than KEYUSAGE_NO_CERTSIGN)
              */
             if (xs != xi || (getParam().flags & V_FLAG_CHECK_SS_SIGNATURE) != 0) {
                 PublicKey pkey = xi.getPublicKey();

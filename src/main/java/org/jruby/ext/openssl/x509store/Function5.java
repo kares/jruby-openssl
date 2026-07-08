@@ -32,6 +32,7 @@ package org.jruby.ext.openssl.x509store;
  *
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
+@FunctionalInterface
 interface Function5<T, U, V, X, Y> {
     int call(T arg0, U arg1, V arg2, X arg3, Y arg4) throws Exception;
-}// Function5
+}

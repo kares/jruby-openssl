@@ -37,6 +37,7 @@ import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.CRL;
+import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
@@ -64,13 +65,12 @@ public class Lookup {
 
     private static final Logger LOG = Logger.getLogger(Lookup.class);
 
-    boolean skip = false;
-
     final LookupMethod method;
     private final Ruby runtime;
 
     Object methodData;
     Store store;
+    transient boolean skip;
 
     /**
      * c: X509_LOOKUP_new
@@ -131,7 +131,7 @@ public class Lookup {
         if ( method == null ) return -1;
 
         if ( method.control != null ) {
-            return method.control.call(this, Integer.valueOf(cmd), argc, Long.valueOf(argl), ret);
+            return method.control.call(this, cmd, argc, argl, ret);
         }
         return 1;
     }
@@ -170,7 +170,8 @@ public class Lookup {
             if ( type == X509_FILETYPE_PEM ) {
                 int count = 0;
                 if ( cached != null ) {
-                    boolean storeError = false; for ( int c = 0; c < cached.length; c++ ) {
+                    boolean storeError = false;
+                    for ( int c = 0; c < cached.length; c++ ) {
                         auxCert = buildAuxFromCached((X509Certificate) cached[c]);
 
                         if ( ! storeError ) {
@@ -239,7 +240,7 @@ public class Lookup {
     /**
      * c: X509_LOOKUP_load_crl_file
      */
-    public int loadCRLFile(final String file, final int type) throws Exception {
+    public int loadCRLFile(final String file, final int type) throws CertificateException, CRLException, IOException {
         if ( file == null ) return 1;
 
         BufferedReader reader = null;
@@ -366,7 +367,7 @@ public class Lookup {
      * c: X509_LOOKUP_free
      */
     public void free() throws Exception {
-        if ( method != null && method.free != null ) {
+        if (method != null && method.free != null) {
             method.free.call(this);
         }
     }
@@ -375,8 +376,8 @@ public class Lookup {
      * c: X509_LOOKUP_init
      */
     public int init() throws Exception {
-        if ( method == null ) return 0;
-        if ( method.init != null ) {
+        if (method == null) return 0;
+        if (method.init != null) {
             return method.init.call(this);
         }
         return 1;
@@ -390,7 +391,7 @@ public class Lookup {
             return X509_LU_FAIL;
         }
         if ( skip ) return 0;
-        return method.getBySubject.call(this, Integer.valueOf(type), name, ret);
+        return method.getBySubject.call(this, type, name, ret);
     }
 
     /**
@@ -400,7 +401,7 @@ public class Lookup {
         if ( method == null || method.getByIssuerSerialNumber == null ) {
             return X509_LU_FAIL;
         }
-        return method.getByIssuerSerialNumber.call(this, Integer.valueOf(type), name, serial, ret);
+        return method.getByIssuerSerialNumber.call(this, type, name, serial, ret);
     }
 
     /**
@@ -410,7 +411,7 @@ public class Lookup {
         if ( method == null || method.getByFingerprint == null ) {
             return X509_LU_FAIL;
         }
-        return method.getByFingerprint.call(this, Integer.valueOf(type), bytes, ret);
+        return method.getByFingerprint.call(this, type, bytes, ret);
     }
 
     /**
@@ -420,7 +421,7 @@ public class Lookup {
         if ( method == null || method.getByAlias == null ) {
             return X509_LU_FAIL;
         }
-        return method.getByAlias.call(this, Integer.valueOf(type), alias, ret);
+        return method.getByAlias.call(this, type, alias, ret);
     }
 
     /**
@@ -460,7 +461,9 @@ public class Lookup {
      * c: by_file_ctrl
      */
     private static class ByFile implements LookupMethod.ControlFunction {
-        public int call(final Lookup ctx, final Integer cmd, final String argp, final Number argl, String[] ret) throws Exception {
+        public int call(final Lookup ctx, final Integer cmd, final String argp, final Number argl, String[] ret)
+            throws IOException, GeneralSecurityException {
+
             int ok = 0;
             String file = null;
             final int arglInt = argl.intValue();

@@ -32,12 +32,7 @@ package org.jruby.ext.openssl.x509store;
  *
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
  */
+@FunctionalInterface
 interface Function0 {
-    static class Empty implements Function0 {
-        public int call() {
-            return -1;
-        }
-    }
-    public static final Function0.Empty EMPTY = new Empty();
     int call() throws Exception;
-}// Function0
+}

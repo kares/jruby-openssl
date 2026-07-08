@@ -826,7 +826,7 @@ public class StoreContext {
          * the first entry is in place
          */
         //if (chain == null) {
-            chain = new ArrayList<X509AuxCertificate>(8);
+            chain = new ArrayList<>(8);
             chain.add(cert);
             num_untrusted = 1;
         //}
@@ -2103,23 +2103,17 @@ public class StoreContext {
         return verifyCallback.call(this, 0); // ctx->verify_cb(0, ctx)
     }
 
-    final static Store.GetIssuerFunction getFirstIssuer = new Store.GetIssuerFunction() {
-        public int call(StoreContext context, X509AuxCertificate[] issuer, X509AuxCertificate cert) throws Exception {
-            return context.getFirstIssuer(issuer, cert);
-        }
-    };
+    final static Store.GetIssuerFunction getFirstIssuer = (ctx, issuer, cert) -> ctx.getFirstIssuer(issuer, cert);
 
     /**
      * c: get_issuer_sk
      */
-    final static Store.GetIssuerFunction getIssuerStack = new Store.GetIssuerFunction() {
-        public int call(StoreContext context, X509AuxCertificate[] issuer, X509AuxCertificate x) throws Exception {
-            issuer[0] = context.findIssuer(context.otherContext, x, false);
-            if ( issuer[0] != null ) {
-                return 1;
-            } else {
-                return 0;
-            }
+    final static Store.GetIssuerFunction getIssuerStack = (ctx, issuer, x) -> {
+        issuer[0] = ctx.findIssuer(ctx.otherContext, x, false);
+        if ( issuer[0] != null ) {
+            return 1;
+        } else {
+            return 0;
         }
     };
 
@@ -2128,26 +2122,24 @@ public class StoreContext {
      *
      * x509_vfy.c: static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
      */
-    final static Store.CheckIssuedFunction check_issued = new Store.CheckIssuedFunction() {
-        public int call(StoreContext ctx, X509AuxCertificate x, X509AuxCertificate issuer) throws Exception {
-            int ret;
-            if (x.equals(issuer)) return ctx.cert_self_signed(x) ? 1 : 0;
-            ret = checkIfIssuedBy(issuer, x);
-            if (ret == V_OK) {
-                /* Special case: single self signed certificate */
-                if (ctx.cert_self_signed(x) && ctx.chain.size() == 1) return 1;
+    final static Store.CheckIssuedFunction check_issued = (ctx, x, issuer) -> {
+        int ret;
+        if (x.equals(issuer)) return ctx.cert_self_signed(x) ? 1 : 0;
+        ret = checkIfIssuedBy(issuer, x);
+        if (ret == V_OK) {
+            /* Special case: single self signed certificate */
+            if (ctx.cert_self_signed(x) && ctx.chain.size() == 1) return 1;
 
-                //for (int i = 0; i < chain.size(); i++) {
-                //    X509AuxCertificate ch = chain.get(i);
-                //    if (ch == issuer || ch.equals(issuer)) {
-                //        ret = V_ERR_PATH_LOOP;
-                //        break;
-                //    }
-                //}
-            }
-
-            return (ret == V_OK) ? 1 : 0;
+            //for (int i = 0; i < chain.size(); i++) {
+            //    X509AuxCertificate ch = chain.get(i);
+            //    if (ch == issuer || ch.equals(issuer)) {
+            //        ret = V_ERR_PATH_LOOP;
+            //        break;
+            //    }
+            //}
         }
+
+        return (ret == V_OK) ? 1 : 0;
     };
 
     final static Store.CheckIssuedFunction check_issued_legacy = new Store.CheckIssuedFunction() {
@@ -2279,105 +2271,99 @@ public class StoreContext {
     }
 
     @Deprecated // legacy internal_verify
-    final static Store.VerifyFunction internalVerify = new Store.VerifyFunction() {
-        public int call(final StoreContext context) throws Exception {
-            Store.VerifyCallbackFunction verifyCallback = context.verifyCallback;
+    final static Store.VerifyFunction internalVerify = context -> {
+        Store.VerifyCallbackFunction verifyCallback = context.verifyCallback;
 
-            int n = context.chain.size();
-            context.error_depth = n - 1;
-            n--;
-            X509AuxCertificate xi = context.chain.get(n);
-            X509AuxCertificate xs = null;
-            int ok;
+        int n = context.chain.size();
+        context.error_depth = n - 1;
+        n--;
+        X509AuxCertificate xi = context.chain.get(n);
+        X509AuxCertificate xs = null;
+        int ok;
 
-            if (context.checkIssued.call(context, xi, xi) != 0) {
-                xs = xi;
+        if (context.checkIssued.call(context, xi, xi) != 0) {
+            xs = xi;
+        } else {
+            if (n <= 0) {
+                context.error = X509Utils.V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE;
+                context.current_cert = xi;
+                ok = verifyCallback.call(context, ZERO);
+                return ok;
             } else {
-                if (n <= 0) {
-                    context.error = X509Utils.V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE;
-                    context.current_cert = xi;
-                    ok = verifyCallback.call(context, ZERO);
-                    return ok;
-                } else {
-                    n--;
-                    context.error_depth = n;
-                    xs = context.chain.get(n);
-                }
-            }
-
-            while (n >= 0) {
-                context.error_depth = n;
-                if (!X509_verify(xs, xi.getPublicKey())) {
-                    context.error = X509Utils.V_ERR_CERT_SIGNATURE_FAILURE;
-                    context.current_cert = xs;
-                    ok = verifyCallback.call(context, ZERO);
-                    if (ok == 0) return ok;
-                }
-
-                if (!internal_verify_check_cert(context, xi, xs, n)) {
-                    return 0;
-                }
-
                 n--;
-                if (n >= 0) {
-                    xi = xs;
-                    xs = context.chain.get(n);
-                }
+                context.error_depth = n;
+                xs = context.chain.get(n);
             }
-            ok = 1;
-            return ok;
         }
+
+        while (n >= 0) {
+            context.error_depth = n;
+            if (!X509_verify(xs, xi.getPublicKey())) {
+                context.error = X509Utils.V_ERR_CERT_SIGNATURE_FAILURE;
+                context.current_cert = xs;
+                ok = verifyCallback.call(context, ZERO);
+                if (ok == 0) return ok;
+            }
+
+            if (!internal_verify_check_cert(context, xi, xs, n)) {
+                return 0;
+            }
+
+            n--;
+            if (n >= 0) {
+                xi = xs;
+                xs = context.chain.get(n);
+            }
+        }
+        ok = 1;
+        return ok;
     };
 
     /*
      * c: static int check_revocation(X509_STORE_CTX *ctx)
      */
-    final static Store.CheckRevocationFunction check_revocation = new Store.CheckRevocationFunction() {
-        public int call(final StoreContext ctx) throws Exception {
-            if ( (ctx.getParam().flags & V_FLAG_CRL_CHECK) == 0 ) {
-                return 1;
-            }
-            final int last;
-            if ( (ctx.getParam().flags & V_FLAG_CRL_CHECK_ALL) != 0 ) {
-                last = ctx.chain.size() - 1;
-            } else {
-                /* If checking CRL paths this isn't the EE certificate */
-                if (ctx.parent != null) return 1; // NOT IMPLEMENTED: always null
-                last = 0;
-            }
-            for ( int i=0; i<=last; i++ ) {
-                ctx.error_depth = i;
-                int ok = ctx.checkCertificate(); // check_cert(ctx);
-                if (ok == 0) return 0;
-            }
+    final static Store.CheckRevocationFunction check_revocation = ctx -> {
+        if ( (ctx.getParam().flags & V_FLAG_CRL_CHECK) == 0 ) {
             return 1;
         }
+        final int last;
+        if ( (ctx.getParam().flags & V_FLAG_CRL_CHECK_ALL) != 0 ) {
+            last = ctx.chain.size() - 1;
+        } else {
+            /* If checking CRL paths this isn't the EE certificate */
+            if (ctx.parent != null) return 1; // NOT IMPLEMENTED: always null
+            last = 0;
+        }
+        for ( int i=0; i<=last; i++ ) {
+            ctx.error_depth = i;
+            int ok = ctx.checkCertificate(); // check_cert(ctx);
+            if (ok == 0) return 0;
+        }
+        return 1;
     };
 
     /**
      * c: get_crl
      */
-    final static Store.GetCRLFunction defaultGetCRL = new Store.GetCRLFunction() {
-        public int call(final StoreContext context, final X509CRL[] crls, X509AuxCertificate x) throws Exception {
-            final Name name = new Name( x.getIssuerX500Principal() );
-            final X509CRL[] crl = new X509CRL[1];
-            int ok = context.getCRLStack(crl, name, context.crls);
-            if ( ok != 0 ) {
+    final static Store.GetCRLFunction defaultGetCRL = (context, crls, x) -> {
+        final Name name = new Name( x.getIssuerX500Principal() );
+        final X509CRL[] crl = new X509CRL[1];
+        int ok = context.getCRLStack(crl, name, context.crls);
+        if ( ok != 0 ) {
+            crls[0] = crl[0];
+            return 1;
+        }
+        final X509Object[] xobj = new X509Object[1];
+        ok = context.getBySubject(X509Utils.X509_LU_CRL, name, xobj);
+        if ( ok == 0 ) {
+            if ( crl[0] != null ) {
                 crls[0] = crl[0];
                 return 1;
             }
-            final X509Object[] xobj = new X509Object[1];
-            ok = context.getBySubject(X509Utils.X509_LU_CRL, name, xobj);
-            if ( ok == 0 ) {
-                if ( crl[0] != null ) {
-                    crls[0] = crl[0];
-                    return 1;
-                }
-                return 0;
-            }
-            crls[0] = (X509CRL) ( (CRL) xobj[0] ).crl;
-            return 1;
+            return 0;
         }
+        crls[0] = (X509CRL) ( (CRL) xobj[0] ).crl;
+        return 1;
     };
 
     // TODO unused due incomplete - needs score support to pass test_x509store.rb tests?

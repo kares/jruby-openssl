@@ -532,6 +532,70 @@ public class SecurityHelperTest {
         }
     }
 
+    // FIPS mode must propagate NoSuchAlgorithmException instead of falling back
+
+    @Test
+    public void getCipherFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider()); // stands in for BCFIPS rejecting the algorithm
+            try {
+                SecurityHelper.getCipher("DES");
+                fail("expected NoSuchAlgorithmException (fail closed) in FIPS mode");
+            }
+            catch (NoSuchAlgorithmException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void getMessageDigestFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getMessageDigest("MD5");
+                fail("expected NoSuchAlgorithmException (fail closed) in FIPS mode");
+            }
+            catch (NoSuchAlgorithmException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void getMacFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getMac("HmacSHA256");
+                fail("expected NoSuchAlgorithmException (fail closed) in FIPS mode");
+            }
+            catch (NoSuchAlgorithmException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void gettersFallBackToDefaultProviderWhenNotFips() throws Exception {
+        SecurityHelper.setSecurityProvider(new DummyProvider()); // rejects everything
+        assertNotNull(SecurityHelper.getCipher("DES"));
+        assertNotNull(SecurityHelper.getMessageDigest("MD5"));
+        assertNotNull(SecurityHelper.getMac("HmacSHA256"));
+    }
+
+    @Test
+    public void getMessageDigestConsultsSecurityProviderFirst() throws Exception {
+        final Provider bc = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        SecurityHelper.setSecurityProvider(bc);
+        assertEquals("BC", SecurityHelper.getMessageDigest("SHA-256").getProvider().getName());
+    }
+
+    private static void forceFipsMode(final boolean fipsMode) {
+        SecurityHelper.FIPS_MODE.set(0); // reset flag
+        SecurityHelper.setFipsMode(fipsMode);
+    }
+
     private static Provider getProvider() {
         return SecurityHelper.getSecurityProvider();
     }

@@ -82,7 +82,7 @@ public abstract class SecurityHelper {
      */
     public static Provider getSecurityProvider() {
         Provider provider = securityProvider;
-        if (provider == null && initSecurityProvider) {
+        if (provider == null) {
             provider = initSecurityProvider();
             if (provider != null) doRegisterProvider(provider);
         }
@@ -104,6 +104,8 @@ public abstract class SecurityHelper {
             }
             initSecurityProvider = false;
         }
+        // TODO in FIPS mode a null provider (BCFIPS unavailable) should fail closed rather than
+        // letting getters fall back to non-approved providers - hardening lives in ../jruby-openssl-fips
         return provider;
     }
 
@@ -183,7 +185,7 @@ public abstract class SecurityHelper {
         return null;
     }
 
-    private static final AtomicInteger FIPS_MODE = new AtomicInteger();
+    static final AtomicInteger FIPS_MODE = new AtomicInteger();
     private static final int FIPS_MODE_TRUE = 1;
     private static final int FIPS_MODE_FALSE = -1;
 
@@ -194,8 +196,7 @@ public abstract class SecurityHelper {
 
     static void setFipsMode(final boolean fipsMode) {
         final int fipsModeValue = fipsMode ? FIPS_MODE_TRUE : FIPS_MODE_FALSE;
-        if (FIPS_MODE.get() == 0) FIPS_MODE.set(fipsModeValue);
-        if (FIPS_MODE.get() != fipsModeValue) {
+        if (!FIPS_MODE.compareAndSet(0, fipsModeValue) && FIPS_MODE.get() != fipsModeValue) {
             throw new SecurityException("unexpected FIPS mode adjustment (" + fipsMode + ")");
         }
     }
@@ -274,7 +275,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyPairGenerator(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyPairGenerator", e); }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getKeyPairGenerator", e);
+            if (isFipsMode()) throw e;
+        }
         return KeyPairGenerator.getInstance(algorithm);
     }
 
@@ -298,18 +302,14 @@ public abstract class SecurityHelper {
 
     public static MessageDigest getMessageDigest(final String algorithm) throws NoSuchAlgorithmException {
         try {
-            return MessageDigest.getInstance(algorithm);
+            final Provider provider = getSecurityProvider();
+            if (provider != null) return getMessageDigest(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) {
-            // try reflective logic
-            final Provider provider = getSecurityProvider();
-            if (provider != null) {
-                LOG.debug("getMessageDigest", e);
-                return getMessageDigest(algorithm, provider);
-            }
-
-            throw e; // give up
+            LOG.debug("getMessageDigest", e);
+            if (isFipsMode()) throw e;
         }
+        return MessageDigest.getInstance(algorithm);
     }
 
     static MessageDigest getMessageDigest(final String algorithm, final Provider provider)
@@ -334,7 +334,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getCipher(transformation, provider);
         }
-        catch (NoSuchAlgorithmException | NoSuchPaddingException e) { LOG.debug("getCipher", e); }
+        catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+            LOG.debug("getCipher", e);
+            if (isFipsMode()) throw e;
+        }
         return Cipher.getInstance(transformation);
     }
 
@@ -348,7 +351,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getSignature(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { LOG.debug("getSignature", e); }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getSignature", e);
+            if (isFipsMode()) throw e;
+        }
         return Signature.getInstance(algorithm);
     }
 
@@ -358,13 +364,12 @@ public abstract class SecurityHelper {
     }
 
     public static Mac getMac(final String algorithm) throws NoSuchAlgorithmException {
-        Mac mac = null;
         final Provider provider = getSecurityProvider();
         if (provider != null) {
-            mac = getMac(algorithm, provider, true);
+            final Mac mac = getMac(algorithm, provider, !isFipsMode()); // FIPS: non-silent -> fail closed
+            if (mac != null) return mac;
         }
-        if (mac == null) mac = Mac.getInstance(algorithm);
-        return mac;
+        return Mac.getInstance(algorithm);
     }
 
     static Mac getMac(final String algorithm, final Provider provider)
@@ -388,7 +393,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyGenerator(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyGenerator", e); }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getKeyGenerator", e);
+            if (isFipsMode()) throw e;
+        }
         catch (SecurityException e) { LOG.debugStack(e); }
         return KeyGenerator.getInstance(algorithm);
     }
@@ -403,7 +411,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyAgreement(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { LOG.debug("getKeyAgreement", e); }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getKeyAgreement", e);
+            if (isFipsMode()) throw e;
+        }
         catch (SecurityException e) { LOG.debugStack(e); }
         return KeyAgreement.getInstance(algorithm);
     }
@@ -418,7 +429,10 @@ public abstract class SecurityHelper {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getSecretKeyFactory(algorithm, provider);
         }
-        catch (NoSuchAlgorithmException e) { LOG.debug("getSecretKeyFactory", e); }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getSecretKeyFactory", e);
+            if (isFipsMode()) throw e;
+        }
         catch (SecurityException e) { LOG.debugStack(e); }
         return SecretKeyFactory.getInstance(algorithm);
     }

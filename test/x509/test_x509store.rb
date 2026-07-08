@@ -816,6 +816,47 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_ERR_UNABLE_TO_GET_CRL, e
   end
 
+  # OpenSSL NAME_CONSTRAINTS_check_CN: dNSName constraints also apply to the EE subject CN
+  # when the cert has no SAN dNSName. BC's validator only checks the SAN, so JRuby missed this.
+  def test_name_constraint_dns_applies_to_subject_cn
+    now = Time.now
+    ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","keyCertSign,cRLSign",true]]
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+
+    root = lambda do |nc|
+      issue_cert(OpenSSL::X509::Name.parse("/CN=NCRoot"), root_key, 1,
+                 ca_exts + [["nameConstraints", nc, true]], nil, nil,
+                 not_before: now - 60, not_after: now + 3600)
+    end
+    leaf = lambda do |issuer, cn, serial, extra = []|
+      issue_cert(OpenSSL::X509::Name.parse("/CN=#{cn}"), leaf_key, serial,
+                 [["basicConstraints","CA:FALSE",true]] + extra, issuer, root_key,
+                 not_before: now - 60, not_after: now + 1800)
+    end
+    verify = lambda do |issuer, leaf_cert|
+      store = OpenSSL::X509::Store.new; store.add_cert(issuer)
+      [store.verify(leaf_cert), store.error]
+    end
+
+    excl = root.call("excluded;DNS:example.com")
+    # CN in the excluded DNS zone, no SAN -> rejected via the subject CN
+    assert_equal [false, OpenSSL::X509::V_ERR_EXCLUDED_VIOLATION],
+                 verify.call(excl, leaf.call(excl, "www.example.com", 10))
+    # CN outside the zone -> ok
+    assert_equal [true, OpenSSL::X509::V_OK], verify.call(excl, leaf.call(excl, "www.other.org", 11))
+    # CN in the excluded zone BUT a compliant SAN dNSName present -> CN not checked -> ok
+    assert_equal [true, OpenSSL::X509::V_OK],
+                 verify.call(excl, leaf.call(excl, "www.example.com", 12, [["subjectAltName","DNS:host.other.org",false]]))
+    # CN that is not a host name -> not treated as a DNS-ID -> ok
+    assert_equal [true, OpenSSL::X509::V_OK], verify.call(excl, leaf.call(excl, "Not A Hostname", 13))
+
+    perm = root.call("permitted;DNS:example.com")
+    # CN outside the permitted zone, no SAN -> permitted violation
+    assert_equal [false, OpenSSL::X509::V_ERR_PERMITTED_VIOLATION],
+                 verify.call(perm, leaf.call(perm, "www.other.org", 14))
+  end
+
   private
 
   def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)

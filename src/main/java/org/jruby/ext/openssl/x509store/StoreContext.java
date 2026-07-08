@@ -49,7 +49,11 @@ import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1String;
+import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
+import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.GeneralSubtree;
@@ -59,6 +63,7 @@ import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
 import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
 import org.jruby.ext.openssl.SecurityHelper;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.util.ByteList;
 
 import static org.jruby.ext.openssl.x509store.X509Error.addError;
 import static org.jruby.ext.openssl.x509store.X509Utils.*;
@@ -1183,10 +1188,8 @@ public class StoreContext {
     /**
      * c: check_name_constraints
      *
-     * Checks that each certificate's subject DN and SANs are within the
-     * name constraints (permitted/excluded subtrees) of all CA certificates
-     * higher in the chain. Uses BouncyCastle's PKIXNameConstraintValidator
-     * which implements RFC 5280 Section 4.2.1.10.
+     * checks that each certificate's subject DN and SANs are within the name constraints (permitted/excluded subtrees)
+     * of all CA certificates higher in the chain
      */
     private int checkNameConstraints() throws Exception {
         final int num = chain.size();
@@ -1197,66 +1200,137 @@ public class StoreContext {
             // Skip self-issued intermediates (not the leaf)
             if (i != 0 && (x.getExFlags() & EXFLAG_SI) != 0) continue;
 
-            // Check x against nameConstraints from every cert higher in the chain
+            // for EE cert, dNSName constraints also apply to the subject CN when there is no SAN dNSName
+            // (OpenSSL NAME_CONSTRAINTS_check_CN); BC's validator only checks the SAN
+            final List<String> leafCNs = (i == 0 && !hasSubjectAltDNSName(x)) ? subjectCommonNames(x) : null;
+
+            // check x against nameConstraints from every cert higher in the chain
             for (int j = i + 1; j < num; j++) {
                 final X509AuxCertificate issuer = chain.get(j);
-                final byte[] ncBytes = issuer.getExtensionValue(OID_NAME_CONSTRAINTS);
-                if (ncBytes == null) continue;
+                final byte[] constaintsBytes = issuer.getExtensionValue(OID_NAME_CONSTRAINTS);
+                if (constaintsBytes == null) continue;
 
-                final NameConstraints nc;
-                try {
-                    // Extension value is OCTET STRING wrapping the actual ASN.1
-                    ASN1OctetString oct = ASN1OctetString.getInstance(ncBytes);
-                    nc = NameConstraints.getInstance(ASN1Sequence.getInstance(oct.getOctets()));
+                final NameConstraints constraints;
+                try { // extension value is OCTET STRING wrapping the actual ASN.1
+                    ASN1OctetString oct = ASN1OctetString.getInstance(constaintsBytes);
+                    constraints = NameConstraints.getInstance(ASN1Sequence.getInstance(oct.getOctets()));
                 } catch (Exception e) {
                     if (verify_cb_cert(x, i, V_ERR_UNSPECIFIED) == 0) return 0;
                     continue;
                 }
 
+                // implements RFC 5280 Section 4.2.1.10
                 final PKIXNameConstraintValidator validator = new PKIXNameConstraintValidator();
-                GeneralSubtree[] permitted = nc.getPermittedSubtrees();
+                GeneralSubtree[] permitted = constraints.getPermittedSubtrees();
                 if (permitted != null) {
                     validator.intersectPermittedSubtree(permitted);
                 }
-                GeneralSubtree[] excluded = nc.getExcludedSubtrees();
+                GeneralSubtree[] excluded = constraints.getExcludedSubtrees();
                 if (excluded != null) {
-                    for (GeneralSubtree sub : excluded) {
-                        validator.addExcludedSubtree(sub);
-                    }
+                    for (GeneralSubtree sub : excluded) validator.addExcludedSubtree(sub);
                 }
 
-                // Check subject DN as directoryName
+                // check subject DN as directoryName
                 try {
                     javax.security.auth.x500.X500Principal subj = x.getSubjectX500Principal();
-                    if (subj != null && subj.getEncoded().length > 2) {
-                        X500Name dn = X500Name.getInstance(subj.getEncoded());
+                    final byte[] subjEncoded = subj != null ? subj.getEncoded() : ByteList.NULL_ARRAY;
+                    if (subjEncoded.length > 2) {
+                        X500Name dn = X500Name.getInstance(subjEncoded);
                         GeneralName dnName = new GeneralName(GeneralName.directoryName, dn);
                         validator.checkPermitted(dnName);
                         validator.checkExcluded(dnName);
                     }
                 } catch (NameConstraintValidatorException e) {
-                    final String log = "checkNameConstraints subject directory name";
-                    if (handleNameConstraintViolation(e, x, i, log)) return 0;
+                    if (handleNameConstraintViolation(e, x, i, "checkNameConstraints subject directory name")) return 0;
                 }
 
-                // Check all Subject Alternative Names
+                // check all Subject Alternative Names
                 try {
                     byte[] sanBytes = x.getExtensionValue(OID_SUBJECT_ALT_NAME);
                     if (sanBytes != null) {
-                        ASN1OctetString sanOct = ASN1OctetString.getInstance(sanBytes);
-                        GeneralNames sans = GeneralNames.getInstance(sanOct.getOctets());
+                        GeneralNames sans = parseGeneralNamesOctets(sanBytes);;
                         for (GeneralName san : sans.getNames()) {
                             validator.checkPermitted(san);
                             validator.checkExcluded(san);
                         }
                     }
                 } catch (NameConstraintValidatorException e) {
-                    final String log = "checkNameConstraints subject alt name";
-                    if (handleNameConstraintViolation(e, x, i, log)) return 0;
+                    if (handleNameConstraintViolation(e, x, i, "checkNameConstraints subject alt name")) return 0;
+                }
+
+                // EE cert with no SAN dNSName: check DNS-name-like CNs (NAME_CONSTRAINTS_check_CN)
+                if (leafCNs != null) {
+                    for (final String cn : leafCNs) {
+                        final String dnsid = cn2dnsid(cn);
+                        if (dnsid == null) continue;
+                        try {
+                            final GeneralName name = new GeneralName(GeneralName.dNSName, dnsid);
+                            validator.checkPermitted(name);
+                            validator.checkExcluded(name);
+                        } catch (NameConstraintValidatorException e) {
+                            if (handleNameConstraintViolation(e, x, i, "checkNameConstraints subject CN")) return 0;
+                        }
+                    }
                 }
             }
         }
         return 1;
+    }
+
+    private static boolean hasSubjectAltDNSName(final X509AuxCertificate cert) {
+        try {
+            final byte[] sanBytes = cert.getExtensionValue(OID_SUBJECT_ALT_NAME);
+            if (sanBytes == null) return false;
+            final GeneralNames sans = parseGeneralNamesOctets(sanBytes);
+            for (final GeneralName gn : sans.getNames()) {
+                if (gn.getTagNo() == GeneralName.dNSName) return true;
+            }
+        } catch (IllegalArgumentException e) { /* treat malformed SAN as no dNSName */ }
+        return false;
+    }
+
+    private static GeneralNames parseGeneralNamesOctets(final byte[] bytes) {
+        ASN1OctetString stringBytes = ASN1OctetString.getInstance(bytes);
+        return GeneralNames.getInstance(stringBytes.getOctets());
+    }
+
+    private static List<String> subjectCommonNames(final X509AuxCertificate x) {
+        final List<String> cns = new ArrayList<>(2);
+        final javax.security.auth.x500.X500Principal subj = x.getSubjectX500Principal();
+        if (subj == null) return cns;
+        final X500Name dn = X500Name.getInstance(subj.getEncoded());
+        for (final RDN rdn : dn.getRDNs(BCStyle.CN)) {
+            for (final AttributeTypeAndValue tv : rdn.getTypesAndValues()) {
+                if (BCStyle.CN.equals(tv.getType()) && tv.getValue() instanceof ASN1String) {
+                    cns.add(((ASN1String) tv.getValue()).getString());
+                }
+            }
+        }
+        return cns;
+    }
+
+    /**
+     * v3_ncons.c: cn2dnsid - a CN is treated as a DNS-ID only if it is a syntactically valid,
+     * multi-label host name. Returns the host name, or null when the CN is not a DNS name.
+     */
+    private static String cn2dnsid(String cn) {
+        int len = cn.length();
+        while (len > 0 && cn.charAt(len - 1) == '\0') len--; // strip trailing NULs
+        cn = cn.substring(0, len);
+        if (cn.indexOf('\0') >= 0) return null; // embedded NUL: not a valid DNS name
+        boolean isdnsname = false;
+        for (int i = 0; i < cn.length(); i++) {
+            final char c = cn.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') continue;
+            if (i > 0 && i < cn.length() - 1) {
+                if (c == '-') continue;
+                if (c == '.' && cn.charAt(i + 1) != '.' && cn.charAt(i - 1) != '-' && cn.charAt(i + 1) != '-') {
+                    isdnsname = true; continue;
+                }
+            }
+            isdnsname = false; break;
+        }
+        return isdnsname ? cn : null;
     }
 
     private boolean handleNameConstraintViolation(NameConstraintValidatorException ex,

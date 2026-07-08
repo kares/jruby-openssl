@@ -759,6 +759,63 @@ class TestX509Store < TestCase
     assert_equal OpenSSL::X509::V_ERR_CERT_REVOKED, e
   end
 
+  def test_crl_issuing_distribution_point_scope
+    now = Time.now
+    ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","keyCertSign,cRLSign",true]]
+    ee_exts = [["basicConstraints","CA:FALSE",true],["keyUsage","digitalSignature",true]]
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    root = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLScopeRoot"), root_key, 1, ca_exts, nil, nil,
+                      not_before: now, not_after: now + 3600)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+    leaf = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLScopeLeaf"), leaf_key, 42, ee_exts,
+                      root, root_key, not_before: now, not_after: now + 1800)
+
+    verify = lambda do |crl|
+      crl = OpenSSL::X509::CRL.new(crl.to_der) # round-trip so IDP is parsed as for a wire CRL
+      store = OpenSSL::X509::Store.new
+      store.add_cert(root); store.add_crl(crl)
+      store.flags = OpenSSL::X509::V_FLAG_CRL_CHECK
+      [store.verify(leaf), store.error]
+    end
+
+    build_crl = lambda do |revoke: false, idp_der: nil|
+      crl = OpenSSL::X509::CRL.new
+      crl.version = 1; crl.issuer = root.subject
+      crl.last_update = now - 60; crl.next_update = now + 3600
+      if revoke
+        rev = OpenSSL::X509::Revoked.new; rev.serial = leaf.serial; rev.time = now - 60
+        crl.add_revoked(rev)
+      end
+      crl.add_extension(OpenSSL::X509::Extension.new("2.5.29.28", idp_der, true)) if idp_der
+      crl.sign(root_key, OpenSSL::Digest.new('SHA256'))
+      crl
+    end
+
+    idp_user = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Boolean.new(true, 1, :IMPLICIT, :CONTEXT_SPECIFIC)]).to_der
+    idp_ca   = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Boolean.new(true, 2, :IMPLICIT, :CONTEXT_SPECIFIC)]).to_der
+    idp_ind  = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Boolean.new(true, 4, :IMPLICIT, :CONTEXT_SPECIFIC)]).to_der
+
+    # in scope (onlyContainsUserCerts) - revocation applies to the EE
+    v, e = verify.call(build_crl.call(revoke: true, idp_der: idp_user))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_CERT_REVOKED, e
+
+    # out of scope (onlyContainsCACerts) for an EE cert - CRL must not be used
+    v, e = verify.call(build_crl.call(idp_der: idp_ca))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_DIFFERENT_CRL_SCOPE, e
+
+    # out of scope even when the EE serial appears in the CRL: scope wins over revocation
+    v, e = verify.call(build_crl.call(revoke: true, idp_der: idp_ca))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_DIFFERENT_CRL_SCOPE, e
+
+    # indirect CRL is unusable without extended CRL support
+    v, e = verify.call(build_crl.call(idp_der: idp_ind))
+    assert_equal false, v
+    assert_equal OpenSSL::X509::V_ERR_UNABLE_TO_GET_CRL, e
+  end
+
   private
 
   def build_cert_with_san(name, serial, san_dns, issuer_cert, issuer_key)

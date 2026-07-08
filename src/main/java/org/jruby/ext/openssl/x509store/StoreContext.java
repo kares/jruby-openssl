@@ -53,6 +53,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.GeneralSubtree;
+import org.bouncycastle.asn1.x509.IssuingDistributionPoint;
 import org.bouncycastle.asn1.x509.NameConstraints;
 import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
 import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
@@ -327,11 +328,11 @@ public class StoreContext {
 
         this.checkIssued = check_issued;
         this.getIssuer = getFirstIssuer;
-        this.verifyCallback = nullCallback;
+        this.verifyCallback = (ctx, outcome) -> outcome; // null_callback
         this.verify = null;
         this.checkRevocation = StoreContext.check_revocation;
         this.getCRL = defaultGetCRL;
-        this.checkCRL = check_crl_legacy;
+        this.checkCRL = check_crl;
         this.certificateCRL = defaultCertificateCRL;
 
         if ( store != null ) {
@@ -1929,15 +1930,6 @@ public class StoreContext {
         return checkIfIssuedBy(issuer, x) == V_OK ? 1 : 0; // x509_likely_issued
     };
 
-    /**
-     * c: null_callback
-     */
-    final static Store.VerifyCallbackFunction nullCallback = new Store.VerifyCallbackFunction() {
-        public int call(StoreContext context, Integer outcome) {
-            return outcome.intValue();
-        }
-    };
-
     /*
      * c: static int internal_verify(X509_STORE_CTX *ctx)
      */
@@ -2115,28 +2107,59 @@ public class StoreContext {
     /**
      * c: get_crl
      */
+    // issuing distribution point (2.5.29.28) scope of a CRL relative to a cert
+    static final int IDP_SCOPE_OK = 0;        // in scope
+    static final int IDP_SCOPE_DIFFERENT = 1; // onlyUser/onlyCA/onlyAttr mismatch
+    static final int IDP_SCOPE_UNUSABLE = 2;  // invalid, or indirect/reasons (need extended CRL support)
+
+    /*
+     * x509_vfy.c: crl_crldp_check() scope check + get_crl_score() IDP_ rejections
+     */
+    private static int crlIdpScope(final X509CRL crl, final X509AuxCertificate cert) {
+        final byte[] idpBytes = crl.getExtensionValue("2.5.29.28");
+        if (idpBytes == null) return IDP_SCOPE_OK;
+        final IssuingDistributionPoint idp;
+        try {
+            ASN1OctetString oct = ASN1OctetString.getInstance(idpBytes);
+            idp = IssuingDistributionPoint.getInstance(ASN1Sequence.getInstance(oct.getOctets()));
+        } catch (IllegalArgumentException e) {
+            return IDP_SCOPE_UNUSABLE; // IDP_INVALID
+        }
+        if (idp.isIndirectCRL() || idp.getOnlySomeReasons() != null) {
+            return IDP_SCOPE_UNUSABLE;
+        }
+        if (idp.onlyContainsAttributeCerts()) return IDP_SCOPE_DIFFERENT;
+        if (cert.getBasicConstraints() != -1) { // CA cert (EXFLAG_CA)
+            if (idp.onlyContainsUserCerts()) return IDP_SCOPE_DIFFERENT;
+        } else if (idp.onlyContainsCACerts()) {
+            return IDP_SCOPE_DIFFERENT;
+        }
+        return IDP_SCOPE_OK;
+    }
+
     final static Store.GetCRLFunction defaultGetCRL = (context, crls, x) -> {
         final Name name = new Name( x.getIssuerX500Principal() );
         final X509CRL[] crl = new X509CRL[1];
         int ok = context.getCRLStack(crl, name, context.crls);
-        if ( ok != 0 ) {
+        if ( ok != 0 && crlIdpScope(crl[0], x) != IDP_SCOPE_UNUSABLE ) {
             crls[0] = crl[0];
             return 1;
         }
         final X509Object[] xobj = new X509Object[1];
         ok = context.getBySubject(X509Utils.X509_LU_CRL, name, xobj);
         if ( ok == 0 ) {
-            if ( crl[0] != null ) {
+            if ( crl[0] != null && crlIdpScope(crl[0], x) != IDP_SCOPE_UNUSABLE ) {
                 crls[0] = crl[0];
                 return 1;
             }
             return 0;
         }
-        crls[0] = (X509CRL) ( (CRL) xobj[0] ).crl;
+        final X509CRL storeCrl = (X509CRL) ( (CRL) xobj[0] ).crl;
+        if ( crlIdpScope(storeCrl, x) == IDP_SCOPE_UNUSABLE ) return 0;
+        crls[0] = storeCrl;
         return 1;
     };
 
-    // TODO unused due incomplete - needs score support to pass test_x509store.rb tests?
     /*
      * Check CRL validity
      *
@@ -2177,18 +2200,16 @@ public class StoreContext {
                 if (verify_cb_crl(V_ERR_KEYUSAGE_NO_CRL_SIGN) == 0) return 0;
             }
 
-            //if (!(ctx->current_crl_score & CRL_SCORE_SCOPE) &&
-            //        !verify_cb_crl(ctx, X509_V_ERR_DIFFERENT_CRL_SCOPE))
-            //    return 0;
-            //
+            /* Reject a CRL whose issuing distribution point scope does not cover this cert */
+            if (crlIdpScope(crl, current_cert) == IDP_SCOPE_DIFFERENT &&
+                    verify_cb_crl(V_ERR_DIFFERENT_CRL_SCOPE) == 0)
+                return 0;
+
             //if (!(ctx->current_crl_score & CRL_SCORE_SAME_PATH) &&
             //        check_crl_path(ctx, ctx->current_issuer) <= 0 &&
             //        !verify_cb_crl(ctx, X509_V_ERR_CRL_PATH_VALIDATION_ERROR))
             //    return 0;
-            //
-            //if ((crl->idp_flags & IDP_INVALID) &&
-            //        !verify_cb_crl(ctx, X509_V_ERR_INVALID_EXTENSION))
-            //    return 0;
+            // NOTE: IDP_INVALID / indirect / reasons CRLs are rejected in get_crl (defaultGetCRL)
         //}
 
         //if (!(ctx->current_crl_score & CRL_SCORE_TIME) &&
@@ -2223,57 +2244,8 @@ public class StoreContext {
     /* Check CRL validity */
     final static Store.CheckCRLFunction check_crl = (ctx, crl) -> ctx.check_crl(crl);
 
-    final static Store.CheckCRLFunction check_crl_legacy = (context, crl) -> {
-        final int errorDepth = context.error_depth;
-        final int lastInChain = context.chain.size() - 1;
-
-        int ok;
-        final X509AuxCertificate issuer;
-        if ( errorDepth < lastInChain ) {
-            issuer = context.chain.get(errorDepth + 1);
-        }
-        else {
-            issuer = context.chain.get(lastInChain);
-            if ( context.checkIssued.call(context,issuer,issuer) == 0 ) {
-                context.error = X509Utils.V_ERR_UNABLE_TO_GET_CRL_ISSUER;
-                ok = context.verifyCallback.call(context, ZERO);
-                if ( ok == 0 ) return ok;
-            }
-        }
-
-        if ( issuer != null ) {
-            if ( issuer.getKeyUsage() != null && ! issuer.getKeyUsage()[6] ) {
-                context.error = X509Utils.V_ERR_KEYUSAGE_NO_CRL_SIGN;
-                ok = context.verifyCallback.call(context, ZERO);
-                if ( ok == 0 ) return ok;
-            }
-            final PublicKey ikey = issuer.getPublicKey();
-            if ( ikey == null ) {
-                context.error = X509Utils.V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
-                ok = context.verifyCallback.call(context, ZERO);
-                if ( ok == 0 ) return ok;
-            }
-            else {
-                try {
-                    SecurityHelper.verify(crl, ikey);
-                }
-                catch (GeneralSecurityException ex) {
-                    context.error = X509Utils.V_ERR_CRL_SIGNATURE_FAILURE;
-                    ok = context.verifyCallback.call(context, ZERO);
-                    if ( ok == 0 ) return ok;
-                }
-            }
-        }
-
-        //ok = context.checkCRLTime(crl, 1);
-        //if ( ok == 0 ) return ok;
-        if (!context.check_crl_time(crl, true)) return 0;
-
-        return 1;
-    };
-
-    // Critical CRL extensions OpenSSL processes (x_crl.c crl_cb): a critical
-    // extension outside this set makes the CRL unusable for revocation.
+    // Critical CRL extensions OpenSSL processes (x_crl.c crl_cb):
+    // a critical extension outside this set makes the CRL unusable for revocation
     private static final Set<String> HANDLED_CRITICAL_CRL_EXTENSIONS = new HashSet<>(4);
     static {
         HANDLED_CRITICAL_CRL_EXTENSIONS.add("2.5.29.28"); // issuingDistributionPoint

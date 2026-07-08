@@ -88,8 +88,6 @@ public class StoreContext {
     private VerifyParameter verifyParameter;
     private ArrayList<Object> extraData;
 
-    //private List<X509AuxCertificate> otherContext;
-
     public StoreContext(final Store store) {
         this.store = store;
     }
@@ -109,7 +107,7 @@ public class StoreContext {
 
     Store.LookupCerts lookup_certs;
 
-    public boolean isValid;
+    //private boolean isValid;
 
     private int num_untrusted; // last_untrusted (OpenSSL 1.0.2) in the chain
 
@@ -222,63 +220,10 @@ public class StoreContext {
         return ret;
     }
 
-    // NOTE: not based on OpenSSL - self invented (till JOSSL 1.1.1 port)
-    private int getValidIssuers(final X509AuxCertificate x, final List<X509AuxCertificate> _issuers)
-        throws Exception {
-        final Name xn = new Name( x.getIssuerX500Principal() );
-        final X509Object[] s_obj = new X509Object[1];
-        int ok = store == null ? 0 : getBySubject(X509Utils.X509_LU_X509, xn, s_obj);
-        if ( ok != X509Utils.X509_LU_X509 ) {
-            if ( ok == X509Utils.X509_LU_RETRY ) {
-                X509Error.addError(X509Utils.X509_R_SHOULD_RETRY);
-                return -1;
-            }
-            else if ( ok != X509Utils.X509_LU_FAIL ) {
-                return -1;
-            }
-            return 0;
-        }
-        int ret = 0;
-        /* If certificate matches all OK */
-        X509Object obj = s_obj[0];
-        if ( checkIssued.call(this, x, ((Certificate) obj).cert) != 0 ) {
-            X509AuxCertificate issuer = ((Certificate) obj).cert;
-            if (x509_check_cert_time(issuer, -1)) {
-                _issuers.add(issuer);
-                ret = 1;
-            }
-        }
-
-        List<X509Object> objects = store.getObjects();
-
-        int idx = X509Object.indexBySubject(objects, X509Utils.X509_LU_X509, xn);
-        if ( idx == -1 ) return ret;
-
-        /* Look through all matching certificates for a suitable issuer */
-        for ( int i = idx; i < objects.size(); i++ ) {
-            final X509Object pobj = objects.get(i);
-            if ( pobj.type() != X509Utils.X509_LU_X509 ) {
-                continue;
-            }
-            final X509AuxCertificate x509 = ((Certificate) pobj).cert;
-            if ( ! xn.equalTo( x509.getSubjectX500Principal() ) ) {
-                continue;
-            }
-
-            if ( checkIssued.call(this, x, x509) != 0 ) {
-                if (x509_check_cert_time(x509, -1)) {
-                    _issuers.add(x509);
-                    ret = 1;
-                }
-            }
-        }
-        return ret;
-    }
-
     public static List<X509AuxCertificate> ensureAux(final Collection<X509Certificate> input) {
         if ( input == null ) return null;
 
-        List<X509AuxCertificate> out = new ArrayList<X509AuxCertificate>(input.size());
+        List<X509AuxCertificate> out = new ArrayList<>(input.size());
         for ( X509Certificate cert : input ) out.add( ensureAux(cert) );
         return out;
     }
@@ -286,7 +231,7 @@ public class StoreContext {
     public static List<X509AuxCertificate> ensureAux(final X509Certificate[] input) {
         if ( input == null ) return null;
 
-        List<X509AuxCertificate> out = new ArrayList<X509AuxCertificate>(input.length);
+        List<X509AuxCertificate> out = new ArrayList<>(input.length);
         for ( X509Certificate cert : input ) out.add( ensureAux(cert) );
         return out;
     }
@@ -313,7 +258,7 @@ public class StoreContext {
         this.untrusted = untrusted_chain;
         this.crls = null;
         this.num_untrusted = 0;
-        this.isValid = false;
+        //this.isValid = false;
         this.chain = null;
         this.error = V_OK;
         this.explicit_policy = 0;
@@ -501,7 +446,7 @@ public class StoreContext {
      */
     public List<X509AuxCertificate> getFirstChain() {
         if ( chain == null ) return null;
-        return new ArrayList<X509AuxCertificate>(chain);
+        return new ArrayList<>(chain);
     }
 
     /**
@@ -550,76 +495,7 @@ public class StoreContext {
     }
 
     /*
-    private void resetSettingsToWithoutStore() {
-        store = null;
-        this.verifyParameter = new VerifyParameter();
-        this.verifyParameter.flags |= X509Utils.X509_VP_FLAG_DEFAULT | X509Utils.X509_VP_FLAG_ONCE;
-        this.verifyParameter.inherit(VerifyParameter.lookup("default"));
-        this.cleanup = Store.CleanupFunction.EMPTY;
-        this.checkIssued = defaultCheckIssued;
-        this.getIssuer = getFirstIssuer;
-        this.verifyCallback = nullCallback;
-        this.verify = internalVerify;
-        this.checkRevocation = defaultCheckRevocation;
-        this.getCRL = defaultGetCRL;
-        this.checkCRL = defaultCheckCRL;
-        this.certificateCRL = defaultCertificateCRL;
-    } */
-
-    /**
-     * c: SSL_CTX_load_verify_locations
-     */
-    /*
-    public int loadVerifyLocations(Ruby runtime, String CAfile, String CApath) {
-        boolean reset = false;
-        try {
-            if ( store == null ) {
-                reset = true;
-                store = new Store();
-                this.verifyParameter.inherit(store.verifyParameter);
-                verifyParameter.inherit(VerifyParameter.lookup("default"));
-                this.cleanup = store.cleanup;
-                if ( store.checkIssued != null && store.checkIssued != Store.CheckIssuedFunction.EMPTY ) {
-                    this.checkIssued = store.checkIssued;
-                }
-                if ( store.getIssuer != null && store.getIssuer != Store.GetIssuerFunction.EMPTY ) {
-                    this.getIssuer = store.getIssuer;
-                }
-                if ( store.verify != null && store.verify != Store.VerifyFunction.EMPTY ) {
-                    this.verify = store.verify;
-                }
-                if ( store.verifyCallback != null && store.verifyCallback != Store.VerifyCallbackFunction.EMPTY ) {
-                    this.verifyCallback = store.verifyCallback;
-                }
-                if ( store.checkRevocation != null && store.checkRevocation != Store.CheckRevocationFunction.EMPTY ) {
-                    this.checkRevocation = store.checkRevocation;
-                }
-                if ( store.getCRL != null && store.getCRL != Store.GetCRLFunction.EMPTY ) {
-                    this.getCRL = store.getCRL;
-                }
-                if ( store.checkCRL != null && store.checkCRL != Store.CheckCRLFunction.EMPTY ) {
-                    this.checkCRL = store.checkCRL;
-                }
-                if ( store.certificateCRL != null && store.certificateCRL != Store.CertificateCRLFunction.EMPTY ) {
-                    this.certificateCRL = store.certificateCRL;
-                }
-            }
-
-            final int ret = store.loadLocations(runtime, CAfile, CApath);
-            if ( ret == 0 && reset ) resetSettingsToWithoutStore();
-
-            return ret;
-        }
-        catch (Exception e) {
-
-            if ( reset ) resetSettingsToWithoutStore();
-            return 0;
-        }
-    } */
-
-    /*
-     * int X509_STORE_CTX_purpose_inherit(X509_STORE_CTX *ctx, int def_purpose,
-     *                                    int purpose, int trust)
+     * int X509_STORE_CTX_purpose_inherit(X509_STORE_CTX *ctx, int def_purpose, int purpose, int trust)
      */
     private int purposeInherit(final int def_purpose, int purpose, int trust) {
         int idx;
@@ -675,8 +551,8 @@ public class StoreContext {
     /**
      * c: X509_STORE_CTX_set_time
      */
-    public void setTime(long flags,Date t) {
-        verifyParameter.setTime(t);
+    public void setTime(Date time) {
+        verifyParameter.setTime(time);
     }
 
     /**

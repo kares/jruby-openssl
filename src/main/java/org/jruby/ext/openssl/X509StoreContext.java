@@ -287,7 +287,7 @@ public class X509StoreContext extends RubyObject {
     @JRubyMethod(name = "time=")
     public IRubyObject set_time(final ThreadContext context, IRubyObject arg) {
         RubyTime time = X509Store.toTime(context, arg);
-        storeContext.setTime( 0, time.getJavaDate() );
+        storeContext.setTime(time.getJavaDate());
         return arg;
     }
 

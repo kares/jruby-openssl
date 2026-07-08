@@ -54,10 +54,8 @@ import org.bouncycastle.asn1.x509.GeneralSubtree;
 import org.bouncycastle.asn1.x509.NameConstraints;
 import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
 import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
-import org.jruby.ext.openssl.OpenSSL;
 import org.jruby.ext.openssl.SecurityHelper;
 import org.jruby.ext.openssl.log.Logger;
-import org.jruby.util.SafePropertyAccessor;
 
 import static org.jruby.ext.openssl.x509store.X509Error.addError;
 import static org.jruby.ext.openssl.x509store.X509Utils.*;
@@ -82,7 +80,7 @@ public class StoreContext {
     private VerifyParameter verifyParameter;
     private ArrayList<Object> extraData;
 
-    private List<X509AuxCertificate> otherContext;
+    //private List<X509AuxCertificate> otherContext;
 
     public StoreContext(final Store store) {
         this.store = store;
@@ -303,12 +301,10 @@ public class StoreContext {
      * @return 1
      */
     public int init(X509AuxCertificate cert, List<X509AuxCertificate> untrusted_chain) {
-        // int ret = 1;
         this.cert = cert;
         this.untrusted = untrusted_chain;
         this.crls = null;
         this.num_untrusted = 0;
-        this.otherContext = null;
         this.isValid = false;
         this.chain = null;
         this.error = V_OK;
@@ -327,7 +323,7 @@ public class StoreContext {
             this.cleanup = null;
         }
 
-        this.checkIssued = VERIFY_LEGACY ? check_issued_legacy : check_issued;
+        this.checkIssued = check_issued;
         this.getIssuer = getFirstIssuer;
         this.verifyCallback = nullCallback;
         this.verify = null;
@@ -401,14 +397,6 @@ public class StoreContext {
 
         // getExtraData(); // CRYPTO_new_ex_data
         return 1;
-    }
-
-    /**
-     * c: X509_STORE_CTX_trusted_stack
-     */
-    public void trustedStack(List<X509AuxCertificate> sk) {
-        otherContext = sk;
-        getIssuer = getIssuerStack;
     }
 
     /**
@@ -778,20 +766,6 @@ public class StoreContext {
         return sk;
     }
 
-    /* Get issuer, without duplicate suppression */
-    private int get_issuer(X509AuxCertificate[] issuer, X509AuxCertificate cert) throws Exception {
-        final ArrayList saved_chain = this.chain;
-        int ok;
-
-        this.chain = null;
-        try {
-            ok = this.getIssuer.call(this, issuer, cert);
-        } finally {
-            this.chain = saved_chain;
-        }
-        return ok;
-    }
-
     private List<X509AuxCertificate> matchCachedCertObjectsFromStore(final Name name) {
         ArrayList<X509AuxCertificate> sk = new ArrayList<X509AuxCertificate>();
         for (X509Object obj : store.getObjects()) {
@@ -834,7 +808,7 @@ public class StoreContext {
         // NOTE: NOT IMPLEMENTED
         /* If the peer's public key is too weak, we can stop early. */
 
-        int ret = verifyChain();
+        int ret = verify_chain();
 
         /*
          * Safety-net.  If we are returning an error, we must also set ctx->error,
@@ -845,171 +819,6 @@ public class StoreContext {
             this.error = V_ERR_UNSPECIFIED;
         }
         return ret;
-    }
-
-    private static final boolean VERIFY_LEGACY;
-    static {
-        String verify = SafePropertyAccessor.getProperty("jruby.openssl.x509.store.verify");
-        VERIFY_LEGACY = "legacy".equals(verify);
-    }
-
-    private int verifyChain() throws Exception {
-        if (VERIFY_LEGACY) return verify_chain_legacy();
-        return verify_chain();
-    }
-
-    /*
-     @ @note: based on pre OpenSSL 1.0 code
-     *
-     * c: static int verify_chain(X509_STORE_CTX *ctx)
-     */
-    @SuppressWarnings("deprecation")
-    int verify_chain_legacy() throws Exception {
-        X509AuxCertificate x, xtmp = null, chain_ss = null;
-        int bad_chain = 0, depth, i, num;
-
-        // We use a temporary STACK so we can chop and hack at it
-
-        LinkedList<X509AuxCertificate> sktmp = untrusted != null ? new LinkedList<>(untrusted) : null;
-
-        num = chain.size();
-        x = chain.get(num - 1);
-        depth = verifyParameter.depth;
-        for(;;) {
-            if ( depth < num ) break;
-
-            if ( checkIssued.call(this, x, x) != 0 ) break;
-
-            if ( sktmp != null ) {
-                xtmp = findIssuer(sktmp, x, true);
-                if ( xtmp != null ) {
-                    chain.add(xtmp);
-                    sktmp.remove(xtmp);
-                    num_untrusted++;
-                    x = xtmp;
-                    num++;
-                    continue;
-                }
-            }
-            break;
-        }
-
-        // at this point, chain should contain a list of untrusted
-        // certificates.  We now need to add at least one trusted one,
-        // if possible, otherwise we complain.
-
-        // Examine last certificate in chain and see if it is self signed.
-
-        i = chain.size();
-        x = chain.get(i - 1);
-
-        if ( checkIssued.call(this, x, x) != 0 ) {
-            // we have a self signed certificate
-            if ( chain.size() == 1 ) {
-                // We have a single self signed certificate: see if
-                // we can find it in the store. We must have an exact
-                // match to avoid possible impersonation.
-                X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
-                int ok = getIssuer.call(this, p_xtmp, x);
-                xtmp = p_xtmp[0];
-                if ( ok <= 0 || ! x.equals(xtmp) ) {
-                    error = X509Utils.V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT;
-                    current_cert = x;
-                    error_depth = i-1;
-                    bad_chain = 1;
-                    ok = verifyCallback.call(this, ZERO);
-                    if ( ok == 0 ) return ok;
-                } else {
-                    // We have a match: replace certificate with store version
-                    // so we get any trust settings.
-                    x = xtmp;
-                    chain.set(i-1,x);
-                    num_untrusted = 0;
-                }
-            } else {
-                // extract and save self signed certificate for later use
-                chain_ss = chain.remove(chain.size()-1);
-                num_untrusted--;
-                num--;
-                x = chain.get(num-1);
-            }
-        }
-
-        // We now lookup certs from the certificate store
-        for(;;) {
-            // If we have enough, we break
-            if ( depth < num ) break;
-            // If we are self signed, we break
-            if ( checkIssued.call(this, x, x) != 0 ) break;
-
-            X509AuxCertificate[] p_xtmp = new X509AuxCertificate[]{ xtmp };
-            int ok = getIssuer.call(this, p_xtmp, x);
-            xtmp = p_xtmp[0];
-
-            if ( ok < 0 ) return ok;
-            if ( ok == 0 ) break;
-
-            x = xtmp;
-
-            chain.add(x);
-            num++;
-        }
-
-        /* we now have our chain, lets check it... */
-
-        /* Is last certificate looked up self signed? */
-        if ( checkIssued.call(this, x, x) == 0 ) {
-            if ( chain_ss == null || checkIssued.call(this, x, chain_ss) == 0 ) {
-                if (num_untrusted >= num) {
-                    error = X509Utils.V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY;
-                } else {
-                    error = X509Utils.V_ERR_UNABLE_TO_GET_ISSUER_CERT;
-                }
-                current_cert = x;
-            } else {
-                chain.add(chain_ss);
-                num++;
-                num_untrusted = num;
-                current_cert = chain_ss;
-                error = X509Utils.V_ERR_SELF_SIGNED_CERT_IN_CHAIN;
-            }
-            error_depth = num - 1;
-            bad_chain = 1;
-            int ok = verifyCallback.call(this, ZERO);
-            if ( ok == 0 ) return ok;
-        }
-
-        // We have the chain complete: now we need to check its purpose
-        int ok = checkChainExtensions();
-        if ( ok == 0 ) return ok;
-
-        ok = checkNameConstraints();
-        if ( ok == 0 ) return ok;
-
-        // The chain extensions are OK: check trust
-        if ( verifyParameter.trust > 0 ) ok = checkTrust();
-        if ( ok == 0 ) return ok;
-
-        // Check revocation status: we do this after copying parameters
-        // because they may be needed for CRL signature verification.
-        ok = checkRevocation.call(this);
-        if ( ok == 0 ) return ok;
-
-        /* At this point, we have a chain and need to verify it */
-        if ( verify != null ) {
-            ok = verify.call(this);
-        } else {
-            ok = internalVerify.call(this);
-        }
-        if ( ok == 0 ) return ok;
-
-        /* TODO: RFC 3779 path validation, now that CRL check has been done (from 1.0.0) */
-
-        /* If we get this far evaluate policies */
-        if ( bad_chain == 0 && (verifyParameter.flags & X509Utils.V_FLAG_POLICY_CHECK) != 0 ) {
-            ok = checkPolicy.call(this);
-        }
-        return ok;
     }
 
     /*
@@ -1343,21 +1152,10 @@ public class StoreContext {
         }
     }
 
-    @Deprecated // legacy find_issuer
-    private X509AuxCertificate findIssuer(final List<X509AuxCertificate> certs,
-        final X509AuxCertificate cert, final boolean check_time) throws Exception {
-        for ( X509AuxCertificate issuer : certs ) {
-            if ( checkIssued.call(this, cert, issuer) != 0 ) {
-                if (!check_time || x509_check_cert_time(issuer, -1)) return issuer;
-            }
-        }
-        return null;
-    }
-
     /*
      * Given a STACK_OF(X509) find the issuer of cert (if any)
      *
-     * x509_vfy.c: static int build_chain(X509_STORE_CTX *ctx)
+     * x509_vfy.c: static X509 *find_issuer(X509_STORE_CTX *ctx, STACK_OF(X509) *sk, X509 *x)
      */
     private X509AuxCertificate find_issuer(List<X509AuxCertificate> sk, X509AuxCertificate x) throws Exception {
         X509AuxCertificate rv = null;
@@ -1662,7 +1460,7 @@ public class StoreContext {
     /*
      * Check a certificate chains extensions for consistency with the supplied purpose
      *
-     * static int check_chain_extensions(X509_STORE_CTX *ctx)
+     * x509_vfy.c: static int check_chain_extensions(X509_STORE_CTX *ctx)
      */
     private int check_chain_extensions() throws Exception {
         byte must_be_ca; int plen = 0;
@@ -1933,7 +1731,7 @@ public class StoreContext {
     }
 
     /**
-     * c: check_cert
+     * x509_vfy.c: static int check_cert(X509_STORE_CTX *ctx)
      */
     public int checkCertificate() throws Exception {
         final X509CRL[] crl = new X509CRL[1];
@@ -1964,7 +1762,11 @@ public class StoreContext {
         return ok;
     }
 
-    /* Check CRL times against values in X509_STORE_CTX */
+    /*
+     * Check CRL times against values in X509_STORE_CTX
+     *
+     * x509_vfy.c: static int check_crl_time(X509_STORE_CTX *ctx, X509_CRL *crl, int notify)
+     */
     private boolean check_crl_time(X509CRL crl, final boolean notify) throws Exception {
         final Date pTime;
 
@@ -2105,18 +1907,6 @@ public class StoreContext {
 
     final static Store.GetIssuerFunction getFirstIssuer = (ctx, issuer, cert) -> ctx.getFirstIssuer(issuer, cert);
 
-    /**
-     * c: get_issuer_sk
-     */
-    final static Store.GetIssuerFunction getIssuerStack = (ctx, issuer, x) -> {
-        issuer[0] = ctx.findIssuer(ctx.otherContext, x, false);
-        if ( issuer[0] != null ) {
-            return 1;
-        } else {
-            return 0;
-        }
-    };
-
     /*
      * Given a possible certificate and issuer check them
      *
@@ -2140,22 +1930,6 @@ public class StoreContext {
         }
 
         return (ret == V_OK) ? 1 : 0;
-    };
-
-    final static Store.CheckIssuedFunction check_issued_legacy = new Store.CheckIssuedFunction() {
-        public int call(StoreContext context, X509AuxCertificate cert, X509AuxCertificate issuer) throws Exception {
-            int ret = X509Utils.checkIfIssuedBy(issuer, cert);
-            if ( ret == X509Utils.V_OK ) return 1;
-
-            if ( (context.verifyParameter.flags & X509Utils.V_FLAG_CB_ISSUER_CHECK) == 0 ) {
-                return 0;
-            }
-            context.error = ret;
-            context.current_cert = cert;
-            context.current_issuer = issuer;
-
-            return context.verifyCallback.call(context, ZERO);
-        }
     };
 
     /**
@@ -2367,7 +2141,11 @@ public class StoreContext {
     };
 
     // TODO unused due incomplete - needs score support to pass test_x509store.rb tests?
-    /* Check CRL validity */
+    /*
+     * Check CRL validity
+     *
+     * x509_vfy.c: static int check_crl(X509_STORE_CTX *ctx, X509_CRL *crl)
+     */
     private int check_crl(X509CRL crl) throws Exception {
         final X509AuxCertificate issuer;
         int cnum = this.error_depth;
@@ -2447,94 +2225,85 @@ public class StoreContext {
     }
 
     /* Check CRL validity */
-    final static Store.CheckCRLFunction check_crl = new Store.CheckCRLFunction() {
-        public int call(final StoreContext ctx, final X509CRL crl) throws Exception {
-            return ctx.check_crl(crl);
+    final static Store.CheckCRLFunction check_crl = (ctx, crl) -> ctx.check_crl(crl);
+
+    final static Store.CheckCRLFunction check_crl_legacy = (context, crl) -> {
+        final int errorDepth = context.error_depth;
+        final int lastInChain = context.chain.size() - 1;
+
+        int ok;
+        final X509AuxCertificate issuer;
+        if ( errorDepth < lastInChain ) {
+            issuer = context.chain.get(errorDepth + 1);
         }
-    };
+        else {
+            issuer = context.chain.get(lastInChain);
+            if ( context.checkIssued.call(context,issuer,issuer) == 0 ) {
+                context.error = X509Utils.V_ERR_UNABLE_TO_GET_CRL_ISSUER;
+                ok = context.verifyCallback.call(context, ZERO);
+                if ( ok == 0 ) return ok;
+            }
+        }
 
-    final static Store.CheckCRLFunction check_crl_legacy = new Store.CheckCRLFunction() {
-        public int call(final StoreContext context, final X509CRL crl) throws Exception {
-            final int errorDepth = context.error_depth;
-            final int lastInChain = context.chain.size() - 1;
-
-            int ok;
-            final X509AuxCertificate issuer;
-            if ( errorDepth < lastInChain ) {
-                issuer = context.chain.get(errorDepth + 1);
+        if ( issuer != null ) {
+            if ( issuer.getKeyUsage() != null && ! issuer.getKeyUsage()[6] ) {
+                context.error = X509Utils.V_ERR_KEYUSAGE_NO_CRL_SIGN;
+                ok = context.verifyCallback.call(context, ZERO);
+                if ( ok == 0 ) return ok;
+            }
+            final PublicKey ikey = issuer.getPublicKey();
+            if ( ikey == null ) {
+                context.error = X509Utils.V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
+                ok = context.verifyCallback.call(context, ZERO);
+                if ( ok == 0 ) return ok;
             }
             else {
-                issuer = context.chain.get(lastInChain);
-                if ( context.checkIssued.call(context,issuer,issuer) == 0 ) {
-                    context.error = X509Utils.V_ERR_UNABLE_TO_GET_CRL_ISSUER;
+                try {
+                    SecurityHelper.verify(crl, ikey);
+                }
+                catch (GeneralSecurityException ex) {
+                    context.error = X509Utils.V_ERR_CRL_SIGNATURE_FAILURE;
                     ok = context.verifyCallback.call(context, ZERO);
                     if ( ok == 0 ) return ok;
                 }
             }
-
-            if ( issuer != null ) {
-                if ( issuer.getKeyUsage() != null && ! issuer.getKeyUsage()[6] ) {
-                    context.error = X509Utils.V_ERR_KEYUSAGE_NO_CRL_SIGN;
-                    ok = context.verifyCallback.call(context, ZERO);
-                    if ( ok == 0 ) return ok;
-                }
-                final PublicKey ikey = issuer.getPublicKey();
-                if ( ikey == null ) {
-                    context.error = X509Utils.V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
-                    ok = context.verifyCallback.call(context, ZERO);
-                    if ( ok == 0 ) return ok;
-                }
-                else {
-                    try {
-                        SecurityHelper.verify(crl, ikey);
-                    }
-                    catch (GeneralSecurityException ex) {
-                        context.error = X509Utils.V_ERR_CRL_SIGNATURE_FAILURE;
-                        ok = context.verifyCallback.call(context, ZERO);
-                        if ( ok == 0 ) return ok;
-                    }
-                }
-            }
-
-            //ok = context.checkCRLTime(crl, 1);
-            //if ( ok == 0 ) return ok;
-            if (!context.check_crl_time(crl, true)) return 0;
-
-            return 1;
         }
+
+        //ok = context.checkCRLTime(crl, 1);
+        //if ( ok == 0 ) return ok;
+        if (!context.check_crl_time(crl, true)) return 0;
+
+        return 1;
     };
 
     /**
-     * c: cert_crl
+     * x509_vfy.c: static int cert_crl(X509_STORE_CTX *ctx, X509_CRL *crl, X509 *x)
      */
-    final static Store.CertificateCRLFunction defaultCertificateCRL = new Store.CertificateCRLFunction() {
-        public int call(final StoreContext context, final X509CRL crl, X509AuxCertificate x) throws Exception {
-            int ok;
-            if ( crl.getRevokedCertificate( x.getSerialNumber() ) != null ) {
-                context.error = X509Utils.V_ERR_CERT_REVOKED;
-                ok = context.verifyCallback.call(context, ZERO);
-                if ( ok == 0 ) return 0;
-            }
-            if ( (context.verifyParameter.flags & X509Utils.V_FLAG_IGNORE_CRITICAL) != 0 ) {
-                return 1;
-            }
-            if ( crl.getCriticalExtensionOIDs() != null && crl.getCriticalExtensionOIDs().size() > 0 ) {
-                context.error = X509Utils.V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION;
-                ok = context.verifyCallback.call(context, ZERO);
-                if ( ok == 0 ) return 0;
-            }
+    final static Store.CertificateCRLFunction defaultCertificateCRL = (ctx, crl, x) -> {
+        int ok;
+        if ( crl.getRevokedCertificate( x.getSerialNumber() ) != null ) {
+            ctx.error = X509Utils.V_ERR_CERT_REVOKED;
+            ok = ctx.verifyCallback.call(ctx, ZERO);
+            if ( ok == 0 ) return 0;
+        }
+        if ( (ctx.verifyParameter.flags & X509Utils.V_FLAG_IGNORE_CRITICAL) != 0 ) {
             return 1;
         }
+        final Set<String> critialExtOIDs = crl.getCriticalExtensionOIDs();
+        if ( critialExtOIDs != null && critialExtOIDs.size() > 0 ) {
+            ctx.error = X509Utils.V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION;
+            ok = ctx.verifyCallback.call(ctx, ZERO);
+            if ( ok == 0 ) return 0;
+        }
+        return 1;
     };
 
     /*
      * c: static int check_policy(X509_STORE_CTX *ctx)
      */
-    final static CheckPolicyFunction check_policy = new CheckPolicyFunction() {
-        public int call(StoreContext context) throws Exception {
-            // NOTE: NOT IMPLEMENTED
-            return 1;
-        }
+    final static CheckPolicyFunction check_policy = context -> {
+        // NOTE: NOT IMPLEMENTED
+        return 1;
     };
 
 }// X509_STORE_CTX

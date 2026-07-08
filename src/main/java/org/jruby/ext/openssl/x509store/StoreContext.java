@@ -1890,12 +1890,13 @@ public class StoreContext {
         return X509_TRUST_UNTRUSTED;
     }
 
-    /*-
-     * Check certificate validity times.
-     * If depth >= 0, invoke verification callbacks on error, otherwise just return
-     * the validation status.
+    /**
+     * Check certificate times validity.
+     * <p>
+     * if <code>depth >= 0<code/>, invoke verification callbacks on error,
+     * otherwise just return validation status
      *
-     * Return 1 on success, 0 otherwise.
+     * @return true (1) on success - times are valid, false (0) otherwise
      */
     boolean x509_check_cert_time(X509AuxCertificate x, final int depth) throws Exception {
         final Date pTime;
@@ -1907,26 +1908,25 @@ public class StoreContext {
             pTime = Calendar.getInstance().getTime();
         }
 
-        int i = x.getNotBefore().compareTo(pTime);
-        if (i >= 0 && depth < 0) {
-            return false;
-        }
-        if (i == 0 && verify_cb_cert(x, depth, V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD) == 0) {
-            return false;
-        }
-        if (i > 0 && verify_cb_cert(x, depth, V_ERR_CERT_NOT_YET_VALID) == 0) {
-            return false;
+        // NOTE: X509_cmp_time uses 0 for parse errors and uses <= semantics
+        final Date notBefore = x.getNotBefore();
+        if (notBefore == null) {
+            if (depth < 0) return false;
+            if (verify_cb_cert(x, depth, V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD) == 0) return false;
+        } else {
+            int i = notBefore.compareTo(pTime);
+            if (i > 0 && depth < 0) return false;
+            if (i > 0 && verify_cb_cert(x, depth, V_ERR_CERT_NOT_YET_VALID) == 0) return false;
         }
 
-        i = x.getNotAfter().compareTo(pTime);
-        if (i <= 0 && depth < 0) {
-            return false;
-        }
-        if (i == 0 && verify_cb_cert(x, depth, V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD) == 0) {
-            return false;
-        }
-        if (i < 0 && verify_cb_cert(x, depth, V_ERR_CERT_HAS_EXPIRED) == 0) {
-            return false;
+        final Date notAfter = x.getNotAfter();
+        if (notAfter == null) {
+            if (depth < 0) return false;
+            if (verify_cb_cert(x, depth, V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD) == 0) return false;
+        } else {
+            int i = notAfter.compareTo(pTime);
+            if (i <= 0 && depth < 0) return false;
+            if (i <= 0 && verify_cb_cert(x, depth, V_ERR_CERT_HAS_EXPIRED) == 0) return false;
         }
 
         return true;

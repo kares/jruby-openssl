@@ -528,8 +528,7 @@ class TestX509Store < TestCase
     assert_equal false, ok # OpenSSL 1.1.1 behavior
   end
 
-  # Constant value assertions — portable across CRuby and JRuby.
-  # Values match OpenSSL 1.1.1 (some were renumbered in 3.x).
+  # NOTE: values match OpenSSL 1.1.1 (some were renumbered in 3.x).
   def test_v_err_constants
     x = OpenSSL::X509
     assert_equal 0,  x::V_OK
@@ -715,6 +714,31 @@ class TestX509Store < TestCase
     assert_equal true, store.verify(good)
     assert_equal false, store.verify(bad)
     assert_equal false, store.verify(outside)
+  end
+
+  def test_verify_at_exact_not_before_is_valid
+    key = Fixtures.pkey("rsa2048")
+    now = Time.now
+    cert = issue_cert(OpenSSL::X509::Name.parse("/CN=boundary"), key, 1,
+                      [["basicConstraints", "CA:TRUE", true]], nil, nil,
+                      not_before: now, not_after: now + 3600)
+    store = OpenSSL::X509::Store.new
+    store.add_cert(cert)
+    store.time = cert.not_before
+    assert_equal true, store.verify(cert), store.error_string
+  end
+
+  def test_verify_at_exact_not_after_is_expired
+    key = Fixtures.pkey("rsa2048")
+    now = Time.now
+    cert = issue_cert(OpenSSL::X509::Name.parse("/CN=boundary"), key, 1,
+                      [["basicConstraints", "CA:TRUE", true]], nil, nil,
+                      not_before: now - 3600, not_after: now)
+    store = OpenSSL::X509::Store.new
+    store.add_cert(cert)
+    store.time = cert.not_after
+    assert_equal false, store.verify(cert)
+    assert_equal OpenSSL::X509::V_ERR_CERT_HAS_EXPIRED, store.error
   end
 
 end

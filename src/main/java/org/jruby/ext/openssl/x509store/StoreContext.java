@@ -1945,26 +1945,20 @@ public class StoreContext {
         int n = chain.size() - 1;
         X509AuxCertificate xi = chain.get(n);
         X509AuxCertificate xs;
+        boolean checkCertTime = false; // `goto check_cert_time` - skip the signature check on entry
 
         if (checkIssued.call(this, xi, xi) != 0) {
+            xs = xi; // the typical case: last cert in the chain is self-issued
+        } else if ((getParam().flags & V_FLAG_PARTIAL_CHAIN) != 0) {
+            /* trusted, and we accept partial chains: nothing to verify below */
             xs = xi;
+            checkCertTime = true;
+        } else if (n <= 0) {
+            if (verify_cb_cert(xi, 0, V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE) == 0)
+                return 0;
+            xs = xi;
+            checkCertTime = true;
         } else {
-            if ((getParam().flags & V_FLAG_PARTIAL_CHAIN) != 0) {
-                xs = xi;
-                // goto check_cert;
-                if (!internal_verify_check_cert(this, xi, xs, n)) {
-                    return 0;
-                }
-                if (--n >= 0) {
-                    xi = xs;
-                    // xs = ctx.chain.get(n);
-                }
-                // goto end
-            }
-            if (n <= 0) {
-                return verify_cb_cert(xi, 0, V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE);
-            }
-
             n--;
             error_depth = n;
             xs = chain.get(n);
@@ -1975,27 +1969,30 @@ public class StoreContext {
          * is allowed to reset errors (at its own peril).
          */
         while ( n >= 0 ) {
-            /*
-             * Skip signature check for self-signed certificates unless explicitly asked for;
-             * if the issuer's public key is unusable, report the issuer certificate and its depth
-             * (rather than the depth of the subject)
-             *
-             * NOTE: unlike C, we don't call x509_signing_allowed(xi, xs) here: the issuer keyCertSign requirement
-             * is already enforced by check_issued (see X509Utils.checkIfIssuedBy) during build_chain,
-             * so a non-CA issuer is rejected earlier (as UNABLE_TO_GET_ISSUER rather than KEYUSAGE_NO_CERTSIGN)
-             */
-            if (xs != xi || (getParam().flags & V_FLAG_CHECK_SS_SIGNATURE) != 0) {
-                PublicKey pkey = xi.getPublicKey();
-                if (pkey == null) {
-                    if (verify_cb_cert(xi, xi != xs ? n+1 : n, V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY) == 0)
-                        return 0;
-                } else if (!X509_verify(xs, pkey)) {
-                    if (verify_cb_cert(xs, n, V_ERR_CERT_SIGNATURE_FAILURE) == 0)
-                        return 0;
+            if (!checkCertTime) {
+                /*
+                 * Skip signature check for self-signed certificates unless explicitly asked for;
+                 * if the issuer's public key is unusable, report the issuer certificate and its depth
+                 * (rather than the depth of the subject)
+                 *
+                 * NOTE: unlike C, we don't call x509_signing_allowed(xi, xs) here: the issuer keyCertSign requirement
+                 * is already enforced by check_issued (see X509Utils.checkIfIssuedBy) during build_chain,
+                 * so a non-CA issuer is rejected earlier (as UNABLE_TO_GET_ISSUER rather than KEYUSAGE_NO_CERTSIGN)
+                 */
+                if (xs != xi || (getParam().flags & V_FLAG_CHECK_SS_SIGNATURE) != 0) {
+                    final PublicKey pkey = xi.getPublicKey();
+                    if (pkey == null) {
+                        if (verify_cb_cert(xi, xi != xs ? n + 1 : n, V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY) == 0)
+                            return 0;
+                    } else if (!X509_verify(xs, pkey)) {
+                        if (verify_cb_cert(xs, n, V_ERR_CERT_SIGNATURE_FAILURE) == 0)
+                            return 0;
+                    }
                 }
             }
+            checkCertTime = false;
 
-            // check_cert :
+            // check_cert_time :
             if (!internal_verify_check_cert(this, xi, xs, n)) {
                 return 0;
             }
@@ -2003,7 +2000,6 @@ public class StoreContext {
                 xi = xs;
                 xs = chain.get(n);
             }
-            // end
         }
         return 1;
     }

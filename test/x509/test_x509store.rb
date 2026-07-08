@@ -598,10 +598,6 @@ class TestX509Store < TestCase
   end
 
   def test_v_flag_partial_chain
-    # TODO: V_FLAG_PARTIAL_CHAIN is functional in StoreContext.check_trust
-    # but chain building doesn't fully support it yet on JRuby
-    skip 'PARTIAL_CHAIN chain building not fully working' if defined?(JRUBY_VERSION)
-
     now = Time.now
     ca_exts = [["basicConstraints","CA:TRUE",true],["keyUsage","cRLSign,keyCertSign",true]]
     ee_exts = [["keyUsage","keyEncipherment,digitalSignature",true]]
@@ -626,6 +622,16 @@ class TestX509Store < TestCase
     store2.flags = OpenSSL::X509::V_FLAG_PARTIAL_CHAIN
     assert_equal true, store2.verify(ee_cert)
     assert_equal OpenSSL::X509::V_OK, store2.error
+
+    # PARTIAL_CHAIN still verifies the leaf signature against the trusted anchor:
+    # a leaf claiming the same issuer but signed by the wrong key must fail
+    forged_leaf = issue_cert(OpenSSL::X509::Name.parse("/CN=Leaf"), ee_key, 4, ee_exts,
+                             inter_cert, root_key, not_before: now, not_after: now + 1800)
+    store3 = OpenSSL::X509::Store.new
+    store3.add_cert(inter_cert)
+    store3.flags = OpenSSL::X509::V_FLAG_PARTIAL_CHAIN
+    assert_equal false, store3.verify(forged_leaf)
+    assert_equal OpenSSL::X509::V_ERR_CERT_SIGNATURE_FAILURE, store3.error
   end
 
   def test_verify_path_length_constraint

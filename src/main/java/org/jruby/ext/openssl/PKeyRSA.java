@@ -112,6 +112,9 @@ public class PKeyRSA extends PKey {
     private static final long serialVersionUID = -2540383779256333197L;
     private static final Logger LOG = Logger.getLogger(PKeyRSA.class);
 
+    // matches OpenSSL PKCS5_DEFAULT_ITER (BC's builder default is 1024)
+    private static final int PKCS5_DEFAULT_ITER = 2048;
+
     private static final ObjectAllocator ALLOCATOR = new ObjectAllocator() {
         public PKeyRSA allocate(Ruby runtime, RubyClass klass) { return new PKeyRSA(runtime, klass); }
     };
@@ -549,7 +552,8 @@ public class PKeyRSA extends PKey {
             if (spec != null && passwd != null) {
                 final ASN1ObjectIdentifier cipherOid = osslNameToCipherOid(spec.getOsslName());
                 final OutputEncryptor encryptor = new JcePKCSPBEOutputEncryptorBuilder(cipherOid)
-                        .setProvider(SecurityHelper.getSecurityProvider()).build(passwd);
+                        .setProvider(SecurityHelper.getSecurityProvider())
+                        .setIterationCount(PKCS5_DEFAULT_ITER).build(passwd);
                 final PKCS8EncryptedPrivateKeyInfo enc = new JcaPKCS8EncryptedPrivateKeyInfoBuilder(privateKey).build(encryptor);
                 return newString(context.runtime, enc.getEncoded());
             }
@@ -582,7 +586,8 @@ public class PKeyRSA extends PKey {
             if (spec != null && passwd != null) {
                 final ASN1ObjectIdentifier cipherOid = osslNameToCipherOid(spec.getOsslName());
                 final OutputEncryptor encryptor = new JcePKCSPBEOutputEncryptorBuilder(cipherOid)
-                        .setProvider(SecurityHelper.getSecurityProvider()).build(passwd);
+                        .setProvider(SecurityHelper.getSecurityProvider())
+                        .setIterationCount(PKCS5_DEFAULT_ITER).build(passwd);
                 final PKCS8EncryptedPrivateKeyInfo enc = new JcaPKCS8EncryptedPrivateKeyInfoBuilder(privateKey).build(encryptor);
                 PEMInputOutput.writeEncryptedPKCS8PrivateKey(writer, enc.getEncoded());
             } else {

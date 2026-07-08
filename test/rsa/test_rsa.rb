@@ -679,6 +679,19 @@ geyTgE8KQTduu1OE9Zz2SMcRBDu5/1jWtsLPSVrI2ofLLBARUsWanVyki39DeB4u
     assert_same_rsa rsa, OpenSSL::PKey.read(pem, "abcdef")
   end
 
+  # encrypted PKCS#8 export must use OpenSSL's PKCS5_DEFAULT_ITER (2048),
+  # not BouncyCastle's builder default of 1024
+  def test_private_encoding_encrypted_iteration_count
+    omit_on_fips 'PBE parameters differ under FIPS'
+    rsa = Fixtures.pkey("rsa2048")
+    der = rsa.private_to_der("aes-128-cbc", "abcdef")
+
+    # EncryptedPrivateKeyInfo -> PBES2-params -> keyDerivationFunc (PBKDF2) -> PBKDF2-params
+    kdf = OpenSSL::ASN1.decode(der).value[0].value[1].value[0]
+    assert_equal "1.2.840.113549.1.5.12", kdf.value[0].oid # PBKDF2
+    assert_equal 2048, kdf.value[1].value[1].value.to_i
+  end
+
   def test_export
     rsa1024 = Fixtures.pkey("rsa1024")
 

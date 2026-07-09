@@ -440,8 +440,6 @@ class TestEC < TestCase
 
   # public key does not correspond to the private key -> must raise
   def test_check_key_mismatched_public_key
-    omit_on_fips
-
     ec_key_data = <<~EOF
     -----BEGIN EC PRIVATE KEY-----
     MHcCAQEEIP+TT0V8Fndsnacji9tyf6hmhHywcOWTee9XkiBeJoVloAoGCCqGSM49

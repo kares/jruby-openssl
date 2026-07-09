@@ -241,6 +241,13 @@ public final class PKeyEC extends PKey {
     }
 
     private static ECCurve toBCCurve(final EllipticCurve curve) throws IllegalArgumentException {
+        return toBCCurve(curve, null, null);
+    }
+
+    // FIPS ECCurve Fp/F2m require a non-null order (BC works fine with null)
+    // thus pass the real order/cofactor when known (e.g. from an ECParameterSpec)
+    private static ECCurve toBCCurve(final EllipticCurve curve, final BigInteger order, final BigInteger cofactor)
+        throws IllegalArgumentException {
         final ECField field = curve.getField();
         final BigInteger a = curve.getA();
         final BigInteger b = curve.getB();
@@ -248,13 +255,13 @@ public final class PKeyEC extends PKey {
         if (field instanceof ECFieldFp) {
             final BigInteger p = ((ECFieldFp) field).getP();
             //if (!p.isProbablePrime(100)) throw new IllegalArgumentException("Fp q value not prime");
-            return new ECCurve.Fp(p, a, b, null, null, true); // isInternal - doesn't validate prime
+            return new ECCurve.Fp(p, a, b, order, cofactor, true); // isInternal - doesn't validate prime
         }
 
         final ECFieldF2m fieldF2m = (ECFieldF2m) field;
         final int m = fieldF2m.getM();
         final int[] ks = convertMidTerms(fieldF2m.getMidTermsOfReductionPolynomial());
-        return new ECCurve.F2m(m, ks[0], ks[1], ks[2], a, b, null, null);
+        return new ECCurve.F2m(m, ks[0], ks[1], ks[2], a, b, order, cofactor);
     }
 
     private static org.bouncycastle.math.ec.ECPoint toBCPoint(final ECCurve curve, final ECPoint point) {
@@ -539,7 +546,9 @@ public final class PKeyEC extends PKey {
         try {
             final ECParameterSpec spec = publicKey.getParams();
             final BigInteger order = spec.getOrder();
-            final org.bouncycastle.math.ec.ECPoint pub = toBCPoint(spec, publicKey.getW()).normalize();
+            final BigInteger cofactor = BigInteger.valueOf(spec.getCofactor());
+            final ECCurve curve = toBCCurve(spec.getCurve(), order, cofactor);
+            final org.bouncycastle.math.ec.ECPoint pub = toBCPoint(curve, publicKey.getW()).normalize();
 
             if (pub.isInfinity()) throw newECError(runtime, "point at infinity");
             if (!pub.isValid()) throw newECError(runtime, "point is not on curve");
@@ -550,7 +559,7 @@ public final class PKeyEC extends PKey {
                 if (s.signum() <= 0 || s.compareTo(order) >= 0) {
                     throw newECError(runtime, "invalid private key");
                 }
-                final org.bouncycastle.math.ec.ECPoint gen = toBCPoint(spec, spec.getGenerator());
+                final org.bouncycastle.math.ec.ECPoint gen = toBCPoint(curve, spec.getGenerator());
                 if (!gen.multiply(s).normalize().equals(pub)) {
                     throw newECError(runtime, "public key does not match private key");
                 }

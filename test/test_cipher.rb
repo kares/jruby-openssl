@@ -99,6 +99,8 @@ class TestCipher < TestCase
   end
 
   def test_deprecated_encrypt_password_without_salt_matches_pkcs5_keyivgen
+    omit_on_fips 'pkcs5_keyivgen defaults to MD5, which is not FIPS-approved'
+
     pass = "secret"
     data = "message"
 
@@ -117,6 +119,8 @@ class TestCipher < TestCase
   end
 
   def test_des_key_len
+    skip_fips_unapproved_ciphers
+
     cipher = OpenSSL::Cipher.new 'des'
     assert_equal  8, cipher.key_len
     cipher = OpenSSL::Cipher.new 'DES3'
@@ -134,6 +138,8 @@ class TestCipher < TestCase
   end
 
   def test_des_iv_len
+    skip_fips_unapproved_ciphers
+
     cipher = OpenSSL::Cipher.new 'des'
     assert_equal 8, cipher.iv_len
     cipher = OpenSSL::Cipher.new 'DES3'

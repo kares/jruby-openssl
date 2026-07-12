@@ -33,6 +33,8 @@ class TestDSA < TestCase
   end
 
   def test_new
+    omit_on_fips 'DSA key generation is not FIPS-approved'
+
     key = OpenSSL::PKey::DSA.new(2048)
     pem  = key.public_key.to_pem
     OpenSSL::PKey::DSA.new pem

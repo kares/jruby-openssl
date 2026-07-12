@@ -11,16 +11,18 @@ class TestDigest < TestCase
     OpenSSL::Digest::SHA384.new.block_length
     OpenSSL::Digest::SHA512.new.block_length
 
-    OpenSSL::Digest::MD2.new.block_length
-    OpenSSL::Digest::MD5.new.block_length
     # NOTE: MDC2 not supported
     #OpenSSL::Digest::MDC2.new
 
     OpenSSL::Digest::DSS.new.block_length
     OpenSSL::Digest::DSS1.new.block_length
+  end
 
-    return if fips?
+  def test_digest_classes_not_fips_approved
+    omit_on_fips 'MD2, MD5, MD4 and RIPEMD160 are not FIPS-approved'
 
+    OpenSSL::Digest::MD2.new.block_length
+    OpenSSL::Digest::MD5.new.block_length
     OpenSSL::Digest::MD4.new.block_length # BC
     OpenSSL::Digest::RIPEMD160.new.block_length # BC
   end
@@ -38,19 +40,26 @@ class TestDigest < TestCase
   end if defined? JRUBY_VERSION
 
   def test_digest_helpers
-    md5 = "\x1EJ\e\x03\xD1\xB6\xCD\x8A\x17J\x82ov\xE0\t\xF4"
-    assert_equal md5, OpenSSL::Digest.digest('MD5', '0000000000000000')
     sha = "b02132081808b493c61e86626ee6c2e29326a662"
     assert_equal sha, OpenSSL::Digest.hexdigest('SHA1', '0000000000000000')
   end
 
+  def test_digest_helpers_md5
+    omit_on_fips 'MD5 is not FIPS-approved'
+
+    md5 = "\x1EJ\e\x03\xD1\xB6\xCD\x8A\x17J\x82ov\xE0\t\xF4"
+    assert_equal md5, OpenSSL::Digest.digest('MD5', '0000000000000000')
+  end
+
   def setup
     require 'openssl'
-    @d1 = OpenSSL::Digest::Digest::new("MD5")
-    @d2 = OpenSSL::Digest::MD5.new
+    require 'digest'
 
-    require 'digest/md5'
-    @md = Digest::MD5.new
+    @digest_name = 'SHA256' # FIPS-approved, so this setup works under FIPS too
+    @digest_size = 32
+    @d1 = OpenSSL::Digest::Digest::new(@digest_name)
+    @d2 = OpenSSL::Digest.const_get(@digest_name).new
+    @md = Digest(@digest_name).new
     @data = "DATA"
   end
 
@@ -68,8 +77,8 @@ class TestDigest < TestCase
     assert_equal(@md.hexdigest, @d1.hexdigest)
     assert_equal(@d1.digest, @d2.digest)
     assert_equal(@d1.hexdigest, @d2.hexdigest)
-    assert_equal(@md.digest, OpenSSL::Digest::MD5.digest(@data))
-    assert_equal(@md.hexdigest, OpenSSL::Digest::MD5.hexdigest(@data))
+    assert_equal(@md.digest, OpenSSL::Digest.const_get(@digest_name).digest(@data))
+    assert_equal(@md.hexdigest, OpenSSL::Digest.const_get(@digest_name).hexdigest(@data))
   end
 
   def test_eql
@@ -79,9 +88,9 @@ class TestDigest < TestCase
   end
 
   def test_info
-    assert_equal("MD5", @d1.name, "name")
-    assert_equal("MD5", @d2.name, "name")
-    assert_equal(16, @d1.size, "size")
+    assert_equal(@digest_name, @d1.name, "name")
+    assert_equal(@digest_name, @d2.name, "name")
+    assert_equal(@digest_size, @d1.size, "size")
   end
 
   def test_dup
@@ -126,7 +135,7 @@ class TestDigest < TestCase
     require 'openssl/digest'
     # shout not raise TypeError: superclass mismatch for class Digest
     assert OpenSSL::Digest.is_a?(Class)
-    assert OpenSSL::Digest("MD5")
+    assert OpenSSL::Digest(@digest_name)
   end
 
 end

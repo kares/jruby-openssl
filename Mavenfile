@@ -51,24 +51,9 @@ plugin :compiler, '3.15.0', compiler_configuration do
                compilerArgs: [ '', '-XDignore.symbol.file=true' ]
 end
 
-# @see proguard.conf (`-Dproguard.skip=true` to bypass)
-plugin 'com.github.wvengen:proguard-maven-plugin', '2.7.0' do
-  jar 'com.guardsquare:proguard-base', '7.8.2', scope: :runtime
-  jar 'com.guardsquare:proguard-core', '9.3.1', scope: :runtime
-
-  execute_goal :proguard, id: 'proguard-jopenssl-jar', phase: 'prepare-package',
-      proguardInclude: '${basedir}/proguard.conf',
-      outputDirectory: '${project.build.directory}',
-      # injar without an outjar means rewrite-in-place
-      injar: '../lib/jopenssl.jar', injarNotExistsSkip: true,
-      mappingFileName: 'proguard-jopenssl.map', seedFileName: 'proguard-jopenssl.seed',
-      obfuscate: false, addMavenDescriptor: true
-end
-
 plugin! :clean, '2.4',
         'filesets' => [
-          # extra .jar is the pre-ProGuard jar left behind by the in-place run
-          { directory: 'lib', includes: [ 'jopenssl.jar', 'jopenssl_proguard_base.jar' ] },
+          { directory: 'lib', includes: [ 'jopenssl.jar' ] },
           { directory: 'vendor' },
           { directory: 'target', includes: [ '*' ] }
         ],
@@ -191,16 +176,6 @@ profile id: 'jar-release' do
         classesDirectory: jar_release_dir,
         outputDirectory: '${project.build.directory}',
         finalName: '${project.build.finalName}'
-  end
-
-  # needs its own ProGuard run to ship the same inlined code as the gem's jar
-  plugin 'com.github.wvengen:proguard-maven-plugin' do
-    execute_goal :proguard, id: 'proguard-jar-release', phase: 'package',
-        proguardInclude: '${basedir}/proguard.conf',
-        outputDirectory: '${project.build.directory}',
-        injar: '${project.build.finalName}.jar', injarNotExistsSkip: true,
-        mappingFileName: 'proguard-jar-release.map', seedFileName: 'proguard-jar-release.seed',
-        obfuscate: false, addMavenDescriptor: true
   end
 
   plugin :deploy, '3.1.4' do

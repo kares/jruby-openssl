@@ -167,7 +167,6 @@ DO NOT MODIFY - GENERATED CODE
               <directory>lib</directory>
               <includes>
                 <include>jopenssl.jar</include>
-                <include>jopenssl_proguard_base.jar</include>
               </includes>
             </fileset>
             <fileset>
@@ -288,44 +287,6 @@ DO NOT MODIFY - GENERATED CODE
             <annotationProcessor>org.jruby.anno.AnnotationBinder</annotationProcessor>
           </annotationProcessors>
         </configuration>
-      </plugin>
-      <plugin>
-        <groupId>com.github.wvengen</groupId>
-        <artifactId>proguard-maven-plugin</artifactId>
-        <version>2.7.0</version>
-        <executions>
-          <execution>
-            <id>proguard-jopenssl-jar</id>
-            <phase>prepare-package</phase>
-            <goals>
-              <goal>proguard</goal>
-            </goals>
-            <configuration>
-              <proguardInclude>${basedir}/proguard.conf</proguardInclude>
-              <outputDirectory>${project.build.directory}</outputDirectory>
-              <injar>../lib/jopenssl.jar</injar>
-              <injarNotExistsSkip>true</injarNotExistsSkip>
-              <mappingFileName>proguard-jopenssl.map</mappingFileName>
-              <seedFileName>proguard-jopenssl.seed</seedFileName>
-              <obfuscate>false</obfuscate>
-              <addMavenDescriptor>true</addMavenDescriptor>
-            </configuration>
-          </execution>
-        </executions>
-        <dependencies>
-          <dependency>
-            <groupId>com.guardsquare</groupId>
-            <artifactId>proguard-base</artifactId>
-            <version>7.8.2</version>
-            <scope>runtime</scope>
-          </dependency>
-          <dependency>
-            <groupId>com.guardsquare</groupId>
-            <artifactId>proguard-core</artifactId>
-            <version>9.3.1</version>
-            <scope>runtime</scope>
-          </dependency>
-        </dependencies>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
@@ -885,29 +846,6 @@ DO NOT MODIFY - GENERATED CODE
                   <classesDirectory>${project.build.directory}/jar-release</classesDirectory>
                   <outputDirectory>${project.build.directory}</outputDirectory>
                   <finalName>${project.build.finalName}</finalName>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-            <groupId>com.github.wvengen</groupId>
-            <artifactId>proguard-maven-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>proguard-jar-release</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>proguard</goal>
-                </goals>
-                <configuration>
-                  <proguardInclude>${basedir}/proguard.conf</proguardInclude>
-                  <outputDirectory>${project.build.directory}</outputDirectory>
-                  <injar>${project.build.finalName}.jar</injar>
-                  <injarNotExistsSkip>true</injarNotExistsSkip>
-                  <mappingFileName>proguard-jar-release.map</mappingFileName>
-                  <seedFileName>proguard-jar-release.seed</seedFileName>
-                  <obfuscate>false</obfuscate>
-                  <addMavenDescriptor>true</addMavenDescriptor>
                 </configuration>
               </execution>
             </executions>

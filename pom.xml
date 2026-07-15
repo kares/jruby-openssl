@@ -991,6 +991,38 @@ DO NOT MODIFY - GENERATED CODE
                   </resources>
                 </configuration>
               </execution>
+              <execution>
+                <id>jar-release-sources-lib</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/jar-release-sources</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>lib</directory>
+                      <includes>
+                        <include>jopenssl/load.rb</include>
+                        <include>jopenssl/version.rb</include>
+                        <include>jruby-openssl.rb</include>
+                        <include>openssl.rb</include>
+                        <include>openssl/bn.rb</include>
+                        <include>openssl/buffering.rb</include>
+                        <include>openssl/cipher.rb</include>
+                        <include>openssl/config.rb</include>
+                        <include>openssl/digest.rb</include>
+                        <include>openssl/hmac.rb</include>
+                        <include>openssl/marshal.rb</include>
+                        <include>openssl/pkcs5.rb</include>
+                        <include>openssl/pkey.rb</include>
+                        <include>openssl/ssl.rb</include>
+                        <include>openssl/x509.rb</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
           <plugin>

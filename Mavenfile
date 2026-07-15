@@ -185,6 +185,10 @@ profile id: 'jar-release' do
     execute_goal 'copy-resources', id: 'jar-release-sources', phase: 'prepare-package',
         outputDirectory: jar_release_src_dir,
         resources: [ { directory: 'src/main/java', includes: jar_release_src } ]
+    # the lib/*.rb ships in the sources jar too, same as in the jar-release .jar
+    execute_goal 'copy-resources', id: 'jar-release-sources-lib', phase: 'prepare-package',
+        outputDirectory: jar_release_src_dir,
+        resources: [ { directory: 'lib', includes: jar_release_rb } ]
   end
 
   plugin :jar, '2.4' do

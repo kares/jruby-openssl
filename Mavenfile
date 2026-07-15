@@ -154,7 +154,19 @@ end
 # and deploys it as a plain (non-gem) Maven artifact under org.jruby.openssl
 profile id: 'jar-release' do
   jar_release_dir = '${project.build.directory}/jar-release'
+  jar_release_src_dir = '${project.build.directory}/jar-release-sources'
   jar_release_file = '${project.build.directory}/${project.build.finalName}.jar'
+  jar_release_sources = '${project.build.directory}/${project.build.finalName}-sources.jar'
+
+  # ship only what is committed, the same way the gemspec picks its (lib) files
+  jar_release_rb = `git ls-files lib`.split("\n").select { |f| f.end_with?('.rb') }
+  raise 'no lib/**/*.rb tracked by git - cannot assemble the jar-release' if jar_release_rb.empty?
+  jar_release_rb = jar_release_rb.map { |f| f.sub(%r{\Alib/}, '') } # relative to lib directory
+
+  # same rule for the sources jar - explicit list of committed .java files
+  jar_release_src = `git ls-files src/main/java`.split("\n").select { |f| f.end_with?('.java') }
+  raise 'no src/main/java/**/*.java tracked by git - cannot assemble the jar-release' if jar_release_src.empty?
+  jar_release_src = jar_release_src.map { |f| f.sub(%r{\Asrc/main/java/}, '') } # relative to directory
 
   properties 'gem.deploy.skip' => 'true', # publish only the jar, not the gem
              'jar-release.groupId' => 'org.jruby.openssl',
@@ -168,7 +180,11 @@ profile id: 'jar-release' do
         resources: [ { directory: '${project.build.outputDirectory}' } ]
     execute_goal 'copy-resources', id: 'jar-release-lib', phase: 'prepare-package',
         outputDirectory: jar_release_dir,
-        resources: [ { directory: 'lib', includes: [ '**/*.rb' ] } ]
+        resources: [ { directory: 'lib', includes: jar_release_rb } ]
+    # NOTE: maven-source-plugin refuses to run on a gem-packaged project
+    execute_goal 'copy-resources', id: 'jar-release-sources', phase: 'prepare-package',
+        outputDirectory: jar_release_src_dir,
+        resources: [ { directory: 'src/main/java', includes: jar_release_src } ]
   end
 
   plugin :jar, '2.4' do
@@ -176,11 +192,18 @@ profile id: 'jar-release' do
         classesDirectory: jar_release_dir,
         outputDirectory: '${project.build.directory}',
         finalName: '${project.build.finalName}'
+
+    execute_goal :jar, id: 'jar-release-sources', phase: 'package',
+        classesDirectory: jar_release_src_dir,
+        outputDirectory: '${project.build.directory}',
+        finalName: '${project.build.finalName}',
+        classifier: 'sources'
   end
 
   plugin :deploy, '3.1.4' do
     execute_goal 'deploy-file', id: 'jar-release-deploy', phase: 'deploy',
         file: jar_release_file,
+        sources: jar_release_sources,
         groupId: '${jar-release.groupId}',
         artifactId: '${project.artifactId}',
         version: '${project.version}',

@@ -824,7 +824,168 @@ DO NOT MODIFY - GENERATED CODE
                     <resource>
                       <directory>lib</directory>
                       <includes>
-                        <include>**/*.rb</include>
+                        <include>jopenssl/load.rb</include>
+                        <include>jopenssl/version.rb</include>
+                        <include>jruby-openssl.rb</include>
+                        <include>openssl.rb</include>
+                        <include>openssl/bn.rb</include>
+                        <include>openssl/buffering.rb</include>
+                        <include>openssl/cipher.rb</include>
+                        <include>openssl/config.rb</include>
+                        <include>openssl/digest.rb</include>
+                        <include>openssl/hmac.rb</include>
+                        <include>openssl/marshal.rb</include>
+                        <include>openssl/pkcs5.rb</include>
+                        <include>openssl/pkey.rb</include>
+                        <include>openssl/ssl.rb</include>
+                        <include>openssl/x509.rb</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jar-release-sources</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/jar-release-sources</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>src/main/java</directory>
+                      <includes>
+                        <include>org/jruby/ext/openssl/ASN1.java</include>
+                        <include>org/jruby/ext/openssl/BCSSLSupport.java</include>
+                        <include>org/jruby/ext/openssl/BN.java</include>
+                        <include>org/jruby/ext/openssl/Cipher.java</include>
+                        <include>org/jruby/ext/openssl/CipherStrings.java</include>
+                        <include>org/jruby/ext/openssl/Digest.java</include>
+                        <include>org/jruby/ext/openssl/ExtConfig.java</include>
+                        <include>org/jruby/ext/openssl/HMAC.java</include>
+                        <include>org/jruby/ext/openssl/KDF.java</include>
+                        <include>org/jruby/ext/openssl/NetscapeSPKI.java</include>
+                        <include>org/jruby/ext/openssl/OCSP.java</include>
+                        <include>org/jruby/ext/openssl/OCSPBasicResponse.java</include>
+                        <include>org/jruby/ext/openssl/OCSPCertificateId.java</include>
+                        <include>org/jruby/ext/openssl/OCSPRequest.java</include>
+                        <include>org/jruby/ext/openssl/OCSPResponse.java</include>
+                        <include>org/jruby/ext/openssl/OCSPSingleResponse.java</include>
+                        <include>org/jruby/ext/openssl/ObjectSupport.java</include>
+                        <include>org/jruby/ext/openssl/OpenSSL.java</include>
+                        <include>org/jruby/ext/openssl/PKCS12.java</include>
+                        <include>org/jruby/ext/openssl/PKCS5.java</include>
+                        <include>org/jruby/ext/openssl/PKCS7.java</include>
+                        <include>org/jruby/ext/openssl/PKey.java</include>
+                        <include>org/jruby/ext/openssl/PKeyDH.java</include>
+                        <include>org/jruby/ext/openssl/PKeyDSA.java</include>
+                        <include>org/jruby/ext/openssl/PKeyEC.java</include>
+                        <include>org/jruby/ext/openssl/PKeyEdDSA.java</include>
+                        <include>org/jruby/ext/openssl/PKeyHMAC.java</include>
+                        <include>org/jruby/ext/openssl/PKeyRSA.java</include>
+                        <include>org/jruby/ext/openssl/Random.java</include>
+                        <include>org/jruby/ext/openssl/SSL.java</include>
+                        <include>org/jruby/ext/openssl/SSLContext.java</include>
+                        <include>org/jruby/ext/openssl/SSLSession.java</include>
+                        <include>org/jruby/ext/openssl/SSLSocket.java</include>
+                        <include>org/jruby/ext/openssl/SecurityHelper.java</include>
+                        <include>org/jruby/ext/openssl/SimpleSecretKey.java</include>
+                        <include>org/jruby/ext/openssl/StringHelper.java</include>
+                        <include>org/jruby/ext/openssl/X509.java</include>
+                        <include>org/jruby/ext/openssl/X509Attribute.java</include>
+                        <include>org/jruby/ext/openssl/X509CRL.java</include>
+                        <include>org/jruby/ext/openssl/X509Cert.java</include>
+                        <include>org/jruby/ext/openssl/X509Extension.java</include>
+                        <include>org/jruby/ext/openssl/X509ExtensionFactory.java</include>
+                        <include>org/jruby/ext/openssl/X509Name.java</include>
+                        <include>org/jruby/ext/openssl/X509Request.java</include>
+                        <include>org/jruby/ext/openssl/X509Revoked.java</include>
+                        <include>org/jruby/ext/openssl/X509Store.java</include>
+                        <include>org/jruby/ext/openssl/X509StoreContext.java</include>
+                        <include>org/jruby/ext/openssl/impl/ASN1Registry.java</include>
+                        <include>org/jruby/ext/openssl/impl/Attribute.java</include>
+                        <include>org/jruby/ext/openssl/impl/BIO.java</include>
+                        <include>org/jruby/ext/openssl/impl/BIOFilter.java</include>
+                        <include>org/jruby/ext/openssl/impl/Base64.java</include>
+                        <include>org/jruby/ext/openssl/impl/Base64BIOFilter.java</include>
+                        <include>org/jruby/ext/openssl/impl/CipherBIOFilter.java</include>
+                        <include>org/jruby/ext/openssl/impl/CipherSpec.java</include>
+                        <include>org/jruby/ext/openssl/impl/Digest.java</include>
+                        <include>org/jruby/ext/openssl/impl/ECPrivateKeyWithName.java</include>
+                        <include>org/jruby/ext/openssl/impl/EVP.java</include>
+                        <include>org/jruby/ext/openssl/impl/EncContent.java</include>
+                        <include>org/jruby/ext/openssl/impl/Encrypt.java</include>
+                        <include>org/jruby/ext/openssl/impl/Envelope.java</include>
+                        <include>org/jruby/ext/openssl/impl/IssuerAndSerial.java</include>
+                        <include>org/jruby/ext/openssl/impl/MemBIO.java</include>
+                        <include>org/jruby/ext/openssl/impl/MessageDigestBIOFilter.java</include>
+                        <include>org/jruby/ext/openssl/impl/Mime.java</include>
+                        <include>org/jruby/ext/openssl/impl/MimeHeader.java</include>
+                        <include>org/jruby/ext/openssl/impl/MimeParam.java</include>
+                        <include>org/jruby/ext/openssl/impl/NetscapeCertRequest.java</include>
+                        <include>org/jruby/ext/openssl/impl/NotVerifiedPKCS7Exception.java</include>
+                        <include>org/jruby/ext/openssl/impl/NullSinkBIO.java</include>
+                        <include>org/jruby/ext/openssl/impl/OpenSSLKDF.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS10Request.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7Data.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataData.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataDigest.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataEncrypted.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataEnveloped.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataSigned.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7DataSignedAndEnveloped.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKCS7Exception.java</include>
+                        <include>org/jruby/ext/openssl/impl/PKey.java</include>
+                        <include>org/jruby/ext/openssl/impl/RecipInfo.java</include>
+                        <include>org/jruby/ext/openssl/impl/SMIME.java</include>
+                        <include>org/jruby/ext/openssl/impl/SignEnvelope.java</include>
+                        <include>org/jruby/ext/openssl/impl/Signed.java</include>
+                        <include>org/jruby/ext/openssl/impl/SignerInfoWithPkey.java</include>
+                        <include>org/jruby/ext/openssl/impl/TypeDiscriminating.java</include>
+                        <include>org/jruby/ext/openssl/impl/pem/MiscPEMGeneratorHelper.java</include>
+                        <include>org/jruby/ext/openssl/impl/pem/PEMUtilities.java</include>
+                        <include>org/jruby/ext/openssl/log/DefaultLogger.java</include>
+                        <include>org/jruby/ext/openssl/log/JULLogger.java</include>
+                        <include>org/jruby/ext/openssl/log/Logger.java</include>
+                        <include>org/jruby/ext/openssl/log/LoggingSupport.java</include>
+                        <include>org/jruby/ext/openssl/shim/ASN1Shim.java</include>
+                        <include>org/jruby/ext/openssl/shim/ApplicationSpecific.java</include>
+                        <include>org/jruby/ext/openssl/shim/CipherShim.java</include>
+                        <include>org/jruby/ext/openssl/shim/ErrorShim.java</include>
+                        <include>org/jruby/ext/openssl/shim/PKeyShim.java</include>
+                        <include>org/jruby/ext/openssl/util/ByteArrayOutputStream.java</include>
+                        <include>org/jruby/ext/openssl/util/Cache.java</include>
+                        <include>org/jruby/ext/openssl/util/ExceptionUtil.java</include>
+                        <include>org/jruby/ext/openssl/util/PEMGenerator.java</include>
+                        <include>org/jruby/ext/openssl/util/RubySupport.java</include>
+                        <include>org/jruby/ext/openssl/x509store/CRL.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Certificate.java</include>
+                        <include>org/jruby/ext/openssl/x509store/CertificateFile.java</include>
+                        <include>org/jruby/ext/openssl/x509store/CertificateHashDir.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function0.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function1.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function2.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function3.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function4.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Function5.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Lookup.java</include>
+                        <include>org/jruby/ext/openssl/x509store/LookupMethod.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Name.java</include>
+                        <include>org/jruby/ext/openssl/x509store/PEMInputOutput.java</include>
+                        <include>org/jruby/ext/openssl/x509store/PKey.java</include>
+                        <include>org/jruby/ext/openssl/x509store/PolicyTree.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Purpose.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Store.java</include>
+                        <include>org/jruby/ext/openssl/x509store/StoreContext.java</include>
+                        <include>org/jruby/ext/openssl/x509store/Trust.java</include>
+                        <include>org/jruby/ext/openssl/x509store/VerifyParameter.java</include>
+                        <include>org/jruby/ext/openssl/x509store/X509Aux.java</include>
+                        <include>org/jruby/ext/openssl/x509store/X509AuxCertificate.java</include>
+                        <include>org/jruby/ext/openssl/x509store/X509Error.java</include>
+                        <include>org/jruby/ext/openssl/x509store/X509Object.java</include>
+                        <include>org/jruby/ext/openssl/x509store/X509Utils.java</include>
                       </includes>
                     </resource>
                   </resources>
@@ -848,6 +1009,19 @@ DO NOT MODIFY - GENERATED CODE
                   <finalName>${project.build.finalName}</finalName>
                 </configuration>
               </execution>
+              <execution>
+                <id>jar-release-sources</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classesDirectory>${project.build.directory}/jar-release-sources</classesDirectory>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <finalName>${project.build.finalName}</finalName>
+                  <classifier>sources</classifier>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
           <plugin>
@@ -862,6 +1036,7 @@ DO NOT MODIFY - GENERATED CODE
                 </goals>
                 <configuration>
                   <file>${project.build.directory}/${project.build.finalName}.jar</file>
+                  <sources>${project.build.directory}/${project.build.finalName}-sources.jar</sources>
                   <groupId>${jar-release.groupId}</groupId>
                   <artifactId>${project.artifactId}</artifactId>
                   <version>${project.version}</version>

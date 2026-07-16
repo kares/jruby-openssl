@@ -55,7 +55,7 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.ext.openssl.shim.ASN1Shim;
-import org.jruby.ext.openssl.shim.ApplicationSpecific;
+import org.jruby.ext.openssl.impl.ApplicationSpecific;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;

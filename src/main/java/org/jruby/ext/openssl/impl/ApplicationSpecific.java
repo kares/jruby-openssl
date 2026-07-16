@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.jruby.ext.openssl.shim;
+package org.jruby.ext.openssl.impl;
 
 import org.bouncycastle.asn1.ASN1Sequence;
 
@@ -34,7 +34,7 @@ public final class ApplicationSpecific {
     public final ASN1Sequence sequence;
     public final byte[] contents;
 
-    ApplicationSpecific(int tagClass, int tag, ASN1Sequence sequence, byte[] contents) {
+    public ApplicationSpecific(int tagClass, int tag, ASN1Sequence sequence, byte[] contents) {
         this.tagClass = tagClass;
         this.tag = tag;
         this.sequence = sequence;

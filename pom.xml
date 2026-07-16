@@ -904,6 +904,7 @@ DO NOT MODIFY - GENERATED CODE
                         <include>org/jruby/ext/openssl/X509Store.java</include>
                         <include>org/jruby/ext/openssl/X509StoreContext.java</include>
                         <include>org/jruby/ext/openssl/impl/ASN1Registry.java</include>
+                        <include>org/jruby/ext/openssl/impl/ApplicationSpecific.java</include>
                         <include>org/jruby/ext/openssl/impl/Attribute.java</include>
                         <include>org/jruby/ext/openssl/impl/BIO.java</include>
                         <include>org/jruby/ext/openssl/impl/BIOFilter.java</include>
@@ -951,7 +952,6 @@ DO NOT MODIFY - GENERATED CODE
                         <include>org/jruby/ext/openssl/log/Logger.java</include>
                         <include>org/jruby/ext/openssl/log/LoggingSupport.java</include>
                         <include>org/jruby/ext/openssl/shim/ASN1Shim.java</include>
-                        <include>org/jruby/ext/openssl/shim/ApplicationSpecific.java</include>
                         <include>org/jruby/ext/openssl/shim/CipherShim.java</include>
                         <include>org/jruby/ext/openssl/shim/ErrorShim.java</include>
                         <include>org/jruby/ext/openssl/shim/PKeyShim.java</include>

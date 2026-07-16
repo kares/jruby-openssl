@@ -201,6 +201,13 @@ DO NOT MODIFY - GENERATED CODE
             </configuration>
           </execution>
         </executions>
+        <dependencies>
+          <dependency>
+            <groupId>org.jruby</groupId>
+            <artifactId>jruby-stdlib</artifactId>
+            <version>9.4.14.0</version>
+          </dependency>
+        </dependencies>
         <configuration>
           <gemspec>jruby-openssl.gemspec</gemspec>
         </configuration>

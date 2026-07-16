@@ -74,6 +74,8 @@ plugin :surefire, '3.5.5'
 MVN_JRUBY_VERSION = '9.4.14.0'
 
 jruby_plugin! :gem do
+  # plugin lacks the stdlib 'bigdecimal' that ruby-tools (virtus/axiom-types) load at package time
+  jar 'org.jruby:jruby-stdlib', MVN_JRUBY_VERSION
   # when installing dependent gems we want to use the built in openssl not the one from this lib directory
   execute_goal id: 'default-package', addProjectClasspath: false, libDirectory: 'something-which-does-not-exists'
   execute_goals id: 'default-push', skip: true

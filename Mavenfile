@@ -155,6 +155,7 @@ end
 profile id: 'jar-release' do
   jar_release_dir = '${project.build.directory}/jar-release'
   jar_release_src_dir = '${project.build.directory}/jar-release-sources'
+  jar_release_modpath = '${project.build.directory}/jar-release-modpath'
   jar_release_file = '${project.build.directory}/${project.build.finalName}.jar'
   jar_release_sources = '${project.build.directory}/${project.build.finalName}-sources.jar'
 
@@ -189,6 +190,35 @@ profile id: 'jar-release' do
     execute_goal 'copy-resources', id: 'jar-release-sources-lib', phase: 'prepare-package',
         outputDirectory: jar_release_src_dir,
         resources: [ { directory: 'lib', includes: jar_release_rb } ]
+    # the module descriptor source ships in the sources jar as well
+    execute_goal 'copy-resources', id: 'jar-release-sources-module', phase: 'prepare-package',
+        outputDirectory: jar_release_src_dir,
+        resources: [ { directory: 'src/main/module', includes: [ 'module-info.java' ] } ]
+  end
+
+  # a module path for compiling module-info;
+  # the full classpath cannot be used as-is (jnr-* jars split jnr.enxio.channels)
+  # main sources compile against the 9.2 compat jruby-core (module 'org.jruby'),
+  # but the descriptor requires 'org.jruby.dist' - runtime name since 9.4.13
+  plugin! :dependency do
+    execute_goal 'copy-dependencies', id: 'jar-release-modpath-bc', phase: 'generate-resources',
+        outputDirectory: jar_release_modpath,
+        includeGroupIds: 'org.bouncycastle'
+    execute_goal 'copy', id: 'jar-release-modpath-jruby', phase: 'generate-resources',
+        outputDirectory: jar_release_modpath,
+        artifactItems: [ { groupId: 'org.jruby', artifactId: 'jruby-core', version: MVN_JRUBY_VERSION } ]
+  end
+
+  # module-info targets Java 9 bytecode, so compiled separately from the Java 8
+  # main sources; patched onto the already compiled classes dir
+  plugin 'org.codehaus.mojo:exec-maven-plugin' do
+    execute_goal :exec, id: 'jar-release-module-info', phase: 'process-classes',
+        executable: 'javac',
+        arguments: [ '--release', '9',
+                     '--module-path', jar_release_modpath,
+                     '--patch-module', 'org.jruby.ext.openssl=${project.build.outputDirectory}',
+                     '-d', jar_release_dir,
+                     '${basedir}/src/main/module/module-info.java' ]
   end
 
   plugin :jar, '2.4' do

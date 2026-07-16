@@ -133,10 +133,13 @@ class TestSSLSocket < TestCase
     host = "127.0.0.1"; port = 0
     server = TCPServer.new(host, port)
     ssl_server = OpenSSL::SSL::SSLServer.new(server, OpenSSL::SSL::SSLContext.new)
+    # accept without running the server handshake: cert-less default context would
+    # otherwise fail and close the socket, racing the client's non-blocking read and
+    # surfacing a generic SSLError instead of WaitReadable
+    ssl_server.start_immediately = false
 
-    thread = Thread.new do
-      ssl_server.accept.tap { ssl_server.close }
-    end
+    accepted = nil
+    thread = Thread.new { accepted = ssl_server.accept rescue nil }
 
     host = "127.0.0.1"
     ctx = OpenSSL::SSL::SSLContext.new()
@@ -151,6 +154,8 @@ class TestSSLSocket < TestCase
     ensure
       thread.kill if thread.alive?
       client.close unless client.closed?
+      accepted&.close
+      ssl_server.close
     end
   end if RUBY_VERSION > '2.2'
 

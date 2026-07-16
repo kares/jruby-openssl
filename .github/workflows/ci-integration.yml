@@ -6,7 +6,7 @@ env:
   JAVA_OPTS: '-XX:+TieredCompilation -XX:TieredStopAtLevel=1'
   JRUBY_OPTS: '-J-ea'
 
-# runs the suite against every supported Bouncy Castle version
+# runs the Ruby suite against each supported Bouncy Castle version
 jobs:
 
   integration:
@@ -14,13 +14,13 @@ jobs:
 
     strategy:
       matrix:
+        ruby-version: [ jruby-9.4.14.0, jruby-10.0.6.0 ]
+        bc-version: [ '1.80', '1.81', '1.82', '1.83', '1.84' ]
         include:
           - ruby-version: jruby-9.4.14.0
             java-version: 11
-            profile: test-9.4.14.0
           - ruby-version: jruby-10.0.6.0
             java-version: 21
-            profile: test-10.0.6.0
       fail-fast: false
 
     steps:
@@ -44,5 +44,5 @@ jobs:
       - name: build jopenssl.jar
         run: jruby -rbundler/setup -S rake jar
 
-      - name: integration tests
-        run: ./mvnw verify -P ${{ matrix.profile }}
+      - name: ~integration test (BC ${{ matrix.bc-version }})
+        run: ./mvnw -B test -f integration/${{ matrix.bc-version }}/pom.xml

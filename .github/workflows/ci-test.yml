@@ -31,22 +31,22 @@ jobs:
             ruby-version: jruby-9.3.13.0
           - java-version: 21
             distribution: oracle
-            ruby-version: jruby-9.3.13.0
+            ruby-version: jruby-9.4.15.0
           - java-version: 11
             distribution: zulu
             ruby-version: jruby-9.4.5.0
-          - java-version: 21
-            distribution: oracle
+          - java-version: 8
+            distribution: temurin
             ruby-version: jruby-9.4.8.0
           - java-version: 21
-            distribution: temurin
-            ruby-version: jruby-10.0.4.0
+            distribution: oracle
+            ruby-version: jruby-10.0.5.0
           - java-version: 24
             distribution: zulu
             ruby-version: jruby-10.0.1.0
           - java-version: 25
             distribution: temurin
-            ruby-version: jruby-10.0.3.0
+            ruby-version: jruby-10.0.6.0
           - java-version: 21
             distribution: corretto
             ruby-version: jruby-head

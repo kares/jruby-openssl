@@ -18,6 +18,14 @@ plugin 'org.codehaus.mojo:exec-maven-plugin', '3.5.0' do
                       'org.jruby.anno.InvokerGenerator',
                       "#{gen_sources}/annotated_classes.txt",
                       '${project.build.outputDirectory}' ]
+
+  # inlines the shim call sites straight into the compiled classes
+  execute_goal :exec, id: 'shim-inliner', phase: 'process-classes',
+      executable: 'java', classpathScope: 'compile',
+      skip: '${shim.inline.skip}', # -Dshim.inline.skip=true to bypass
+      arguments: [ '-classpath', xml( '<classpath/>' ),
+                      '${basedir}/src/build/java/ShimInliner.java',
+                      '${project.build.outputDirectory}' ]
 end
 
 plugin 'org.codehaus.mojo:build-helper-maven-plugin', '3.6.1' do
@@ -61,6 +69,7 @@ plugin! :clean, '2.4',
 
 jruby_compile_compat = '9.2.1.0'
 jar 'org.jruby:jruby-core', jruby_compile_compat, scope: :provided
+jar 'org.ow2.asm:asm-analysis', '9.8', scope: :provided # build-time only (for ShimInliner)
 # for invoker generated classes we need to add javax.annotation when on Java > 8
 jar 'javax.annotation:javax.annotation-api', '1.3.1', scope: :compile
 jar 'org.junit.jupiter:junit-jupiter', '5.11.4', scope: :test
@@ -74,8 +83,6 @@ plugin :surefire, '3.5.5'
 MVN_JRUBY_VERSION = '9.4.14.0'
 
 jruby_plugin! :gem do
-  # plugin lacks the stdlib 'bigdecimal' that ruby-tools (virtus/axiom-types) load at package time
-  jar 'org.jruby:jruby-stdlib', MVN_JRUBY_VERSION
   # when installing dependent gems we want to use the built in openssl not the one from this lib directory
   execute_goal id: 'default-package', addProjectClasspath: false, libDirectory: 'something-which-does-not-exists'
   execute_goals id: 'default-push', skip: true
@@ -92,7 +99,8 @@ supported_bc_versions = %w{ 1.80 1.81 1.82 1.83 1.84 1.85 }
 default_bc_version = File.read File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
 default_bc_version = default_bc_version[/BOUNCY_CASTLE_VERSION\s?=\s?'(.*?)'/, 1]
 
-properties( 'gem.deploy.skip' => 'false', # jar-release profile sets this true
+properties( 'shim.inline.skip' => 'false', # ShimInliner, see exec-maven-plugin above
+            'gem.deploy.skip' => 'false', # jar-release profile sets this true
             'jruby.plugins.version' => '3.0.6',
             'jruby.switches' => '-W0', # https://github.com/torquebox/jruby-maven-plugins/issues/94
             'bc.versions' => default_bc_version,

@@ -73,6 +73,7 @@ DO NOT MODIFY - GENERATED CODE
     <polyglot.dump.pom>pom.xml</polyglot.dump.pom>
     <polyglot.dump.readonly>false</polyglot.dump.readonly>
     <runit.dir>test/**/test_*.rb</runit.dir>
+    <shim.inline.skip>false</shim.inline.skip>
     <skipRunit>true</skipRunit>
   </properties>
   <dependencies>
@@ -100,6 +101,12 @@ DO NOT MODIFY - GENERATED CODE
       <groupId>org.jruby</groupId>
       <artifactId>jruby-core</artifactId>
       <version>9.2.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm-analysis</artifactId>
+      <version>9.8</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -201,13 +208,6 @@ DO NOT MODIFY - GENERATED CODE
             </configuration>
           </execution>
         </executions>
-        <dependencies>
-          <dependency>
-            <groupId>org.jruby</groupId>
-            <artifactId>jruby-stdlib</artifactId>
-            <version>9.4.14.0</version>
-          </dependency>
-        </dependencies>
         <configuration>
           <gemspec>jruby-openssl.gemspec</gemspec>
         </configuration>
@@ -232,6 +232,24 @@ DO NOT MODIFY - GENERATED CODE
                 <classpath />
                 <argument>org.jruby.anno.InvokerGenerator</argument>
                 <argument>${basedir}/target/generated-sources/annotated_classes.txt</argument>
+                <argument>${project.build.outputDirectory}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>shim-inliner</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>java</executable>
+              <classpathScope>compile</classpathScope>
+              <skip>${shim.inline.skip}</skip>
+              <arguments>
+                <argument>-classpath</argument>
+                <classpath />
+                <argument>${basedir}/src/build/java/ShimInliner.java</argument>
                 <argument>${project.build.outputDirectory}</argument>
               </arguments>
             </configuration>

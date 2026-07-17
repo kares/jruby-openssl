@@ -5,6 +5,7 @@ on: [push, pull_request]
 env:
   JAVA_OPTS: '-XX:+TieredCompilation -XX:TieredStopAtLevel=1'
   JRUBY_OPTS: '-J-ea'
+  MAVEN_OPTS: '-Dstyle.color=always' # force Maven colored output
 
 # runs the Ruby suite against each supported Bouncy Castle version
 jobs:
@@ -45,4 +46,4 @@ jobs:
         run: jruby -rbundler/setup -S rake jar
 
       - name: ~integration test (BC ${{ matrix.bc-version }})
-        run: ./mvnw -B test -f integration/${{ matrix.bc-version }}/pom.xml
+        run: ./mvnw -ntp test -f integration/${{ matrix.bc-version }}/pom.xml

@@ -5,6 +5,7 @@ rescue LoadError
 end
 
 require 'test/unit'
+
 TestCase = Test::Unit::TestCase
 
 class TestCase
@@ -162,6 +163,8 @@ class TestCase
   end
 end
 
+Test::Unit::AutoRunner.prepare { |runner| runner.runner_options[:use_color] = true } if ENV['CI']
+
 if bc_version = ENV['BC_VERSION']
   if TestCase.bc_version != bc_version
     fail "Loaded BC version '#{TestCase.bc_version}' does not match expected '#{bc_version}'"
@@ -175,11 +178,7 @@ rescue LoadError => e
   warn "#{e} to run all tests please `gem install mocha'"
 else
   begin
-    if defined? MiniTest
-      require 'mocha/mini_test'
-    else
-      require 'mocha/test_unit'
-    end
+    require 'mocha/test_unit'
   rescue LoadError => e
     warn "current mocha version might not work (try `gem install mocha'): #{e}"
   end

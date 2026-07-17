@@ -32,6 +32,12 @@ plugin 'org.codehaus.mojo:build-helper-maven-plugin', '3.6.1' do
   execute_goal 'add-source', phase: 'process-classes', sources: [ gen_sources ]
 end
 
+# building needs JDK 11+ (module-info + the ShimInliner source launcher)
+plugin :enforcer, '3.5.0' do
+  execute_goal 'enforce', id: 'enforce-java-version',
+               rules: { requireJavaVersion: { version: '[11,)' } }
+end
+
 compiler_configuration = {
     source: '1.8', target: java_target, release: '8',
     encoding: 'UTF-8', debug: true,
@@ -41,17 +47,8 @@ compiler_configuration = {
     generatedSourcesDirectory: gen_sources,
     annotationProcessors: [ 'org.jruby.anno.AnnotationBinder' ]
 }
-#compiler_configuration.delete(:release) if ENV_JAVA['java.specification.version'] == '1.8'
 
 plugin :compiler, '3.15.0', compiler_configuration do
-
-  #execute_goal :compile, id: 'annotation-binder', phase: 'compile',
-  #    generatedSourcesDirectory: gen_sources, #outputDirectory: gen_sources,
-  #    annotationProcessors: [ 'org.jruby.anno.AnnotationBinder' ],
-  #    proc: 'only', # compilerReuseStrategy: 'alwaysNew',
-  #    useIncrementalCompilation: false, fork: true, verbose: true,
-  #    compilerArgs: [ '-XDignore.symbol.file=true', '-J-Dfile.encoding=UTF-8' ]
-
   execute_goal :compile,
                id: 'compile-populators', phase: 'process-classes',
                includes: [ 'org/jruby/gen/**/*.java' ],
@@ -78,8 +75,6 @@ jar 'org.jruby:jruby-stdlib', jruby_compile_compat, scope: :test
 
 plugin :surefire, '3.5.5'
 
-# NOTE: to build on Java 11 - installing gems fails (due old jossl) with:
-#  load error: jopenssl/load -- java.lang.StringIndexOutOfBoundsException
 MVN_JRUBY_VERSION = '9.4.14.0'
 
 jruby_plugin! :gem do
@@ -256,5 +251,3 @@ profile id: 'jar-release' do
         url: '${jar-release.url}'
   end
 end
-
-# vim: syntax=Ruby

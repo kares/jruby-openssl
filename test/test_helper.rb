@@ -4,14 +4,6 @@ rescue LoadError
   warn "gem 'test-unit' not available, will load built-in 'test/unit'"
 end
 
-if bc_version = ENV['BC_VERSION']
-  bc_version_str = org.bouncycastle.jce.provider::BouncyCastleProvider.new.info.sub(/[^0-9.]*/, '')
-  if bc_version_str != bc_version
-    fail "Loaded BC provider version '#{bc_version_str}' does not match expected '#{bc_version}'"
-  end
-  puts "BC version #{bc_version_str} loaded" if $VERBOSE
-end if defined? JRUBY_VERSION
-
 require 'test/unit'
 TestCase = Test::Unit::TestCase
 
@@ -69,6 +61,15 @@ class TestCase
 
   def self.fips?; !!defined?(JOpenSSL::BOUNCY_CASTLE_FIPS_VERSIONS) end
   def fips?; self.class.fips? end
+
+  @@bc_version = nil
+
+  # loaded BC provider version e.g. "1.84"
+  def self.bc_version
+    return @@bc_version if @@bc_version
+    @@bc_version = org.bouncycastle.jce.provider::BouncyCastleProvider.new.info.sub(/[^0-9.]*/, '')
+  end
+  def bc_version; self.class.bc_version end
 
   def omit_on_fips(msg = nil)
     skip(msg || 'not supported in FIPS mode') if fips?
@@ -160,6 +161,13 @@ class TestCase
     end
   end
 end
+
+if bc_version = ENV['BC_VERSION']
+  if TestCase.bc_version != bc_version
+    fail "Loaded BC version '#{TestCase.bc_version}' does not match expected '#{bc_version}'"
+  end
+  puts "BC version '#{bc_version}' loaded" if $VERBOSE
+end if defined? JRUBY_VERSION
 
 begin
   gem 'mocha'

@@ -1302,8 +1302,11 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
   def test_traverse_deeply_nested_raises
     deep = ("\x30\x80".b * 5000) + ("\x00\x00".b * 5000)
     assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.traverse(deep) { |*a| } }
-    # FIPS requires manual traversing, its an edge case and throws StackOverflowError
-    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.decode(deep) } unless fips?
+
+    # FIPS and BC < 1.84 lack a nesting-depth guard and overflow the Java stack
+    return if fips? || Gem::Version.new(bc_version) < Gem::Version.new('1.84')
+
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1.decode(deep) }
   end
 
   # truncated/empty input must raise ASN1Error (was a bare RuntimeError)

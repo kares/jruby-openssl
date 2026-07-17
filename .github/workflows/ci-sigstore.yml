@@ -1,23 +1,19 @@
-name: ruby-jwt specs
+name: sigstore tests
 
 on: [push, pull_request]
 
 env:
   JRUBY_OPTS: '-J-ea'
-  # --seed 0 pins order: ruby-jwt's specs leak state under some random orderings
-  SPEC_OPTS: '-fd --force-color --seed 0'
 
 jobs:
 
-  ruby-jwt:
+  sigstore:
     runs-on: ubuntu-latest
 
     strategy:
-      matrix:
-        ruby-version: [ jruby-9.4.14.0, jruby-10.0.6.0 ]
+      matrix: # sigstore-ruby requires Ruby >= 3.2 (JRuby >= 10)
+        ruby-version: [ jruby-10.0.6.0 ]
         include:
-          - ruby-version: jruby-9.4.14.0
-            java-version: 11
           - ruby-version: jruby-10.0.6.0
             java-version: 21
       fail-fast: false
@@ -26,8 +22,8 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: check out ruby-jwt submodule
-        run: git submodule update --init ruby-jwt
+      - name: check out sigstore-ruby submodule
+        run: git submodule update --init sigstore-ruby
 
       - name: set up java ${{ matrix.java-version }}
         uses: actions/setup-java@v4
@@ -46,8 +42,8 @@ jobs:
       - name: build jopenssl.jar
         run: jruby -rbundler/setup -S rake jar
 
-      - name: install ruby-jwt spec deps
-        run: jruby -S rake ruby-jwt:deps
+      - name: install sigstore-ruby deps
+        run: jruby -S rake sigstore:bundle
 
-      - name: ruby-jwt specs
-        run: jruby -S rake ruby-jwt:test
+      - name: sigstore tests
+        run: jruby -S rake sigstore:test

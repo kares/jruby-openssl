@@ -73,18 +73,21 @@ namespace 'ruby-jwt' do
   jwt_dir = File.expand_path('ruby-jwt', File.dirname(__FILE__))
 
   desc "Install ruby-jwt gem dependencies"
-  task :bundle do
-    sh "cd #{jwt_dir} && bundle install"
+  task :deps do
+    # dev deps pull irb -> rdoc -> rbs (C-extension gem)
+    # specs are runnable via `-S rspec` (no bundle/setup) and only need these
+    # sh "cd #{jwt_dir} && bundle install"
+    ruby "-S gem install --no-document rspec simplecov base64 logger"
   end
 
-  task :bundle_check do
-    unless File.exist?(File.join(jwt_dir, 'Gemfile.lock'))
-      fail "bundle not installed, run `rake ruby-jwt:bundle'"
-    end
+  task :deps_check do
+    # unless File.exist?(File.join(jwt_dir, 'Gemfile.lock'))
+    #   fail "bundle not installed, run `rake ruby-jwt:bundle'"
+    # end
   end
 
   desc "Run ruby-jwt (OpenSSL) tests against jruby-openssl"
-  task :test => ['lib/jopenssl.jar', :bundle_check] do
+  task :test => ['lib/jopenssl.jar', :deps_check] do
     lib_path = File.expand_path('lib', File.dirname(__FILE__))
     spec_files = [
       'spec/jwt/jwt_spec.rb',

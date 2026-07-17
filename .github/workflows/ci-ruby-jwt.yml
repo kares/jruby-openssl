@@ -4,7 +4,8 @@ on: [push, pull_request]
 
 env:
   JRUBY_OPTS: '-J-ea'
-  SPEC_OPTS: '-fd --force-color'
+  # --seed 0 pins order: ruby-jwt's specs leak state under some random orderings
+  SPEC_OPTS: '-fd --force-color --seed 0'
 
 # runs the vendored ruby-jwt submodule's OpenSSL specs against jruby-openssl
 jobs:
@@ -46,8 +47,8 @@ jobs:
       - name: build jopenssl.jar
         run: jruby -rbundler/setup -S rake jar
 
-      - name: install ruby-jwt deps
-        run: jruby -S rake ruby-jwt:bundle
+      - name: install ruby-jwt spec deps
+        run: jruby -S rake ruby-jwt:deps
 
       - name: ruby-jwt specs
         run: jruby -S rake ruby-jwt:test

@@ -3,7 +3,11 @@ name: rake test
 on: [push, pull_request]
 
 env:
-  JAVA_OPTS: '-XX:+TieredCompilation -XX:TieredStopAtLevel=1'
+  JAVA_TOOL_OPTIONS: >-
+    -XX:+TieredCompilation
+    -XX:TieredStopAtLevel=1
+    -Djruby.openssl.debug=true
+    -Djavax.net.debug=ssl,handshake
   JRUBY_OPTS: '-J-ea'
   MAVEN_OPTS: '-Dstyle.color=always' # force Maven colored output
 

@@ -3,8 +3,7 @@ name: integration test
 on: [push, pull_request]
 
 env:
-  JAVA_OPTS: '-XX:+TieredCompilation -XX:TieredStopAtLevel=1'
-  JRUBY_OPTS: '-J-ea'
+  JRUBY_OPTS: '-J-ea -J-Djdk.tls.client.protocols="TLSv1.3,TLSv1.2"'
   MAVEN_OPTS: '-Dstyle.color=always' # force Maven colored output
 
 # runs the Ruby suite against each supported Bouncy Castle version

@@ -910,6 +910,7 @@ public class Cipher extends RubyObject {
         this.orgIV = this.realIV;
 
         if ( ! isStreamCipher() ) cipherInited = false;
+        if ( encryptMode ) auth_tag = null;
 
         return iv;
     }
@@ -929,6 +930,7 @@ public class Cipher extends RubyObject {
         final Ruby runtime = context.runtime;
         Arity.checkArgumentCount(runtime, args, 0, 2);
 
+        if ( encryptMode ) auth_tag = null; // stale from a previous encryption
         encryptMode = encrypt;
         cipherInited = false;
 

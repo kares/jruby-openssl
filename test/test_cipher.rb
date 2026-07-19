@@ -453,6 +453,49 @@ class TestCipher < TestCase
     assert_equal data, d.update(ct) + d.final
   end
 
+  # setting a fresh iv re-initializes the context;
+  # a GCM cipher is reusable for the next message, generated tag must not linger
+  def test_gcm_reusable_after_iv_reset
+    key = OpenSSL::Random.random_bytes(16)
+    iv1, iv2 = OpenSSL::Random.random_bytes(12), OpenSSL::Random.random_bytes(12)
+
+    reused = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    reused.key = key
+    reused.iv = iv1; reused.auth_data = "aad"
+    ct1 = reused.update("hello") + reused.final
+    tag1 = reused.auth_tag
+
+    reused.iv = iv2; reused.auth_data = "aad"
+    ct2 = reused.update("world") + reused.final
+    tag2 = reused.auth_tag
+
+    assert_equal [ ct1, tag1 ], gcm_seal(key, iv1, "aad", "hello")
+    assert_equal [ ct2, tag2 ], gcm_seal(key, iv2, "aad", "world")
+  end
+
+  def test_gcm_reusable_after_encrypt_reinit
+    key = OpenSSL::Random.random_bytes(16)
+    iv1, iv2 = OpenSSL::Random.random_bytes(12), OpenSSL::Random.random_bytes(12)
+
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = key; c.iv = iv1; c.auth_data = "aad"
+    c.update("hello"); c.final; c.auth_tag
+
+    c.encrypt; c.key = key; c.iv = iv2; c.auth_data = "aad"
+    ct = c.update("world") + c.final
+
+    assert_equal [ ct, c.auth_tag ], gcm_seal(key, iv2, "aad", "world")
+  end
+
+  # without re-initializing, update after final still raises (MRI behavior)
+  def test_gcm_update_after_final_without_reset_raises
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = OpenSSL::Random.random_bytes(16); c.iv = OpenSSL::Random.random_bytes(12)
+    c.update("hello"); c.final; c.auth_tag
+
+    assert_raise(OpenSSL::Cipher::CipherError) { c.update("more") }
+  end
+
   def test_gcm_rejects_over_length_iv
     c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
     c.key = "0123456789abcdef"
@@ -1002,6 +1045,13 @@ class TestCipher < TestCase
       cipher.encrypt
       kwargs.each {|k, v| cipher.send(:"#{k}=", v) }
     end
+  end
+
+  # encrypt with a throw-away cipher, to compare against a re-used one
+  def gcm_seal(key, iv, aad, data)
+    c = OpenSSL::Cipher.new("AES-128-GCM").encrypt
+    c.key = key; c.iv = iv; c.auth_data = aad
+    [ c.update(data) + c.final, c.auth_tag ]
   end
 
   def new_decryptor(algo, **kwargs)

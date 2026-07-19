@@ -69,6 +69,44 @@ namespace 'net-http' do
   task :test => ['lib/jopenssl.jar', :bundle_check]
 end
 
+namespace 'net-ssh' do
+  net_ssh_dir = File.expand_path('net-ssh', File.dirname(__FILE__))
+
+  desc "Install net-ssh gem dependencies"
+  task :bundle do
+    sh "cd #{net_ssh_dir} && bundle install"
+    # net-ssh's gemspec skips bcrypt_pbkdf on java (-java variant is only out as a pre-release)
+    sh "gem install --no-document ed25519 && gem install --no-document --pre bcrypt_pbkdf"
+  end
+
+  task :bundle_check do
+    unless File.exist?(File.join(net_ssh_dir, 'Gemfile.lock'))
+      fail "bundle not installed, run `rake net-ssh:bundle'"
+    end
+  end
+
+  desc "Run net-ssh (OpenSSL) tests against jruby-openssl"
+  Rake::TestTask.new(:test) do |task|
+    test_files = %w[
+      test/test_key_factory.rb
+      test/transport/test_cipher_factory.rb
+      test/transport/test_hmac.rb
+      test/authentication/test_certificate.rb
+      test/authentication/test_ed25519.rb
+      test/authentication/test_key_manager.rb
+    ]
+    test_files += FileList[File.join(net_ssh_dir, 'test/transport/{kex,hmac}/test_*.rb')].to_a
+
+    task.libs = [ 'lib', File.join(net_ssh_dir, 'lib'), File.join(net_ssh_dir, 'test') ]
+    task.test_files = test_files.map { |path| File.expand_path(path, net_ssh_dir) }
+    task.verbose = false
+    task.options = '--verbose' # minitest: report each test
+    task.ruby_opts = [ '-v', '-C', net_ssh_dir, '-rcommon' ]
+  end
+
+  task :test => ['lib/jopenssl.jar', :bundle_check]
+end
+
 namespace 'ruby-jwt' do
   jwt_dir = File.expand_path('ruby-jwt', File.dirname(__FILE__))
 

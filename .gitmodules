@@ -7,3 +7,6 @@
 [submodule "sigstore-ruby"]
 	path = sigstore-ruby
 	url = https://github.com/sigstore/sigstore-ruby.git
+[submodule "net-ssh"]
+	path = net-ssh
+	url = https://github.com/net-ssh/net-ssh.git

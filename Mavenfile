@@ -1,108 +1,87 @@
 #-*- mode: ruby -*-
 
-gemspec :jar => 'jopenssl'
+gemspec jar: 'jopenssl'
 
 distribution_management do
-  snapshot_repository :id => :ossrh, :url => 'https://oss.sonatype.org/content/repositories/snapshots'
-  repository :id => :ossrh, :url => 'https://oss.sonatype.org/service/local/staging/deploy/maven2/'
+  snapshot_repository id: :ossrh, url: 'https://oss.sonatype.org/content/repositories/snapshots'
+  repository id: :ossrh, url: 'https://oss.sonatype.org/service/local/staging/deploy/maven2/'
 end
 
 java_target = '1.8'
 gen_sources = '${basedir}/target/generated-sources' # hard-coded in AnnotationBinder
 
-plugin( 'org.codehaus.mojo:exec-maven-plugin', '3.5.0' ) do
-
-=begin
-  invoker_main  = '-Djruby.bytecode.version=${compiler.target}'
-  #invoker_main << ' -classpath '
-  invoker_main << ' org.jruby.anno.InvokerGenerator'
-  invoker_main << " #{gen_sources}/annotated_classes.txt ${project.build.outputDirectory}"
-
-  dependency 'org.jruby', 'jruby-core', '${jruby.version}'
-
-  execute_goal :java, :id => 'invoker-generator', :phase => 'process-classes',
-      :mainClass => 'org.jruby.anno.InvokerGenerator', :classpathScope => 'compile',
-      #:arguments => [ '${gen.sources}/annotated_classes.txt', '${project.build.outputDirectory}' ] do
-      :commandlineArgs => "#{gen_sources}/annotated_classes.txt ${project.build.outputDirectory}",
-      :classpathScope => 'runtime', :additionalClasspathElements => [ '${project.build.outputDirectory}' ],
-      :includeProjectDependencies => false, :includePluginDependencies => true do
-
-    #systemProperties do
-    #  property '-Djruby.bytecode.version=${compiler.target}'
-    #end
-=end
-
-  execute_goal :exec, :id => 'invoker-generator', :phase => 'process-classes',
-      :executable => 'java', :classpathScope => 'compile',
-      :arguments => [ "-Djruby.bytecode.version=#{java_target}",
+plugin 'org.codehaus.mojo:exec-maven-plugin', '3.5.0' do
+  execute_goal :exec, id: 'invoker-generator', phase: 'process-classes',
+      executable: 'java', classpathScope: 'compile',
+      arguments: [ "-Djruby.bytecode.version=#{java_target}",
                       '-classpath', xml( '<classpath/>' ),
                       'org.jruby.anno.InvokerGenerator',
                       "#{gen_sources}/annotated_classes.txt",
                       '${project.build.outputDirectory}' ]
 end
 
-plugin( 'org.codehaus.mojo:build-helper-maven-plugin', '3.6.1' ) do
-  execute_goal 'add-source', :phase => 'process-classes', :sources => [ gen_sources ]
+plugin 'org.codehaus.mojo:build-helper-maven-plugin', '3.6.1' do
+  execute_goal 'add-source', phase: 'process-classes', sources: [ gen_sources ]
 end
 
 compiler_configuration = {
-    :source => '1.8', :target => java_target, :release => '8',
-    :encoding => 'UTF-8', :debug => true,
-    :showWarnings => true, :showDeprecation => true,
-    :excludes => [ 'module-info.java' ],
-    #:jdkToolchain => { :version => '[1.7,11)' },
-    :generatedSourcesDirectory => gen_sources,
-    :annotationProcessors => [ 'org.jruby.anno.AnnotationBinder' ]
+    source: '1.8', target: java_target, release: '8',
+    encoding: 'UTF-8', debug: true,
+    showWarnings: true, showDeprecation: true,
+    excludes: [ 'module-info.java' ],
+    #jdkToolchain: { version: '[1.7,11)' },
+    generatedSourcesDirectory: gen_sources,
+    annotationProcessors: [ 'org.jruby.anno.AnnotationBinder' ]
 }
-compiler_configuration.delete(:release) if ENV_JAVA['java.specification.version'] == '1.8'
+#compiler_configuration.delete(:release) if ENV_JAVA['java.specification.version'] == '1.8'
 
-plugin( :compiler, '3.15.0', compiler_configuration) do
+plugin :compiler, '3.15.0', compiler_configuration do
 
-  #execute_goal :compile, :id => 'annotation-binder', :phase => 'compile',
-  #    :generatedSourcesDirectory => gen_sources, #:outputDirectory => gen_sources,
-  #    :annotationProcessors => [ 'org.jruby.anno.AnnotationBinder' ],
-  #    :proc => 'only', # :compilerReuseStrategy => 'alwaysNew',
-  #    :useIncrementalCompilation => false, :fork => true, :verbose => true,
-  #    :compilerArgs => [ '-XDignore.symbol.file=true', '-J-Dfile.encoding=UTF-8' ]
+  #execute_goal :compile, id: 'annotation-binder', phase: 'compile',
+  #    generatedSourcesDirectory: gen_sources, #outputDirectory: gen_sources,
+  #    annotationProcessors: [ 'org.jruby.anno.AnnotationBinder' ],
+  #    proc: 'only', # compilerReuseStrategy: 'alwaysNew',
+  #    useIncrementalCompilation: false, fork: true, verbose: true,
+  #    compilerArgs: [ '-XDignore.symbol.file=true', '-J-Dfile.encoding=UTF-8' ]
 
   execute_goal :compile,
-               :id => 'compile-populators', :phase => 'process-classes',
-               :includes => [ 'org/jruby/gen/**/*.java' ],
-               :optimize => true,
-               :compilerArgs => [ '', '-XDignore.symbol.file=true' ]
+               id: 'compile-populators', phase: 'process-classes',
+               includes: [ 'org/jruby/gen/**/*.java' ],
+               optimize: true,
+               compilerArgs: [ '', '-XDignore.symbol.file=true' ]
 end
 
 plugin! :clean, '2.4',
         'filesets' => [
-          { :directory => 'lib', :includes => [ 'jopenssl.jar' ] },
-          { :directory => 'vendor' },
-          { :directory => 'target', :includes => [ '*' ] }
+          { directory: 'lib', includes: [ 'jopenssl.jar' ] },
+          { directory: 'vendor' },
+          { directory: 'target', includes: [ '*' ] }
         ],
         'failOnError' => 'false'
 
 jruby_compile_compat = '9.2.1.0'
-jar 'org.jruby:jruby-core', jruby_compile_compat, :scope => :provided
+jar 'org.jruby:jruby-core', jruby_compile_compat, scope: :provided
 # for invoker generated classes we need to add javax.annotation when on Java > 8
-jar 'javax.annotation:javax.annotation-api', '1.3.1', :scope => :compile
-jar 'org.junit.jupiter:junit-jupiter', '5.11.4', :scope => :test
+jar 'javax.annotation:javax.annotation-api', '1.3.1', scope: :compile
+jar 'org.junit.jupiter:junit-jupiter', '5.11.4', scope: :test
 # a test dependency to provide digest and other stdlib bits, needed when loading OpenSSL in Java unit tests
-jar 'org.jruby:jruby-stdlib', jruby_compile_compat, :scope => :test
+jar 'org.jruby:jruby-stdlib', jruby_compile_compat, scope: :test
 
 plugin :surefire, '3.5.5'
 
 # NOTE: to build on Java 11 - installing gems fails (due old jossl) with:
 #  load error: jopenssl/load -- java.lang.StringIndexOutOfBoundsException
-MVN_JRUBY_VERSION = '9.2.19.0'
+MVN_JRUBY_VERSION = '9.4.14.0'
 
 jruby_plugin! :gem do
   # when installing dependent gems we want to use the built in openssl not the one from this lib directory
-  execute_goal :id => 'default-package', :addProjectClasspath => false, :libDirectory => 'something-which-does-not-exists'
-  execute_goals :id => 'default-push', :skip => true
+  execute_goal id: 'default-package', addProjectClasspath: false, libDirectory: 'something-which-does-not-exists'
+  execute_goals id: 'default-push', skip: true
 end
 
 # we want to have the snapshots on oss.sonatype.org and the released gems on maven central
 plugin :deploy, '3.1.4' do
-  execute_goals( :deploy, :skip => false )
+  execute_goals( :deploy, skip: false )
 end
 
 supported_bc_versions = %w{ 1.80 1.81 1.82 1.83 1.84 1.85 }
@@ -127,19 +106,19 @@ properties( 'jruby.plugins.version' => '3.0.6',
 
 plugin! :dependency do
   execute_goal 'copy-dependencies',
-               :phase => 'generate-test-resources',
-               :outputDirectory => '${basedir}/vendor',
-               :useRepositoryLayout => true,
-               :includeGroupIds => 'org.bouncycastle'
+               phase: 'generate-test-resources',
+               outputDirectory: '${basedir}/vendor',
+               useRepositoryLayout: true,
+               includeGroupIds: 'org.bouncycastle'
 end
 
 invoker_run_options = {
-    :id => 'tests-with-different-bc-versions',
-    :projectsDirectory => 'integration',
-    :pomIncludes => [ '*/pom.xml' ],
-    :streamLogs => true,
+    id: 'tests-with-different-bc-versions',
+    projectsDirectory: 'integration',
+    pomIncludes: [ '*/pom.xml' ],
+    streamLogs: true,
     # pass those properties on to the test project
-    :properties => {
+    properties: {
       'jruby.versions' => '${jruby.versions}',
       'jruby.openssl.version' => '${project.version}',
       'bc.versions' => '${bc.versions}',
@@ -149,13 +128,13 @@ invoker_run_options = {
 jruby_versions = []
 jruby_versions += %w{ 9.2.19.0 9.2.20.1 }
 jruby_versions += %w{ 9.3.3.0 9.3.13.0 }
-jruby_versions += %w{ 9.4.8.0 9.4.14.0 }
-jruby_versions += %w{ 10.0.2.0 }
+jruby_versions += %w{ 9.4.8.0 9.4.14.0 9.4.15.0 9.4.16.0 }
+jruby_versions += %w{ 10.0.1.0 10.0.3.0 10.0.5.0 10.0.6.0 }
 
 jruby_versions.each do |version|
-  profile :id => "test-#{version}" do
+  profile id: "test-#{version}" do
     plugin :invoker, '3.8.1' do
-      execute_goals( :install, :run, invoker_run_options )
+      execute_goals :install, :run, invoker_run_options
     end
     properties 'jruby.version' => version,
                'jruby.versions' => version,
@@ -163,9 +142,9 @@ jruby_versions.each do |version|
   end
 end
 
-profile :id => 'release' do
+profile id: 'release' do
   plugin :gpg, '3.1.0' do
-    execute_goal :sign, :phase => :verify
+    execute_goal :sign, phase: :verify
   end
 end
 

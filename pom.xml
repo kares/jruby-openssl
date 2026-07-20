@@ -65,8 +65,8 @@ DO NOT MODIFY - GENERATED CODE
     <invoker.test>${bc.versions}</invoker.test>
     <jruby.plugins.version>3.0.6</jruby.plugins.version>
     <jruby.switches>-W0</jruby.switches>
-    <jruby.version>9.2.19.0</jruby.version>
-    <jruby.versions>9.2.19.0</jruby.versions>
+    <jruby.version>9.4.14.0</jruby.version>
+    <jruby.versions>9.4.14.0</jruby.versions>
     <mavengem-wagon.version>3.0.0</mavengem-wagon.version>
     <mavengem.wagon.version>2.0.2</mavengem.wagon.version>
     <polyglot.dump.pom>pom.xml</polyglot.dump.pom>
@@ -273,6 +273,7 @@ DO NOT MODIFY - GENERATED CODE
         <configuration>
           <source>1.8</source>
           <target>1.8</target>
+          <release>8</release>
           <encoding>UTF-8</encoding>
           <debug>true</debug>
           <showWarnings>true</showWarnings>
@@ -547,7 +548,7 @@ DO NOT MODIFY - GENERATED CODE
       </properties>
     </profile>
     <profile>
-      <id>test-10.0.2.0</id>
+      <id>test-9.4.15.0</id>
       <build>
         <plugins>
           <plugin>
@@ -579,8 +580,193 @@ DO NOT MODIFY - GENERATED CODE
       </build>
       <properties>
         <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
-        <jruby.version>10.0.2.0</jruby.version>
-        <jruby.versions>10.0.2.0</jruby.versions>
+        <jruby.version>9.4.15.0</jruby.version>
+        <jruby.versions>9.4.15.0</jruby.versions>
+      </properties>
+    </profile>
+    <profile>
+      <id>test-9.4.16.0</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <projectsDirectory>integration</projectsDirectory>
+                  <pomIncludes>
+                    <pomInclude>*/pom.xml</pomInclude>
+                  </pomIncludes>
+                  <streamLogs>true</streamLogs>
+                  <properties>
+                    <jruby.versions>${jruby.versions}</jruby.versions>
+                    <jruby.openssl.version>${project.version}</jruby.openssl.version>
+                    <bc.versions>${bc.versions}</bc.versions>
+                    <runit.dir>${runit.dir}</runit.dir>
+                  </properties>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <jruby.version>9.4.16.0</jruby.version>
+        <jruby.versions>9.4.16.0</jruby.versions>
+      </properties>
+    </profile>
+    <profile>
+      <id>test-10.0.1.0</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <projectsDirectory>integration</projectsDirectory>
+                  <pomIncludes>
+                    <pomInclude>*/pom.xml</pomInclude>
+                  </pomIncludes>
+                  <streamLogs>true</streamLogs>
+                  <properties>
+                    <jruby.versions>${jruby.versions}</jruby.versions>
+                    <jruby.openssl.version>${project.version}</jruby.openssl.version>
+                    <bc.versions>${bc.versions}</bc.versions>
+                    <runit.dir>${runit.dir}</runit.dir>
+                  </properties>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <jruby.version>10.0.1.0</jruby.version>
+        <jruby.versions>10.0.1.0</jruby.versions>
+      </properties>
+    </profile>
+    <profile>
+      <id>test-10.0.3.0</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <projectsDirectory>integration</projectsDirectory>
+                  <pomIncludes>
+                    <pomInclude>*/pom.xml</pomInclude>
+                  </pomIncludes>
+                  <streamLogs>true</streamLogs>
+                  <properties>
+                    <jruby.versions>${jruby.versions}</jruby.versions>
+                    <jruby.openssl.version>${project.version}</jruby.openssl.version>
+                    <bc.versions>${bc.versions}</bc.versions>
+                    <runit.dir>${runit.dir}</runit.dir>
+                  </properties>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <jruby.version>10.0.3.0</jruby.version>
+        <jruby.versions>10.0.3.0</jruby.versions>
+      </properties>
+    </profile>
+    <profile>
+      <id>test-10.0.5.0</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <projectsDirectory>integration</projectsDirectory>
+                  <pomIncludes>
+                    <pomInclude>*/pom.xml</pomInclude>
+                  </pomIncludes>
+                  <streamLogs>true</streamLogs>
+                  <properties>
+                    <jruby.versions>${jruby.versions}</jruby.versions>
+                    <jruby.openssl.version>${project.version}</jruby.openssl.version>
+                    <bc.versions>${bc.versions}</bc.versions>
+                    <runit.dir>${runit.dir}</runit.dir>
+                  </properties>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <jruby.version>10.0.5.0</jruby.version>
+        <jruby.versions>10.0.5.0</jruby.versions>
+      </properties>
+    </profile>
+    <profile>
+      <id>test-10.0.6.0</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <projectsDirectory>integration</projectsDirectory>
+                  <pomIncludes>
+                    <pomInclude>*/pom.xml</pomInclude>
+                  </pomIncludes>
+                  <streamLogs>true</streamLogs>
+                  <properties>
+                    <jruby.versions>${jruby.versions}</jruby.versions>
+                    <jruby.openssl.version>${project.version}</jruby.openssl.version>
+                    <bc.versions>${bc.versions}</bc.versions>
+                    <runit.dir>${runit.dir}</runit.dir>
+                  </properties>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <bc.versions>1.80,1.81,1.82,1.83,1.84,1.85</bc.versions>
+        <jruby.version>10.0.6.0</jruby.version>
+        <jruby.versions>10.0.6.0</jruby.versions>
       </properties>
     </profile>
     <profile>

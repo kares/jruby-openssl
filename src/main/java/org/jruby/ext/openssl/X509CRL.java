@@ -196,7 +196,7 @@ public class X509CRL extends RubyObject {
 
         if ( Arity.checkArgumentCount(runtime, args, 0, 1) == 0 ) return this;
 
-        final ByteList strList = args[0].asString().getByteList();
+        final ByteList strList = to_der_if_possible(context, args[0]).asString().getByteList();
         final byte[] bytes = strList.unsafeBytes();
         final int offset = strList.getBegin(); final int length = strList.getRealSize();
         try {

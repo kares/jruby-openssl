@@ -361,4 +361,22 @@ class TestX509Extension < TestCase
   end
   private :subject_alt_name
 
+  def test_new_from_to_der_object
+    ext = OpenSSL::X509::Extension.new("subjectKeyIdentifier", "hash")
+
+    obj = Object.new
+    der = ext.to_der
+    obj.define_singleton_method(:to_der) { der }
+    ext2 = OpenSSL::X509::Extension.new(obj)
+    assert_equal ext.oid, ext2.oid
+  end
+
+  def test_set_value_from_to_der_object
+    ext = OpenSSL::X509::Extension.new('1.1.1.1.1.1', 'foo')
+    obj = Object.new
+    obj.define_singleton_method(:to_der) { "bar" }
+    ext.value = obj
+    assert_equal "bar", ext.value
+  end
+
 end

@@ -306,6 +306,17 @@ class TestPKeyDH < TestCase
     assert_not_equal key.priv_key, dh.priv_key
   end
 
+  def test_new_from_to_der_object
+    dh = Fixtures.pkey_dh('dh2048')
+
+    obj = Object.new
+    pem = dh.to_pem
+    obj.define_singleton_method(:to_der) { pem }
+    dh2 = OpenSSL::PKey::DH.new(obj)
+    assert_equal dh.p, dh2.p
+    assert_equal dh.g, dh2.g
+  end
+
   private
 
   def assert_no_key(dh)

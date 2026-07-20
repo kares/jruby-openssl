@@ -999,4 +999,25 @@ EOF
     assert_equal "/CN=unsigned/O=mutated", duped.subject.to_s
     assert_equal "/CN=issuer/O=mutated", duped.issuer.to_s
   end
+
+  def test_new_from_to_der_object
+    cert = OpenSSL::X509::Certificate.new
+    cert.subject = OpenSSL::X509::Name.new([["CN", "test"]])
+    cert.issuer = cert.subject
+    cert.serial = 1
+    cert.not_before = Time.now - 3600
+    cert.not_after = Time.now + 3600
+
+    key = OpenSSL::PKey::RSA.generate(2048)
+    cert.public_key = key.public_key
+    cert.sign(key, "sha256")
+
+    # an object responding to to_der should be accepted
+    obj = Object.new
+    der = cert.to_der
+    obj.define_singleton_method(:to_der) { der }
+    cert2 = OpenSSL::X509::Certificate.new(obj)
+    assert_equal cert.subject.to_s, cert2.subject.to_s
+    assert_equal cert.serial, cert2.serial
+  end
 end

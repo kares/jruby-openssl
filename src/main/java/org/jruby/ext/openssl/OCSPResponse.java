@@ -83,7 +83,7 @@ public class OCSPResponse extends RubyObject {
         
         if ( Arity.checkArgumentCount(runtime, args, 0, 1) == 0 ) return this;
         
-        RubyString derString = (RubyString) args[0];
+        RubyString derString = StringHelper.readPossibleDERInput(context, args[0]);
         try {
             bcResp = org.bouncycastle.asn1.ocsp.OCSPResponse.getInstance(ASN1TaggedObject.fromByteArray(derString.getBytes()));
         }

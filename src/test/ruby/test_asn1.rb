@@ -1286,6 +1286,29 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
     assert_equal 12345678901234567890, i.value.to_i
   end
 
+  def test_decode_from_to_der_object
+    int = OpenSSL::ASN1::Integer.new(42)
+    obj = Object.new
+    der = int.to_der
+    obj.define_singleton_method(:to_der) { der }
+
+    decoded = OpenSSL::ASN1.decode(obj)
+    assert_equal 42, decoded.value
+  end
+
+  def test_decode_all_from_to_der_object
+    int1 = OpenSSL::ASN1::Integer.new(1)
+    int2 = OpenSSL::ASN1::Integer.new(2)
+    obj = Object.new
+    der = int1.to_der + int2.to_der
+    obj.define_singleton_method(:to_der) { der }
+
+    decoded = OpenSSL::ASN1.decode_all(obj)
+    assert_equal 2, decoded.size
+    assert_equal 1, decoded[0].value
+    assert_equal 2, decoded[1].value
+  end
+
   private
 
   def B(ary)

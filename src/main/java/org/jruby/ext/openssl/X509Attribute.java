@@ -34,6 +34,7 @@ import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DERSet;
@@ -43,15 +44,19 @@ import org.jruby.RubyClass;
 import org.jruby.RubyModule;
 import org.jruby.RubyObject;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.Visibility;
 
+import org.jruby.ext.openssl.util.RubySupport;
+
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.ASN1._ASN1;
 import static org.jruby.ext.openssl.util.RubySupport.newArgumentError;
 import static org.jruby.ext.openssl.util.RubySupport.newIOError;
+import static org.jruby.ext.openssl.X509._X509;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -69,8 +74,7 @@ public class X509Attribute extends RubyObject {
 
 
     static RubyClass _Attribute(final Ruby runtime) {
-        RubyModule _X509 = (RubyModule) runtime.getModule("OpenSSL").getConstant("X509");
-        return _X509.getClass("Attribute");
+        return _X509(runtime).getClass("Attribute");
     }
 
     public X509Attribute(Ruby runtime, RubyClass type) {
@@ -112,8 +116,19 @@ public class X509Attribute extends RubyObject {
 
     @JRubyMethod(name="initialize", required = 1, optional = 1, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, final IRubyObject[] args) {
-        if ( Arity.checkArgumentCount(context.runtime, args, 1, 2) == 1 ) {
-            set_oid( to_der_if_possible(context, args[0]) );
+        final Ruby runtime = context.runtime;
+        if ( Arity.checkArgumentCount(runtime, args, 1, 2) == 1 ) {
+            // single arg: parse DER-encoded attribute (d2i_X509_ATTRIBUTE)
+            final byte[] bytes = to_der_if_possible(context, args[0]).asString().getBytes();
+            try {
+                ASN1Sequence seq = ASN1Sequence.getInstance(ASN1.readObject(bytes));
+                this.objectId = (ASN1ObjectIdentifier) seq.getObjectAt(0);
+                this.value = ASN1.decodeObject(context, _ASN1(runtime),
+                        ASN1Set.getInstance(seq.getObjectAt(1)));
+            }
+            catch (Exception e) {
+                throw newAttributeError(runtime, e);
+            }
             return this;
         }
         set_oid(args[0]);
@@ -198,6 +213,11 @@ public class X509Attribute extends RubyObject {
             return context.runtime.newBoolean(equal);
         }
         return context.runtime.getFalse();
+    }
+
+    private static RaiseException newAttributeError(Ruby runtime, Exception cause) {
+        RubyClass AttributeError = _X509(runtime).getClass("AttributeError");
+        return RubySupport.newError(runtime, AttributeError, cause.getMessage(), cause);
     }
 
 }// X509Attribute

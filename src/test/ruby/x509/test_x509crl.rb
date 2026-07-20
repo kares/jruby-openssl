@@ -211,6 +211,24 @@ EOF
     assert crl.verify(ca.public_key)
   end
 
+  def test_new_from_to_der_object
+    key = OpenSSL::PKey::RSA.generate(2048)
+    crl = OpenSSL::X509::CRL.new
+    crl.version = 1
+    crl.issuer = OpenSSL::X509::Name.new([["CN", "test"]])
+    crl.last_update = Time.now
+    crl.next_update = Time.now + 3600
+    crl.sign(key, "sha256")
+
+    # an object responding to to_der should be accepted
+    obj = Object.new
+    der = crl.to_der
+    obj.define_singleton_method(:to_der) { der }
+    crl2 = OpenSSL::X509::CRL.new(obj)
+    assert_equal crl.issuer.to_s, crl2.issuer.to_s
+    assert_equal crl.version, crl2.version
+  end
+
   private
 
   def get_subject_key_id(cert)

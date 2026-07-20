@@ -48,6 +48,7 @@ import org.jruby.RubyBoolean;
 import org.jruby.RubyClass;
 import org.jruby.RubyHash;
 import org.jruby.RubyModule;
+import org.jruby.RubyInteger;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
@@ -176,11 +177,12 @@ public class PKeyDH extends PKey {
         final int argc = Arity.checkArgumentCount(runtime, args, 0, 2);
         if ( argc > 0 ) {
             IRubyObject arg0 = args[0];
-            if ( argc == 1 && arg0 instanceof RubyString ) {
+            if ( argc == 1 && !(arg0 instanceof RubyInteger) ) {
+                final RubyString str = readInitArg(context, arg0);
                 try {
-                    DHParameterSpec spec = PEMInputOutput.readDHParameters(new StringReader(arg0.toString()));
+                    DHParameterSpec spec = PEMInputOutput.readDHParameters(new StringReader(str.toString()));
                     if (spec == null) {
-                        spec = org.jruby.ext.openssl.impl.PKey.readDHParameter(arg0.asString().getByteList().bytes());
+                        spec = org.jruby.ext.openssl.impl.PKey.readDHParameter(str.getByteList().bytes());
                     }
                     if (spec == null) {
                         throw runtime.newArgumentError("invalid DH PARAMETERS");

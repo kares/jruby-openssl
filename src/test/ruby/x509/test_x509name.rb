@@ -367,6 +367,16 @@ class TestX509Name < TestCase
     print_asn_strings(asn1)
   end
 
+  def test_new_from_to_der_object
+    name = OpenSSL::X509::Name.new([["CN", "test"], ["O", "Org"]])
+
+    obj = Object.new
+    der = name.to_der
+    obj.define_singleton_method(:to_der) { der }
+    name2 = OpenSSL::X509::Name.new(obj)
+    assert_equal name.to_s, name2.to_s
+  end
+
   private
 
   def print_asn_strings(obj, depth = 0)

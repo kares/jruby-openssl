@@ -53,6 +53,7 @@ public final class OpenSSL {
     }
 
     static final Logger LOG = Logger.getLogger(OpenSSL.class);
+
     private static final FunctionalCachingCallSite WARN_CALL_SITE = new FunctionalCachingCallSite("warn");
 
     public static void load(final Ruby runtime) {
@@ -283,10 +284,14 @@ public final class OpenSSL {
         return null; // never happens
     }
 
+    /**
+     * @implNote matches <code>ossl_to_der_if_possible</code>
+     * @return obj or obj.to_der converted to string
+     */
     static IRubyObject to_der_if_possible(final ThreadContext context, IRubyObject obj) {
-        if ( obj instanceof RubyString || obj instanceof RubyIO ) return obj;
-        if ( ! obj.respondsTo("to_der"))  return obj;
-        return obj.callMethod(context, "to_der");
+        if (obj instanceof RubyString) return obj; // avoid checks for common value
+        if (!obj.respondsTo("to_der")) return obj;
+        return obj.callMethod(context, "to_der").asString();
     }
 
     //

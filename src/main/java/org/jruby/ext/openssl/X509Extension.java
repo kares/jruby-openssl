@@ -885,10 +885,9 @@ public class X509Extension extends RubyObject {
 
     @JRubyMethod(name = "value=")
     public IRubyObject set_value(final ThreadContext context, IRubyObject arg) {
-        if ( arg instanceof RubyString ) {
-            this.value = arg; return arg;
-        }
-        throw context.runtime.newTypeError(arg, context.runtime.getString());
+        arg = to_der_if_possible(context, arg);
+        this.value = arg.asString();
+        return arg;
     }
 
     @JRubyMethod(name = "critical?")

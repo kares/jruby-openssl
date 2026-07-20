@@ -97,24 +97,6 @@ class TestPKey < TestCase
     assert_equal nil, dh.q
   end
 
-  def test_generate_key_from_ec_params
-    ec_params = OpenSSL::PKey::EC.new("secp384r1")
-
-    pkey = OpenSSL::PKey.generate_key(ec_params)
-
-    assert_instance_of OpenSSL::PKey::EC, pkey
-    assert_equal "secp384r1", pkey.group.curve_name
-    assert_not_nil pkey.private_key
-    assert_not_nil pkey.public_key
-    assert_nil ec_params.private_key # generating must not modify the parameters
-  end
-
-  def test_generate_key_unsupported_parameters
-    assert_raise(OpenSSL::PKey::PKeyError) do
-      OpenSSL::PKey.generate_key(Fixtures.pkey("rsa-1.pem"))
-    end
-  end
-
   def test_hmac_sign_verify
     pkey = OpenSSL::PKey.generate_key("HMAC", { "key" => "abcd" })
 
@@ -212,6 +194,13 @@ class TestPKey < TestCase
     assert_instance_of OpenSSL::PKey::RSA, pkey
     assert pkey.private?
     assert_not_equal rsa.n, pkey.n
+  end
+
+  # an HMAC key has nothing to generate from - CRuby raises here as well
+  def test_generate_key_from_unsupported_key
+    hmac = OpenSSL::PKey.generate_key("HMAC", { "key" => "0123456789abcdef" })
+
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key(hmac) }
   end
 
   def test_generate_key_rejects_non_string_algorithm

@@ -231,11 +231,12 @@ public abstract class PKey extends RubyObject {
         public static IRubyObject generate_key(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
             final Ruby runtime = context.runtime;
             final IRubyObject arg = args[0];
+            final IRubyObject options = args.length > 1 ? args[1] : runtime.getNil();
             try {
                 // a key acts as a template - generate a new key off its parameters
-                if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
+                if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg, options);
 
-                final String algorithm = arg.asJavaString();
+                final String algorithm = arg.convertToString().asJavaString();
                 if ( "HMAC".equalsIgnoreCase(algorithm) ) {
                     if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
                     final RubyString key = RubySupport.extractRubyStringOpt(context, args[1], "key", true);
@@ -264,8 +265,14 @@ public abstract class PKey extends RubyObject {
             }
         }
 
-        private static IRubyObject generateKeyFromParams(final ThreadContext context, final PKey baseKey) {
+        private static IRubyObject generateKeyFromParams(final ThreadContext context, final PKey baseKey,
+            final IRubyObject options) {
             final Ruby runtime = context.runtime;
+
+            // RSA has no parameters to derive from - the key only selects the algorithm (like MRI)
+            if (baseKey instanceof PKeyRSA) {
+                return generateRSAKey(context, options);
+            }
 
             if (baseKey instanceof PKeyEC) {
                 final PKeyEC ec = (PKeyEC) baseKey.dup();

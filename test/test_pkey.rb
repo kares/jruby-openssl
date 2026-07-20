@@ -184,6 +184,41 @@ class TestPKey < TestCase
     assert_nil dsa_params.pub_key
   end
 
+  # RSA key carries no parameters - only selects the algorithm,
+  # the size comes from rsa_keygen_bits (or the 2048 default)
+  def test_generate_key_from_rsa_key
+    rsa = OpenSSL::PKey::RSA.new(1024)
+    pkey = OpenSSL::PKey.generate_key(rsa)
+
+    assert_instance_of OpenSSL::PKey::RSA, pkey
+    assert pkey.private?
+    assert_equal 2048, pkey.n.num_bits
+    assert_not_equal rsa.n, pkey.n
+  end
+
+  def test_generate_key_from_rsa_key_honours_keygen_bits
+    pkey = OpenSSL::PKey.generate_key(OpenSSL::PKey::RSA.new(1024), "rsa_keygen_bits" => 2048)
+
+    assert_equal 2048, pkey.n.num_bits
+  end
+
+  def test_generate_key_from_public_rsa_key
+    rsa = OpenSSL::PKey::RSA.new(1024)
+    public_rsa = OpenSSL::PKey::RSA.new(rsa.public_to_der)
+
+    pkey = OpenSSL::PKey.generate_key(public_rsa)
+
+    assert_instance_of OpenSSL::PKey::RSA, pkey
+    assert pkey.private?
+  end
+
+  def test_generate_key_rejects_non_string_algorithm
+    [ 42, nil, :RSA ].each do |arg|
+      err = assert_raise(TypeError) { OpenSSL::PKey.generate_key(arg) }
+      assert_match(/no implicit conversion of .* into String/, err.message)
+    end
+  end
+
   def test_generate_parameters_ec
     pkey = OpenSSL::PKey.generate_parameters("EC", {
       "ec_paramgen_curve" => "secp384r1"

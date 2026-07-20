@@ -29,7 +29,6 @@ package org.jruby.ext.openssl;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -53,11 +52,10 @@ import org.jruby.ext.openssl.log.Logger;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
-import org.jruby.util.ByteList;
 
-// org.bouncycastle.jce.netscape.NetscapeCertRequest emulator:
 import org.jruby.ext.openssl.impl.NetscapeCertRequest;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
@@ -65,6 +63,7 @@ import static org.jruby.ext.openssl.util.RubySupport.newError;
  */
 public class NetscapeSPKI extends RubyObject {
     private static final long serialVersionUID = 3211242351810109432L;
+
     private static final Logger LOG = Logger.getLogger(NetscapeSPKI.class);
 
     static void createNetscapeSPKI(Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
@@ -121,20 +120,18 @@ public class NetscapeSPKI extends RubyObject {
     @JRubyMethod
     public IRubyObject to_der() {
         try {
-            final byte[] derBytes = toDER();
-            return getRuntime().newString(new ByteList(derBytes, false));
+            return StringHelper.newString(getRuntime(), toDER());
+        } catch (Exception ex) {
+            throw newSPKIError(ex);
         }
-        catch (IOException ioe) { throw newSPKIError(ioe); }
     }
 
     @JRubyMethod(name = { "to_pem", "to_s" })
     public IRubyObject to_pem() {
         try {
-            byte[] source = toDER();
-            // no Base64.DO_BREAK_LINES option needed for NSPKI :
-            source = Base64.encodeBytesToBytes(source, 0, source.length, Base64.NO_OPTIONS);
-            return getRuntime().newString(new ByteList(source, false));
-        } catch (IOException ex) {
+            byte[] derBytes = toDER(); // no Base64.DO_BREAK_LINES option needed for NSPKI
+            return StringHelper.newString(getRuntime(), Base64.encodeBytesToBytes(derBytes));
+        } catch (Exception ex) {
             throw newSPKIError(ex);
         }
     }
@@ -251,9 +248,12 @@ public class NetscapeSPKI extends RubyObject {
             this.cert = cert = new NetscapeCertRequest(challengeStr, new AlgorithmIdentifier(alg), publicKey);
             cert.sign( ((PKey) key).getPrivateKey() );
         }
-        catch (GeneralSecurityException e) {
-            LOG.debugStack(getRuntime(), "sign", e);
-            throw newSPKIError(e);
+        catch (GeneralSecurityException ex) {
+            LOG.debugStack(getRuntime(), "sign", ex);
+            throw newSPKIError(ex);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(getRuntime(), ex);
         }
         return this;
     }
@@ -270,6 +270,9 @@ public class NetscapeSPKI extends RubyObject {
             LOG.debugStack(getRuntime(), "verify", ex);
             throw newSPKIError(ex);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(getRuntime(), ex);
+        }
     }
 
     @JRubyMethod
@@ -285,10 +288,6 @@ public class NetscapeSPKI extends RubyObject {
     private RaiseException newSPKIError(final Exception ex) {
         final Ruby runtime = getRuntime();
         return newError(runtime, _Netscape(runtime).getClass("SPKIError"), ex);
-    }
-
-    private static RaiseException newSPKIError(Ruby runtime, String message) {
-        return newError(runtime, _Netscape(runtime).getClass("SPKIError"), message);
     }
 
 }// NetscapeSPKI

@@ -34,8 +34,10 @@ import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.extractKeywordArgs;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
 
 /**
  * Provides functionality of various KDFs (key derivation function).
@@ -64,6 +66,9 @@ public class KDF {
         catch (NoSuchAlgorithmException|InvalidKeyException e) {
             throw newKDFError(context.runtime, e.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(module = true) // hkdf(ikm, salt:, info:, length:, hash:)
@@ -74,6 +79,9 @@ public class KDF {
         }
         catch (NoSuchAlgorithmException|InvalidKeyException e) {
             throw newKDFError(context.runtime, e.getMessage());
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
         }
     }
 

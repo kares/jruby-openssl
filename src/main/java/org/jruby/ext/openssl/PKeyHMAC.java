@@ -12,6 +12,8 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
+
 public class PKeyHMAC extends PKey {
 
     private final byte[] key;
@@ -71,6 +73,9 @@ public class PKeyHMAC extends PKey {
         }
         catch (GeneralSecurityException e) {
             throw newPKeyError(runtime, e.getMessage());
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 

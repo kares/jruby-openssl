@@ -625,6 +625,9 @@ public class X509CRL extends RubyObject {
         catch (Exception e) {
             LOG.debugStack(runtime, null, e); throw newCRLError(runtime, e.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
 
         final ASN1Primitive crlVal = getCRLValue(runtime);
 
@@ -700,6 +703,9 @@ public class X509CRL extends RubyObject {
         catch (GeneralSecurityException e) {
             LOG.debug(context.runtime, "verify failed", e);
             return context.runtime.getFalse();
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
         }
     }
 

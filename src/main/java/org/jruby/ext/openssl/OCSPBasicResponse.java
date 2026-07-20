@@ -71,7 +71,6 @@ import org.bouncycastle.operator.DigestCalculatorProvider;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
-import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -92,6 +91,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.Digest._Digest;
 import static org.jruby.ext.openssl.OCSP.*;
 import static org.jruby.ext.openssl.X509._X509;
@@ -279,88 +279,96 @@ public class OCSPBasicResponse extends RubyObject {
             default :
                 break;       
         }
-                        
-        if (digest.isNil()) digest = digestInstance.initialize(context, RubyString.newString(runtime, "SHA1"));
-        if (!flags.isNil()) flag = RubyFixnum.fix2int(flags);
-        if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCERTS));
-                        
-        X509Cert signer = (X509Cert) args[0];
-        PKey signerKey = (PKey) args[1];
-        
-        String keyAlg = signerKey.getAlgorithm();
-        String digAlg = ((Digest) digest).getShortAlgorithm();
 
-        JcaContentSignerBuilder signerBuilder = newJcaContentSignerBuilder(digAlg + "with" + keyAlg);
-        ContentSigner contentSigner;
         try {
-            contentSigner = signerBuilder.build(signerKey.getPrivateKey());
-        }
-        catch (OperatorCreationException e) {
-            throw newOCSPError(runtime, e);
-        }
-        
-        final BasicOCSPRespBuilder respBuilder;
-        try {
-            if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_RESPID_KEY))) != 0) {
-                DigestCalculatorProvider dcp = newJcaDigestCalculatorProviderBuilder().build();
-                DigestCalculator calculator = dcp.get(contentSigner.getAlgorithmIdentifier());
-                respBuilder = new BasicOCSPRespBuilder(SubjectPublicKeyInfo.getInstance(signerKey.getPublicKey().getEncoded()), calculator);
+            if (digest.isNil()) digest = digestInstance.initialize(context, RubyString.newString(runtime, "SHA1"));
+            if (!flags.isNil()) flag = RubyFixnum.fix2int(flags);
+            if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCERTS));
+                            
+            X509Cert signer = (X509Cert) args[0];
+            PKey signerKey = (PKey) args[1];
+            
+            String keyAlg = signerKey.getAlgorithm();
+            String digAlg = ((Digest) digest).getShortAlgorithm();
+
+            JcaContentSignerBuilder signerBuilder = newJcaContentSignerBuilder(digAlg + "with" + keyAlg);
+            ContentSigner contentSigner;
+            try {
+                contentSigner = signerBuilder.build(signerKey.getPrivateKey());
             }
-            else {
-                respBuilder = new BasicOCSPRespBuilder(new RespID(signer.getSubject().getX500Name()));
+            catch (OperatorCreationException e) {
+                throw newOCSPError(runtime, e);
             }
-        }
-        catch (Exception e) {
-            throw newOCSPError(runtime, e);
-        }
-        
-        X509CertificateHolder[] chain = null;
-        try {
-            if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCERTS))) == 0) {
-                addlCerts.add(new X509CertificateHolder(signer.getAuxCert().getEncoded()));
-                if (!additionalCerts.isNil()) {
-                    Iterator<java.security.cert.Certificate> rubyAddlCerts = ((RubyArray)additionalCerts).iterator();
-                    while (rubyAddlCerts.hasNext()) {
-                        java.security.cert.Certificate cert = rubyAddlCerts.next();
-                        addlCerts.add(new X509CertificateHolder(cert.getEncoded()));
-                    }
+            
+            final BasicOCSPRespBuilder respBuilder;
+            try {
+                if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_RESPID_KEY))) != 0) {
+                    DigestCalculatorProvider dcp = newJcaDigestCalculatorProviderBuilder().build();
+                    DigestCalculator calculator = dcp.get(contentSigner.getAlgorithmIdentifier());
+                    respBuilder = new BasicOCSPRespBuilder(SubjectPublicKeyInfo.getInstance(signerKey.getPublicKey().getEncoded()), calculator);
                 }
-                
-                chain = addlCerts.toArray(new X509CertificateHolder[addlCerts.size()]);
+                else {
+                    respBuilder = new BasicOCSPRespBuilder(new RespID(signer.getSubject().getX500Name()));
+                }
             }
-        }
-        catch (Exception e) {
-            throw newOCSPError(runtime, e);
-        }
-        
-        Date producedAt = null;
-        if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOTIME))) == 0) {
-            producedAt = new Date();
-        }
-        
-        for (OCSPSingleResponse resp : singleResponses) {
-            SingleResp singleResp = new SingleResp(resp.getBCSingleResp());
-            respBuilder.addResponse(singleResp.getCertID(), 
-                    singleResp.getCertStatus(), 
-                    singleResp.getThisUpdate(), 
-                    singleResp.getNextUpdate(), 
-                    resp.getBCSingleResp().getSingleExtensions());
-        }
-        
-        try {
-            final Extensions respExtensions;
-            if (extensions != null && extensions.size() > 0) {
-                respExtensions = new Extensions(extensions.toArray(new Extension[extensions.size()]));
-            } else {
-                respExtensions = null;
+            catch (Exception e) {
+                throw newOCSPError(runtime, e);
             }
-            BasicOCSPResp bcBasicOCSPResp = respBuilder.setResponseExtensions(respExtensions).build(contentSigner, chain, producedAt);
-            asn1BCBasicOCSPResp = BasicOCSPResponse.getInstance(bcBasicOCSPResp.getEncoded());
+            
+            X509CertificateHolder[] chain = null;
+            try {
+                if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCERTS))) == 0) {
+                    addlCerts.add(new X509CertificateHolder(signer.getAuxCert().getEncoded()));
+                    if (!additionalCerts.isNil()) {
+                        Iterator<java.security.cert.Certificate> rubyAddlCerts = ((RubyArray)additionalCerts).iterator();
+                        while (rubyAddlCerts.hasNext()) {
+                            java.security.cert.Certificate cert = rubyAddlCerts.next();
+                            addlCerts.add(new X509CertificateHolder(cert.getEncoded()));
+                        }
+                    }
+                    
+                    chain = addlCerts.toArray(new X509CertificateHolder[addlCerts.size()]);
+                }
+            }
+            catch (Exception e) {
+                throw newOCSPError(runtime, e);
+            }
+            
+            Date producedAt = null;
+            if ((flag & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOTIME))) == 0) {
+                producedAt = new Date();
+            }
+            
+            for (OCSPSingleResponse resp : singleResponses) {
+                SingleResp singleResp = new SingleResp(resp.getBCSingleResp());
+                respBuilder.addResponse(singleResp.getCertID(), 
+                        singleResp.getCertStatus(), 
+                        singleResp.getThisUpdate(), 
+                        singleResp.getNextUpdate(), 
+                        resp.getBCSingleResp().getSingleExtensions());
+            }
+            
+            try {
+                final Extensions respExtensions;
+                if (extensions != null && extensions.size() > 0) {
+                    respExtensions = new Extensions(extensions.toArray(new Extension[extensions.size()]));
+                } else {
+                    respExtensions = null;
+                }
+                BasicOCSPResp bcBasicOCSPResp = respBuilder.setResponseExtensions(respExtensions).build(contentSigner, chain, producedAt);
+                asn1BCBasicOCSPResp = BasicOCSPResponse.getInstance(bcBasicOCSPResp.getEncoded());
+            }
+            catch (Exception e) {
+                throw newOCSPError(runtime, e);
+            }
+            //catch (Throwable ex) {
+            //    return handlePotentialOperationError(runtime, ex);
+            //}
+            return this;
         }
-        catch (Exception e) {
-            throw newOCSPError(runtime, e);
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
-        return this;
     }
     
     @JRubyMethod(name = "verify", rest = true)
@@ -375,90 +383,95 @@ public class OCSPBasicResponse extends RubyObject {
             flags = RubyFixnum.fix2int(args[2]);
         }
         
-        JcaContentVerifierProviderBuilder jcacvpb = newJcaContentVerifierProviderBuilder();
-        BasicOCSPResp basicOCSPResp = getBasicOCSPResp();
-        
-        java.security.cert.Certificate signer = findSignerCert(context, asn1BCBasicOCSPResp, convertRubyCerts(certificates), flags);
-        if ( signer == null ) return RubyBoolean.newBoolean(runtime, false);
-        if ( (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOINTERN))) == 0 && 
-                (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_TRUSTOTHER))) != 0 ) {
-            flags |= RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOVERIFY));
-        }
-        if ( (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOSIGS))) == 0 ) {
-            PublicKey sPKey = signer.getPublicKey();
-            if ( sPKey == null ) return RubyBoolean.newBoolean(runtime, false);
-            try {
-                ContentVerifierProvider cvp = jcacvpb.build(sPKey);
-                ret = basicOCSPResp.isSignatureValid(cvp);
-            }
-            catch (Exception e) {
-                throw newOCSPError(runtime, e);
-            }
-        }
-        if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOVERIFY))) == 0) {
-            List<X509Cert> untrustedCerts;
-            if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHAIN))) != 0) {
-                untrustedCerts = Collections.EMPTY_LIST;
-            }
-            else if (basicOCSPResp.getCerts() != null && (certificates != null && !((RubyArray)certificates).isEmpty())) {
-                untrustedCerts = getCertsFromResp(context);
-                
-                Iterator<java.security.cert.Certificate> certIt = ((RubyArray)certificates).iterator();
-                while (certIt.hasNext()) {
-                    try {
-                        untrustedCerts.add(X509Cert.wrap(context, certIt.next().getEncoded()));
-                    }
-                    catch (CertificateEncodingException e) {
-                        throw newOCSPError(runtime, e);
-                    }
-                }
-            }
-            else {
-                untrustedCerts = getCertsFromResp(context);
-            }
+        try {
+            JcaContentVerifierProviderBuilder jcacvpb = newJcaContentVerifierProviderBuilder();
+            BasicOCSPResp basicOCSPResp = getBasicOCSPResp();
             
-            RubyArray rUntrustedCerts = RubyArray.newArray(runtime, untrustedCerts);
-            X509StoreContext ctx;
-            try {
-                ctx = X509StoreContext.newStoreContext(context, (X509Store)store, X509Cert.wrap(runtime, signer), rUntrustedCerts);
+            java.security.cert.Certificate signer = findSignerCert(context, asn1BCBasicOCSPResp, convertRubyCerts(certificates), flags);
+            if ( signer == null ) return RubyBoolean.newBoolean(runtime, false);
+            if ( (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOINTERN))) == 0 && 
+                    (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_TRUSTOTHER))) != 0 ) {
+                flags |= RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOVERIFY));
             }
-            catch (CertificateEncodingException e) {
-                throw newOCSPError(runtime, e);
-            }
-            
-            ctx.set_purpose(context, _X509(runtime).getConstant("PURPOSE_OCSP_HELPER"));
-            ret = ctx.verify(context).isTrue();
-            IRubyObject chain = ctx.chain(context);
-            
-            if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHECKS))) > 0) {
-                ret = true;
-            }
-            
-            try {
-                if (checkIssuer(getBasicOCSPResp(), chain)) return RubyBoolean.newBoolean(runtime, true);
-            }
-            catch (IOException e) {
-                throw newOCSPError(runtime, e);
-            }
-            
-            if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHAIN))) != 0) {
-                return RubyBoolean.newBoolean(runtime, ret);
-            }
-            else {
-                X509Cert rootCA = (X509Cert)((RubyArray)chain).last();
-                PublicKey rootKey = rootCA.getAuxCert().getPublicKey();
+            if ( (flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOSIGS))) == 0 ) {
+                PublicKey sPKey = signer.getPublicKey();
+                if ( sPKey == null ) return RubyBoolean.newBoolean(runtime, false);
                 try {
-                    // check if self-signed and valid (trusts itself)
-                    rootCA.getAuxCert().verify(rootKey);
-                    ret = true;
+                    ContentVerifierProvider cvp = jcacvpb.build(sPKey);
+                    ret = basicOCSPResp.isSignatureValid(cvp);
                 }
                 catch (Exception e) {
-                    ret = false;
+                    throw newOCSPError(runtime, e);
                 }
             }
+            if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOVERIFY))) == 0) {
+                List<X509Cert> untrustedCerts;
+                if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHAIN))) != 0) {
+                    untrustedCerts = Collections.EMPTY_LIST;
+                }
+                else if (basicOCSPResp.getCerts() != null && (certificates != null && !((RubyArray)certificates).isEmpty())) {
+                    untrustedCerts = getCertsFromResp(context);
+                    
+                    Iterator<java.security.cert.Certificate> certIt = ((RubyArray)certificates).iterator();
+                    while (certIt.hasNext()) {
+                        try {
+                            untrustedCerts.add(X509Cert.wrap(context, certIt.next().getEncoded()));
+                        }
+                        catch (CertificateEncodingException e) {
+                            throw newOCSPError(runtime, e);
+                        }
+                    }
+                }
+                else {
+                    untrustedCerts = getCertsFromResp(context);
+                }
+                
+                RubyArray rUntrustedCerts = RubyArray.newArray(runtime, untrustedCerts);
+                X509StoreContext ctx;
+                try {
+                    ctx = X509StoreContext.newStoreContext(context, (X509Store)store, X509Cert.wrap(runtime, signer), rUntrustedCerts);
+                }
+                catch (CertificateEncodingException e) {
+                    throw newOCSPError(runtime, e);
+                }
+                
+                ctx.set_purpose(context, _X509(runtime).getConstant("PURPOSE_OCSP_HELPER"));
+                ret = ctx.verify(context).isTrue();
+                IRubyObject chain = ctx.chain(context);
+                
+                if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHECKS))) > 0) {
+                    ret = true;
+                }
+                
+                try {
+                    if (checkIssuer(getBasicOCSPResp(), chain)) return RubyBoolean.newBoolean(runtime, true);
+                }
+                catch (IOException e) {
+                    throw newOCSPError(runtime, e);
+                }
+                
+                if ((flags & RubyFixnum.fix2int((RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCHAIN))) != 0) {
+                    return RubyBoolean.newBoolean(runtime, ret);
+                }
+                else {
+                    X509Cert rootCA = (X509Cert)((RubyArray)chain).last();
+                    PublicKey rootKey = rootCA.getAuxCert().getPublicKey();
+                    try {
+                        // check if self-signed and valid (trusts itself)
+                        rootCA.getAuxCert().verify(rootKey);
+                        ret = true;
+                    }
+                    catch (Exception e) {
+                        ret = false;
+                    }
+                }
+            }
+            
+            return RubyBoolean.newBoolean(runtime, ret);
         }
-        
-        return RubyBoolean.newBoolean(runtime, ret);
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
     
     @JRubyMethod(name = "status")

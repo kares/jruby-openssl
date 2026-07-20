@@ -246,6 +246,9 @@ public class PKCS7 extends RubyObject {
         catch (PKCS7Exception e) {
             throw newPKCS7Error(runtime, e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
         final PKCS7 pkcs7 = wrap(runtime, pkcs7Impl);
         pkcs7.setData(data);
         return pkcs7;
@@ -288,6 +291,9 @@ public class PKCS7 extends RubyObject {
         }
         catch (PKCS7Exception pkcs7e) {
             throw newPKCS7Error(self.getRuntime(), pkcs7e);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
         final PKCS7 pkcs7 = wrap(runtime, pkcs7Impl);
         pkcs7.setData(data);
@@ -709,6 +715,9 @@ public class PKCS7 extends RubyObject {
         catch (PKCS7Exception ex) {
             LOG.debugStack(runtime, null, ex);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
 
         IRubyObject data = membio2str(runtime, out, true);
         setData(data);
@@ -738,6 +747,9 @@ public class PKCS7 extends RubyObject {
         catch (PKCS7Exception ex) {
             LOG.debugStack(context.runtime, null, ex);
             throw newPKCS7Error(context.runtime, ex);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
         }
         return membio2str(context.runtime, out, true);
     }

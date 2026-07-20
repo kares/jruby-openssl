@@ -244,6 +244,9 @@ public class PKeyRSA extends PKey {
         catch (RuntimeException e) {
             throw newRSAError(context.runtime, e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(rest = true, visibility = Visibility.PRIVATE)
@@ -683,6 +686,9 @@ public class PKeyRSA extends PKey {
         catch (GeneralSecurityException gse) {
             throw newRSAError(runtime, gse.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     @Override
@@ -715,6 +721,8 @@ public class PKeyRSA extends PKey {
                     return StringHelper.newString(runtime, signWithPSS(hashBytes, digestAlg, mgf1Alg, saltLen));
                 } catch (IllegalArgumentException | GeneralSecurityException e) {
                     throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
+                } catch (Throwable ex) {
+                    return handlePotentialOperationError(runtime, ex);
                 }
             }
         }
@@ -732,6 +740,8 @@ public class PKeyRSA extends PKey {
             throw newRSAError(runtime, "invalid key");
         } catch (SignatureException e) {
             throw newRSAError(runtime, e.getMessage());
+        } catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 
@@ -771,6 +781,8 @@ public class PKeyRSA extends PKey {
             throw newRSAError(runtime, "invalid key");
         } catch (SignatureException e) {
             return runtime.getFalse();
+        } catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 
@@ -830,6 +842,8 @@ public class PKeyRSA extends PKey {
                     signedData = signDataWithPSS(runtime, data.convertToString(), digestAlg, mgf1Alg, saltLen);
                 } catch (IllegalArgumentException | GeneralSecurityException e) {
                     throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
+                } catch (Throwable ex) {
+                    return handlePotentialOperationError(runtime, ex);
                 }
                 return StringHelper.newString(runtime, signedData);
             }
@@ -869,6 +883,8 @@ public class PKeyRSA extends PKey {
             signedData = signDataWithPSS(runtime, args[1].convertToString(), digestAlg, mgf1Alg, saltLen);
         } catch (IllegalArgumentException | GeneralSecurityException e) {
             throw (RaiseException) newRSAError(runtime, e.getMessage()).initCause(e);
+        } catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
         return StringHelper.newString(runtime, signedData);
     }
@@ -921,6 +937,8 @@ public class PKeyRSA extends PKey {
         } catch (Exception e) {
             LOG.debugStack(runtime, null, e);
             return runtime.getNil();
+        } catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
         return runtime.newBoolean(verified);
     }

@@ -91,6 +91,7 @@ import org.jruby.ext.openssl.impl.ECPrivateKeyWithName;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 
 import static org.jruby.ext.openssl.impl.PKey.readECPrivateKey;
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
@@ -547,6 +548,9 @@ public final class PKeyEC extends PKey {
         catch (GeneralSecurityException ex) {
             throw (RaiseException) newECError(context.runtime, ex.toString()).initCause(ex);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
         return this;
     }
 
@@ -577,6 +581,9 @@ public final class PKeyEC extends PKey {
         catch (Exception ex) {
             throw newECError(context.runtime, ex.toString(), ex);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(name = "dsa_verify_asn1")
@@ -590,6 +597,9 @@ public final class PKeyEC extends PKey {
         }
         catch (GeneralSecurityException ex) {
             throw newECError(runtime, "invalid signature: " + ex.getMessage(), ex);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 
@@ -620,6 +630,9 @@ public final class PKeyEC extends PKey {
             LOG.debugStack(runtime, null, ex);
             return runtime.getFalse();
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     @JRubyMethod(name = "dh_compute_key")
@@ -647,6 +660,9 @@ public final class PKeyEC extends PKey {
         }
         catch (GeneralSecurityException ex) {
             throw newECError(context.runtime, ex.toString());
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
         }
     }
 

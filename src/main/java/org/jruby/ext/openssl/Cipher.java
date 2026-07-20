@@ -69,6 +69,7 @@ import org.jruby.ext.openssl.log.Logger;
 
 import static javax.crypto.Cipher.DECRYPT_MODE;
 import static javax.crypto.Cipher.ENCRYPT_MODE;
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
@@ -759,7 +760,12 @@ public class Cipher extends RubyObject {
         if ( cipher != null ) {
             throw runtime.newRuntimeError("Cipher already initialized");
         }
-        updateCipher(name, padding);
+        try {
+            updateCipher(name, padding);
+        }
+        catch (Throwable ex) {
+            handlePotentialOperationError(runtime, ex);
+        }
     }
 
 
@@ -768,35 +774,41 @@ public class Cipher extends RubyObject {
     public IRubyObject initialize_copy(final IRubyObject obj) {
         if ( this == obj ) return this;
 
-        checkFrozen();
+        final Ruby runtime = getRuntime();
+        try {
+            checkFrozen();
 
-        final Cipher other = (Cipher) obj;
-        cryptoBase = other.cryptoBase;
-        cryptoVersion = other.cryptoVersion;
-        cryptoMode = other.cryptoMode;
-        paddingType = other.paddingType;
-        realName = other.realName;
-        name = other.name;
-        keyLength = other.keyLength;
-        ivLength = other.ivLength;
-        encryptMode = other.encryptMode;
-        cipherInited = false;
-        if ( other.key != null ) {
-            key = Arrays.copyOf(other.key, other.key.length);
-        } else {
-            key = null;
+            final Cipher other = (Cipher) obj;
+            cryptoBase = other.cryptoBase;
+            cryptoVersion = other.cryptoVersion;
+            cryptoMode = other.cryptoMode;
+            paddingType = other.paddingType;
+            realName = other.realName;
+            name = other.name;
+            keyLength = other.keyLength;
+            ivLength = other.ivLength;
+            encryptMode = other.encryptMode;
+            cipherInited = false;
+            if ( other.key != null ) {
+                key = Arrays.copyOf(other.key, other.key.length);
+            } else {
+                key = null;
+            }
+            if (other.realIV != null) {
+                realIV = Arrays.copyOf(other.realIV, other.realIV.length);
+            } else {
+                realIV = null;
+            }
+            this.orgIV = this.realIV;
+            padding = other.padding;
+
+            cipher = getCipherInstance();
+
+            return this;
         }
-        if (other.realIV != null) {
-            realIV = Arrays.copyOf(other.realIV, other.realIV.length);
-        } else {
-            realIV = null;
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
-        this.orgIV = this.realIV;
-        padding = other.padding;
-
-        cipher = getCipherInstance();
-
-        return this;
     }
 
     @JRubyMethod
@@ -928,29 +940,44 @@ public class Cipher extends RubyObject {
 
     @JRubyMethod(optional = 2)
     public IRubyObject encrypt(final ThreadContext context, IRubyObject[] args) {
-        this.realIV = orgIV;
-        init(context, args, true);
-        return this;
+        try {
+            this.realIV = orgIV;
+            init(context, args, true);
+            return this;
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(optional = 2)
     public IRubyObject decrypt(final ThreadContext context, IRubyObject[] args) {
-        this.realIV = orgIV;
-        init(context, args, false);
-        return this;
+        try {
+            this.realIV = orgIV;
+            init(context, args, false);
+            return this;
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod
     public IRubyObject reset(final ThreadContext context) {
         final Ruby runtime = context.runtime;
-        checkCipherNotNull(runtime);
-        if ( ! isStreamCipher() ) {
-            this.realIV = orgIV;
-            // CRuby's reset calls EVP_CipherInit_ex with NULL key/IV which
-            // is a no-op if key hasn't been set yet. Match that behavior.
-            if ( key != null ) doInitCipher(runtime);
+        try {
+            checkCipherNotNull(runtime);
+            if ( ! isStreamCipher() ) {
+                this.realIV = orgIV;
+                // CRuby's reset calls EVP_CipherInit_ex with NULL key/IV which
+                // is a no-op if key hasn't been set yet. Match that behavior.
+                if ( key != null ) doInitCipher(runtime);
+            }
+            return this;
         }
-        return this;
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     private void updateCipher(final String name, final String padding) {
@@ -1018,20 +1045,25 @@ public class Cipher extends RubyObject {
             throw newCipherError(runtime, "salt must be an 8-octet string");
         }
 
-        final String algorithm;
-        if ( vdigest.isNil() ) algorithm = "MD5";
-        else {
-            algorithm = (vdigest instanceof Digest) ? ((Digest) vdigest).getAlgorithm() : vdigest.asJavaString();
+        try {
+            final String algorithm;
+            if ( vdigest.isNil() ) algorithm = "MD5";
+            else {
+                algorithm = (vdigest instanceof Digest) ? ((Digest) vdigest).getAlgorithm() : vdigest.asJavaString();
+            }
+            final MessageDigest digest = Digest.getDigest(runtime, algorithm);
+            KeyAndIv result = evpBytesToKey(keyLength, ivLength, digest, salt, pass, iter);
+            this.key = result.key;
+            this.realIV = result.iv;
+            this.orgIV = this.realIV;
+
+            doInitCipher(runtime);
+
+            return runtime.getNil();
         }
-        final MessageDigest digest = Digest.getDigest(runtime, algorithm);
-        KeyAndIv result = evpBytesToKey(keyLength, ivLength, digest, salt, pass, iter);
-        this.key = result.key;
-        this.realIV = result.iv;
-        this.orgIV = this.realIV;
-
-        doInitCipher(runtime);
-
-        return runtime.getNil();
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     private void doInitCipher(final Ruby runtime) {
@@ -1090,6 +1122,10 @@ public class Cipher extends RubyObject {
             LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
         }
+        catch (Throwable ex) {
+            handlePotentialOperationError(runtime, ex);
+        }
+
         cipherInited = true;
         processedDataBytes = 0;
 
@@ -1179,6 +1215,9 @@ public class Cipher extends RubyObject {
         catch (Exception e) {
             LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
 
         if ( buffer == null ) return RubyString.newString(runtime, str);
@@ -1278,6 +1317,9 @@ public class Cipher extends RubyObject {
             LOG.debugStack(runtime, null, e);
             throw (RaiseException) newCipherError(runtime, e).initCause(e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
         return RubyString.newString(runtime, str);
     }
 
@@ -1367,8 +1409,14 @@ public class Cipher extends RubyObject {
 
     @JRubyMethod(name = "padding=")
     public IRubyObject set_padding(IRubyObject padding) {
-        updateCipher(name, padding.toString());
-        return padding;
+        final Ruby runtime = getRuntime();
+        try {
+            updateCipher(name, padding.toString());
+            return padding;
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     private transient ByteList auth_tag;

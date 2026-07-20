@@ -57,6 +57,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.Digest._Digest;
 import static org.jruby.ext.openssl.OCSP.*;
 
@@ -87,6 +88,7 @@ public class OCSPCertificateId extends RubyObject {
     
     @JRubyMethod(name = "initialize", visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, IRubyObject subject, IRubyObject issuer, IRubyObject digest) {           
+        final Ruby runtime = context.runtime;
         if (digest == null || digest.isNil()) {
             return initialize(context, subject, issuer);
         }
@@ -95,7 +97,12 @@ public class OCSPCertificateId extends RubyObject {
         originalIssuer = (X509Cert) issuer;
         BigInteger serial = subjectCert.getSerial();        
         
-        return initializeImpl(context.runtime, serial, originalIssuer, digest);
+        try {
+            return initializeImpl(runtime, serial, originalIssuer, digest);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
     
     @JRubyMethod(name = "initialize", visibility = Visibility.PRIVATE)
@@ -105,11 +112,15 @@ public class OCSPCertificateId extends RubyObject {
         X509Cert subjectCert = (X509Cert) subject;
         originalIssuer = (X509Cert) issuer;
         BigInteger serial = subjectCert.getSerial();
+        try {
+            Digest digest = new Digest(runtime, _Digest(runtime));
+            digest.initializeImpl(runtime, RubyString.newString(runtime, "SHA1"), runtime.getNil());
 
-        Digest digest = new Digest(runtime, _Digest(runtime));
-        digest.initializeImpl(runtime, RubyString.newString(runtime, "SHA1"), runtime.getNil());
-        
-        return initializeImpl(runtime, serial, originalIssuer, digest);
+            return initializeImpl(runtime, serial, originalIssuer, digest);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
     
     @JRubyMethod(name = "initialize", visibility = Visibility.PRIVATE)

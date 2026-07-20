@@ -35,7 +35,6 @@ import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyModule;
 import org.jruby.RubyObject;
-import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -43,6 +42,7 @@ import org.jruby.util.ByteList;
 import org.jruby.runtime.Visibility;
 import org.jruby.ext.openssl.log.Logger;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 
 /**
@@ -97,6 +97,9 @@ public class HMAC extends RubyObject {
             LOG.debugStack(runtime, "digest", e);
             throw newHMACError(runtime, e.getMessage(), e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     @JRubyMethod(name = "hexdigest", meta = true)
@@ -117,6 +120,9 @@ public class HMAC extends RubyObject {
         catch (GeneralSecurityException|IllegalArgumentException e) {
             LOG.debugStack(runtime, "hexdigest", e);
             throw newHMACError(runtime, e.getMessage(), e);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 
@@ -143,6 +149,9 @@ public class HMAC extends RubyObject {
             LOG.debugStack(getRuntime(), "initialize", e);
             throw newHMACError(getRuntime(), e.getMessage(), e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(getRuntime(), ex);
+        }
         return this;
     }
 
@@ -167,6 +176,9 @@ public class HMAC extends RubyObject {
             LOG.debugStack(getRuntime(), "initialize_copy", e);
             throw newHMACError(getRuntime(), e.getMessage(), e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(getRuntime(), ex);
+        }
 
         data = new ByteList(that.data);
 
@@ -187,18 +199,22 @@ public class HMAC extends RubyObject {
 
     @JRubyMethod
     public IRubyObject digest() {
-        return RubyString.newString( getRuntime(), getSignatureBytes() );
+        return StringHelper.newString(getRuntime(), getSignatureBytes());
     }
 
     @JRubyMethod(name = { "hexdigest", "inspect", "to_s" })
     public IRubyObject hexdigest() {
-        return getRuntime().newString( toHEX(getSignatureBytes()) );
+        return getRuntime().newString(toHEX(getSignatureBytes()));
     }
 
     private byte[] getSignatureBytes() {
-        mac.reset();
-        mac.update(data.getUnsafeBytes(), data.getBegin(), data.getRealSize());
-        return mac.doFinal();
+        try {
+            mac.reset();
+            mac.update(data.getUnsafeBytes(), data.getBegin(), data.getRealSize());
+            return mac.doFinal();
+        } catch (Throwable ex) {
+            return handlePotentialOperationError(getRuntime(), ex);
+        }
     }
 
     static String getDigestAlgorithmName(final IRubyObject digest) {
@@ -226,4 +242,4 @@ public class HMAC extends RubyObject {
     private static RaiseException newHMACError(Ruby runtime, String message, Throwable cause) {
         return newError(runtime, runtime.getModule("OpenSSL").getClass("HMACError"), message, cause);
     }
-}// HMAC
+}

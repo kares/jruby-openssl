@@ -178,6 +178,9 @@ public class PKeyDSA extends PKey {
         catch (RuntimeException e) {
             throw newDSAError(context.runtime, e.getMessage(), e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(rest = true, visibility = Visibility.PRIVATE)
@@ -462,6 +465,9 @@ public class PKeyDSA extends PKey {
         catch (GeneralSecurityException ex) {
             throw newDSAError(runtime, ex.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     // In OpenSSL, sign_raw/verify_raw are base-class PKey methods that use EVP_PKEY_sign /
@@ -485,6 +491,9 @@ public class PKeyDSA extends PKey {
         catch (GeneralSecurityException ex) {
             throw newDSAError(context.runtime, ex.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
 
     @JRubyMethod(name = "verify_raw")
@@ -504,6 +513,9 @@ public class PKeyDSA extends PKey {
         catch (InvalidKeyException e) {
             throw newDSAError(runtime, "invalid key");
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     @JRubyMethod // ossl_dsa_verify
@@ -522,6 +534,9 @@ public class PKeyDSA extends PKey {
         }
         catch (InvalidKeyException e) {
             throw newDSAError(runtime, "invalid key");
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 

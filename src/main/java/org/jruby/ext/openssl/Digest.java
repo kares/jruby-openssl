@@ -123,7 +123,7 @@ public class Digest extends RubyObject {
         }
         catch (NoSuchAlgorithmException e) {
             LOG.debug(runtime, "getDigest", e);
-            throw runtime.newNotImplementedError("Unsupported digest algorithm (" + name + ")");
+            throw newDigestError(runtime, "unsupported digest algorithm: " + name, e);
         }
     }
 

@@ -32,11 +32,14 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.anno.JRubyModule;
 import org.jruby.common.IRubyWarnings;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.util.ExceptionUtil;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.runtime.callsite.FunctionalCachingCallSite;
 import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
+
+import static org.jruby.ext.openssl.util.RubySupport.newSecurityError;
 
 /**
  * OpenSSL (methods as well as an entry point)
@@ -296,6 +299,11 @@ public final class OpenSSL {
     }
 
     // internals
+
+    static <T> T handlePotentialOperationError(final Ruby runtime, Throwable e) {
+        ExceptionUtil.handlePotentialOperationError(e, ex -> newSecurityError(runtime, ex));
+        return null; // never happens
+    }
 
     static IRubyObject to_der_if_possible(final ThreadContext context, IRubyObject obj) {
         if ( obj instanceof RubyString || obj instanceof RubyIO ) return obj;

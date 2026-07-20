@@ -41,6 +41,8 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
+
 /**
  * Wraps EdDSA keys (Ed25519, Ed448) using BouncyCastle's JCA EdDSA provider.
  *
@@ -190,6 +192,9 @@ public class PKeyEdDSA extends PKey {
         catch (GeneralSecurityException ex) {
             throw newPKeyError(runtime, ex.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     @Override
@@ -217,6 +222,9 @@ public class PKeyEdDSA extends PKey {
         }
         catch (NoSuchAlgorithmException e) {
             throw newPKeyError(runtime, "unsupported algorithm: " + getAlgorithm());
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 

@@ -220,33 +220,37 @@ public abstract class PKey extends RubyObject {
         public static IRubyObject generate_key(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
             final Ruby runtime = context.runtime;
             final IRubyObject arg = args[0];
+            try {
+                // a key acts as a template - generate a new key off its parameters
+                if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
 
-            // a key acts as a template - generate a new key off its parameters
-            if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
-
-            final String algorithm = arg.asJavaString();
-            if ( "HMAC".equalsIgnoreCase(algorithm) ) {
-                if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
-                final RubyString key = RubySupport.extractRubyStringOpt(context, args[1], "key", true);
-                if (key == null) throw newPKeyError(runtime, "missing key parameter");
-                return PKeyHMAC.newInstance(runtime, key);
+                final String algorithm = arg.asJavaString();
+                if ( "HMAC".equalsIgnoreCase(algorithm) ) {
+                    if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
+                    final RubyString key = RubySupport.extractRubyStringOpt(context, args[1], "key", true);
+                    if (key == null) throw newPKeyError(runtime, "missing key parameter");
+                    return PKeyHMAC.newInstance(runtime, key);
+                }
+                if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
+                    return PKeyEdDSA.generate(context, algorithm);
+                }
+                if ( "RSA".equalsIgnoreCase(algorithm) ) {
+                    return generateRSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
+                }
+                if ( "DSA".equalsIgnoreCase(algorithm) ) {
+                    return generateDSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
+                }
+                if ( "EC".equalsIgnoreCase(algorithm) ) {
+                    return generateECKey(context, args.length > 1 ? args[1] : runtime.getNil());
+                }
+                if ( "DH".equalsIgnoreCase(algorithm) ) {
+                    return generateDHKey(context, args.length > 1 ? args[1] : runtime.getNil());
+                }
+                throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
             }
-            if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
-                return PKeyEdDSA.generate(context, algorithm);
+            catch (Throwable ex) {
+                return handlePotentialOperationError(runtime, ex);
             }
-            if ( "RSA".equalsIgnoreCase(algorithm) ) {
-                return generateRSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
-            }
-            if ( "DSA".equalsIgnoreCase(algorithm) ) {
-                return generateDSAKey(context, args.length > 1 ? args[1] : runtime.getNil());
-            }
-            if ( "EC".equalsIgnoreCase(algorithm) ) {
-                return generateECKey(context, args.length > 1 ? args[1] : runtime.getNil());
-            }
-            if ( "DH".equalsIgnoreCase(algorithm) ) {
-                return generateDHKey(context, args.length > 1 ? args[1] : runtime.getNil());
-            }
-            throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
         }
 
         private static IRubyObject generateKeyFromParams(final ThreadContext context, final PKey baseKey) {
@@ -553,6 +557,9 @@ public abstract class PKey extends RubyObject {
         catch (GeneralSecurityException ex) {
             throw newPKeyError(runtime, ex.getMessage());
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
     }
 
     public ASN1Primitive toASN1PublicInfo() throws IOException {
@@ -612,6 +619,9 @@ public abstract class PKey extends RubyObject {
         }
         catch (InvalidKeyException e) {
             throw newPKeyError(runtime, "invalid key");
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 

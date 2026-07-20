@@ -70,7 +70,6 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -87,6 +86,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 
+import static org.jruby.ext.openssl.OpenSSL.handlePotentialOperationError;
 import static org.jruby.ext.openssl.OCSP.*;
 
 /*
@@ -226,7 +226,7 @@ public class OCSPRequest extends RubyObject {
         IRubyObject flags = context.nil;
         IRubyObject digest = context.nil;
         Digest digestInstance = new Digest(runtime, _Digest(runtime));
-        IRubyObject nocerts = (RubyFixnum)_OCSP(runtime).getConstant(OCSP_NOCERTS);
+        IRubyObject nocerts = _OCSP(runtime).getConstant(OCSP_NOCERTS);
         
         switch (Arity.checkArgumentCount(runtime, args, 2, 5)) {
             case 3 :
@@ -245,63 +245,69 @@ public class OCSPRequest extends RubyObject {
                 break;
                     
         }
-                
-        if (digest.isNil()) digest = digestInstance.initialize(context, new IRubyObject[] { RubyString.newString(runtime, "SHA1") });
-        if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int(nocerts);
-        if (!flags.isNil()) flag = RubyFixnum.fix2int(flags);
-                
-        X509Cert signer = (X509Cert) args[0];
-        PKey signerKey = (PKey) args[1];
-        
-        String keyAlg = signerKey.getAlgorithm();
-        String digAlg = ((Digest) digest).getShortAlgorithm();
-        
-        JcaContentSignerBuilder signerBuilder = newJcaContentSignerBuilder(digAlg + "with" + keyAlg);
-        ContentSigner contentSigner;
-        try {
-            contentSigner = signerBuilder.build(signerKey.getPrivateKey());
-        }
-        catch (OperatorCreationException e) {
-            throw newOCSPError(runtime, e);
-        }
 
-        OCSPReqBuilder builder = new OCSPReqBuilder();
-        builder.setRequestorName(signer.getSubject().getX500Name());
-        for (OCSPCertificateId certId : certificateIds) {
-            builder.addRequest(new CertificateID(certId.getCertID()));
-        }
-        
-        List<X509CertificateHolder> certChain = new ArrayList<X509CertificateHolder>();
-        if (flag != RubyFixnum.fix2int(nocerts)) {
+        try {
+            if (digest.isNil()) digest = digestInstance.initialize(context, RubyString.newString(runtime, "SHA1"));
+            if (additionalCerts.isNil()) flag |= RubyFixnum.fix2int(nocerts);
+            if (!flags.isNil()) flag = RubyFixnum.fix2int(flags);
+                    
+            X509Cert signer = (X509Cert) args[0];
+            PKey signerKey = (PKey) args[1];
+            
+            String keyAlg = signerKey.getAlgorithm();
+            String digAlg = ((Digest) digest).getShortAlgorithm();
+            
+            JcaContentSignerBuilder signerBuilder = newJcaContentSignerBuilder(digAlg + "with" + keyAlg);
+            ContentSigner contentSigner;
             try {
-                certChain.add(new X509CertificateHolder(signer.getAuxCert().getEncoded()));
-                if (!additionalCerts.isNil()) {
-                    Iterator<java.security.cert.Certificate> certIt = ((RubyArray)additionalCerts).iterator();
-                    while (certIt.hasNext()) {
-                        certChain.add(new X509CertificateHolder(certIt.next().getEncoded()));
+                contentSigner = signerBuilder.build(signerKey.getPrivateKey());
+            }
+            catch (OperatorCreationException e) {
+                throw newOCSPError(runtime, e);
+            }
+
+            OCSPReqBuilder builder = new OCSPReqBuilder();
+            builder.setRequestorName(signer.getSubject().getX500Name());
+            for (OCSPCertificateId certId : certificateIds) {
+                builder.addRequest(new CertificateID(certId.getCertID()));
+            }
+            
+            List<X509CertificateHolder> certChain = new ArrayList<>();
+            if (flag != RubyFixnum.fix2int(nocerts)) {
+                try {
+                    certChain.add(new X509CertificateHolder(signer.getAuxCert().getEncoded()));
+                    if (!additionalCerts.isNil()) {
+                        Iterator<java.security.cert.Certificate> certIt = ((RubyArray)additionalCerts).iterator();
+                        while (certIt.hasNext()) {
+                            certChain.add(new X509CertificateHolder(certIt.next().getEncoded()));
+                        }
                     }
                 }
+                catch (Exception e) {
+                    throw newOCSPError(runtime, e);
+                }
+            }
+            
+            X509CertificateHolder[] chain = new X509CertificateHolder[certChain.size()];
+            certChain.toArray(chain);
+            
+            try {
+                asn1bcReq = org.bouncycastle.asn1.ocsp.OCSPRequest.getInstance(builder.build(contentSigner, chain).getEncoded());
             }
             catch (Exception e) {
                 throw newOCSPError(runtime, e);
             }
-        }
-        
-        X509CertificateHolder[] chain = new X509CertificateHolder[certChain.size()];
-        certChain.toArray(chain);
-        
-        try {
-            asn1bcReq = org.bouncycastle.asn1.ocsp.OCSPRequest.getInstance(builder.build(contentSigner, chain).getEncoded());
-        }
-        catch (Exception e) {
-            throw newOCSPError(runtime, e);
-        }
+            //catch (Throwable ex) {
+            //    handlePotentialOperationError(ex, e -> newSecurityError(runtime, e));
+            //}
 
-        if (nonce != null) {
-            addNonceImpl();
+            if (nonce != null) addNonceImpl();
+                    
+            return this;
         }
-                
-        return this;
+        catch (Throwable ex) {
+            return handlePotentialOperationError(context.runtime, ex);
+        }
     }
         
     @JRubyMethod(name = "verify", rest = true)
@@ -376,6 +382,9 @@ public class OCSPRequest extends RubyObject {
         catch (Exception e) {
             LOG.debugStack(runtime, null, e);
             throw newOCSPError(runtime, e);
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
         
         return RubyBoolean.newBoolean(getRuntime(), ret);

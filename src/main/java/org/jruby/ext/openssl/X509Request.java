@@ -37,7 +37,6 @@ import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.PublicKey;
-import java.security.PrivateKey;
 
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -408,6 +407,9 @@ public class X509Request extends RubyObject {
             LOG.debugStack(runtime, "sign", e);
             throw newRequestError(runtime, e);
         }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
+        }
         return this;
     }
 
@@ -443,6 +445,9 @@ public class X509Request extends RubyObject {
         catch (RuntimeException e) {
             LOG.debugStack(runtime, "verify", e);
             return context.nil;
+        }
+        catch (Throwable ex) {
+            return handlePotentialOperationError(runtime, ex);
         }
     }
 

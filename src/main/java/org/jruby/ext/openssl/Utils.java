@@ -197,13 +197,19 @@ final class Utils {
 
     static String extractStringOpt(ThreadContext context, IRubyObject opts,
                                    String key, boolean tryStringKey) {
+        final RubyString val = extractRubyStringOpt(context, opts, key, tryStringKey);
+        return val == null ? null : val.asJavaString();
+    }
+
+    static RubyString extractRubyStringOpt(ThreadContext context, IRubyObject opts,
+                                           String key, boolean tryStringKey) {
         if (!(opts instanceof RubyHash)) return null;
         RubyHash hash = (RubyHash) opts;
         // OpenSSL option hashes may use string or symbol keys — try both.
         IRubyObject val = hash.fastARef(context.runtime.newSymbol(key));
         if (val == null && tryStringKey) val = hash.fastARef(context.runtime.newString(key));
         if (val == null || val.isNil()) return null;
-        return val.convertToString().asJavaString();
+        return val.convertToString();
     }
 
     static int extractIntOpt(ThreadContext context, IRubyObject opts,

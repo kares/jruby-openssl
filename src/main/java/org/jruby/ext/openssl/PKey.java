@@ -220,6 +220,12 @@ public abstract class PKey extends RubyObject {
             if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
 
             final String algorithm = arg.asJavaString();
+            if ( "HMAC".equalsIgnoreCase(algorithm) ) {
+                if (args.length < 2) throw newPKeyError(runtime, "missing key parameter");
+                final RubyString key = Utils.extractRubyStringOpt(context, args[1], "key", true);
+                if (key == null) throw newPKeyError(runtime, "missing key parameter");
+                return PKeyHMAC.newInstance(runtime, key);
+            }
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                 return PKeyEdDSA.generate(runtime, algorithm);
             }
@@ -248,6 +254,9 @@ public abstract class PKey extends RubyObject {
             IRubyObject type, IRubyObject key) {
             final Ruby runtime = context.runtime;
             final String algorithm = type.asJavaString();
+            if ( "HMAC".equalsIgnoreCase(algorithm) ) {
+                return PKeyHMAC.newInstance(runtime, key.convertToString());
+            }
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                 final byte[] bytes = key.convertToString().getBytes();
                 return PKeyEdDSA.fromRawPrivateKey(runtime, algorithm, bytes);
@@ -293,6 +302,16 @@ public abstract class PKey extends RubyObject {
     public String getKeyType() { return getAlgorithm(); }
 
     public boolean isPrivateKey() { return getPrivateKey() != null; }
+
+    @JRubyMethod(name = { "public?", "public_key?" })
+    public IRubyObject public_p() {
+        return getRuntime().newBoolean(getPublicKey() != null);
+    }
+
+    @JRubyMethod(name = { "private?", "private_key?" })
+    public IRubyObject private_p() {
+        return getRuntime().newBoolean(isPrivateKey());
+    }
 
     public abstract RubyString to_der();
 

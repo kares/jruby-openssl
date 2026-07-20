@@ -9,7 +9,7 @@ DO NOT MODIFY - GENERATED CODE
 <project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>rubygems</groupId>
+  <groupId>org.jruby.openssl</groupId>
   <artifactId>jruby-openssl</artifactId>
   <version>0.19.0.dev-SNAPSHOT</version>
   <packaging>gem</packaging>
@@ -1191,7 +1191,7 @@ DO NOT MODIFY - GENERATED CODE
                 <configuration>
                   <file>${project.build.directory}/${project.build.finalName}.jar</file>
                   <sources>${project.build.directory}/${project.build.finalName}-sources.jar</sources>
-                  <groupId>${jar-release.groupId}</groupId>
+                  <groupId>${project.groupId}</groupId>
                   <artifactId>${project.artifactId}</artifactId>
                   <version>${project.version}</version>
                   <packaging>jar</packaging>
@@ -1205,7 +1205,6 @@ DO NOT MODIFY - GENERATED CODE
       </build>
       <properties>
         <gem.deploy.skip>true</gem.deploy.skip>
-        <jar-release.groupId>org.jruby.openssl</jar-release.groupId>
         <jar-release.repositoryId>ossrh</jar-release.repositoryId>
         <jar-release.url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</jar-release.url>
       </properties>

@@ -1,6 +1,13 @@
 #-*- mode: ruby -*-
 
+load File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
+
 gemspec jar: 'jopenssl'
+# gemspec defaults to 'rubygems' groupId
+# `id` resets the version, so pass full GAV (gem 0.20.0.dev -> Maven -SNAPSHOT)
+maven_version = JOpenSSL::VERSION
+maven_version += "-SNAPSHOT" if JOpenSSL::VERSION.match?(/[a-zA-Z]/)
+id "org.jruby.openssl:jruby-openssl:#{maven_version}"
 
 distribution_management do
   snapshot_repository id: :ossrh, url: 'https://oss.sonatype.org/content/repositories/snapshots'
@@ -175,7 +182,6 @@ profile id: 'jar-release' do
   jar_release_src = jar_release_src.map { |f| f.sub(%r{\Asrc/main/java/}, '') } # relative to directory
 
   properties 'gem.deploy.skip' => 'true', # publish only the jar, not the gem
-             'jar-release.groupId' => 'org.jruby.openssl',
              'jar-release.repositoryId' => 'ossrh',
              # release staging by default; override with the snapshots url for SNAPSHOT versions
              'jar-release.url' => 'https://oss.sonatype.org/service/local/staging/deploy/maven2/'
@@ -243,7 +249,7 @@ profile id: 'jar-release' do
     execute_goal 'deploy-file', id: 'jar-release-deploy', phase: 'deploy',
         file: jar_release_file,
         sources: jar_release_sources,
-        groupId: '${jar-release.groupId}',
+        groupId: '${project.groupId}',
         artifactId: '${project.artifactId}',
         version: '${project.version}',
         packaging: 'jar',

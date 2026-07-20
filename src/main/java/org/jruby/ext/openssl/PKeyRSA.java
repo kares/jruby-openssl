@@ -83,6 +83,7 @@ import org.jruby.RubySymbol;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.PKeyShim;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
@@ -918,7 +919,7 @@ public class PKeyRSA extends PKey {
         if (saltLenArg instanceof RubySymbol) {
             String sym = saltLenArg.asJavaString();
             if ("auto".equals(sym)) {
-                saltLen = autoPSSSaltLength(publicKey, sigBytes, digestAlg, mgf1Alg);
+                saltLen = PKeyShim.autoPSSSaltLength(publicKey, dataBytes, sigBytes, digestAlg, mgf1Alg);
                 if (saltLen < 0) return runtime.getFalse();
             } else if ("max".equals(sym)) {
                 saltLen = maxPSSSaltLength(digestAlg, publicKey.getModulus().bitLength());
@@ -975,7 +976,7 @@ public class PKeyRSA extends PKey {
         return new AlgorithmIdentifier(oid, DERNull.INSTANCE);
     }
 
-    private static int getDigestLength(String digestAlg) {
+    public static int getDigestLength(String digestAlg) {
         String upper = digestAlg.toUpperCase().replace("-", "");
         switch (upper) {
             case "SHA1": case "SHA": return 20;
@@ -987,7 +988,7 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    private static String toJcaDigestName(final String digestAlg) {
+    public static String getJcaDigestName(final String digestAlg) {
         String upper = digestAlg.toUpperCase().replace("-", "");
         switch (upper) {
             case "SHA1": case "SHA": return "SHA-1";
@@ -1000,13 +1001,13 @@ public class PKeyRSA extends PKey {
         }
     }
 
-    private static PSSParameterSpec buildPSSParameterSpec(String javaDigestAlg, String javaMgf1Alg, int saltLen) {
+    public static PSSParameterSpec buildPSSParameterSpec(String javaDigestAlg, String javaMgf1Alg, int saltLen) {
         final MGF1ParameterSpec mgfSpec = new MGF1ParameterSpec(javaMgf1Alg);
         return new PSSParameterSpec(javaDigestAlg, "MGF1", mgfSpec, saltLen, 1);
     }
 
-    private static byte[] mgf1(byte[] seed, int maskLen, String digestAlg) throws NoSuchAlgorithmException {
-        MessageDigest digest = SecurityHelper.getMessageDigest(toJcaDigestName(digestAlg));
+    public static byte[] mgf1(byte[] seed, int maskLen, String digestAlg) throws NoSuchAlgorithmException {
+        MessageDigest digest = SecurityHelper.getMessageDigest(getJcaDigestName(digestAlg));
         byte[] mask = new byte[maskLen];
         byte[] counter = new byte[4];
         int offset = 0;
@@ -1043,9 +1044,9 @@ public class PKeyRSA extends PKey {
         return em;
     }
 
-    private static byte[] pssHash(final byte[] hashBytes, final byte[] salt, final String digestAlg)
+    private static byte[] hashPSS(final byte[] hashBytes, final byte[] salt, final String digestAlg)
         throws NoSuchAlgorithmException {
-        final MessageDigest digest = SecurityHelper.getMessageDigest(toJcaDigestName(digestAlg));
+        final MessageDigest digest = SecurityHelper.getMessageDigest(getJcaDigestName(digestAlg));
         digest.update(new byte[8]);
         digest.update(hashBytes);
         digest.update(salt);
@@ -1068,7 +1069,7 @@ public class PKeyRSA extends PKey {
         final byte[] salt = new byte[saltLen];
         getSecureRandom(getRuntime().getCurrentContext()).nextBytes(salt);
 
-        final byte[] h = pssHash(hashBytes, salt, digestAlg);
+        final byte[] h = hashPSS(hashBytes, salt, digestAlg);
         final int dbLen = emLen - hLen - 1;
         final byte[] db = new byte[dbLen];
         db[dbLen - saltLen - 1] = 0x01;
@@ -1123,7 +1124,7 @@ public class PKeyRSA extends PKey {
 
         final byte[] salt = new byte[saltLen];
         System.arraycopy(db, psLen + 1, salt, 0, saltLen);
-        final byte[] expectedH = pssHash(hashBytes, salt, digestAlg);
+        final byte[] expectedH = hashPSS(hashBytes, salt, digestAlg);
         return MessageDigest.isEqual(h, expectedH);
     }
 
@@ -1140,8 +1141,8 @@ public class PKeyRSA extends PKey {
                                          final byte[] inputBytes,
                                          final String digestAlg, final String mgf1Alg,
                                          int saltLen, byte[] sigBytes) {
-        final String javaDigestAlg = toJcaDigestName(digestAlg);
-        final String javaMgf1Alg = toJcaDigestName(mgf1Alg);
+        final String javaDigestAlg = getJcaDigestName(digestAlg);
+        final String javaMgf1Alg = getJcaDigestName(mgf1Alg);
         // when content and MGF1 digests differ, JCA providers reject the params
         if (!rawVerify && javaDigestAlg.equals(javaMgf1Alg)) {
             try {
@@ -1172,8 +1173,8 @@ public class PKeyRSA extends PKey {
 
     private byte[] signDataWithPSS(Ruby runtime, RubyString data, String digestAlg, String mgf1Alg, int saltLen)
         throws GeneralSecurityException, IllegalArgumentException {
-        final String javaDigestAlg = toJcaDigestName(digestAlg);
-        final String javaMgf1Alg = toJcaDigestName(mgf1Alg);
+        final String javaDigestAlg = getJcaDigestName(digestAlg);
+        final String javaMgf1Alg = getJcaDigestName(mgf1Alg);
 
         final ByteList dataBytes = data.getByteList();
         // when content and MGF1 digests match, use standard JCA RSASSA-PSS
@@ -1192,68 +1193,9 @@ public class PKeyRSA extends PKey {
 
     // Maximum PSS salt length per RFC 8017 §9.1.1:
     //   emLen = ceil((keyBits - 1) / 8),  maxSalt = emLen - 2 - hLen
-    private static int maxPSSSaltLength(String digestAlg, int keyBits) {
+    public static int maxPSSSaltLength(String digestAlg, int keyBits) {
         final int emLen = (keyBits - 1 + 7) / 8;
         return emLen - 2 - getDigestLength(digestAlg);
-    }
-
-    // Extracts the actual PSS salt length from a signature by parsing the PSS-encoded message;
-    // returns -1 if the encoding is invalid (not a well-formed PSS block)
-    private static int autoPSSSaltLength(RSAPublicKey pubKey, byte[] sigBytes, String digestAlg, String mgf1Alg) {
-        final byte[] raw;
-        try {
-            javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
-            rsa.init(DECRYPT_MODE, pubKey);
-            raw = rsa.doFinal(sigBytes);
-        }
-        catch (GeneralSecurityException e) {
-            return -1;
-        }
-
-        // emLen = ceil((modBits - 1) / 8) per RFC 8017 §9.1.1
-        int emLen = (pubKey.getModulus().bitLength() - 1 + 7) / 8;
-
-        // RSA raw output may be shorter than emLen if leading bytes are zero;
-        // left-pad with zeros to the expected length.
-        byte[] em;
-        if (raw.length < emLen) {
-            em = new byte[emLen];
-            System.arraycopy(raw, 0, em, emLen - raw.length, raw.length);
-        } else {
-            em = raw;
-        }
-
-        int hLen  = getDigestLength(digestAlg);
-        if (emLen < hLen + 2 || em[emLen - 1] != (byte) 0xBC) return -1;
-
-        int dbLen = emLen - hLen - 1;
-        byte[] H  = new byte[hLen];
-        System.arraycopy(em, dbLen, H, 0, hLen);
-
-        // Step 2: Recover DB = MGF1(H, dbLen) XOR maskedDB
-        byte[] DB = new byte[dbLen];
-        System.arraycopy(em, 0, DB, 0, dbLen);
-        final byte[] mask;
-        try {
-            mask = mgf1(H, dbLen, mgf1Alg);
-        }
-        catch (NoSuchAlgorithmException e) {
-            return -1;
-        }
-        for (int i = 0; i < dbLen; i++) {
-            DB[i] ^= mask[i];
-        }
-
-        // Step 3: Clear top bits per RFC 8017 §9.1.2
-        int topBits = 8 * emLen - (pubKey.getModulus().bitLength() - 1);
-        if (topBits > 0) DB[0] &= (byte)(0xFF >>> topBits);
-
-        // Step 4: Find the 0x01 separator; salt follows it
-        for (int i = 0; i < dbLen; i++) {
-            if (DB[i] == 0x01) return dbLen - i - 1;
-            if (DB[i] != 0x00) return -1;
-        }
-        return -1;
     }
 
     @JRubyMethod(name="d=")

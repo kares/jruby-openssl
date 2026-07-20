@@ -4,7 +4,13 @@
  */
 package org.jruby.ext.openssl.shim;
 
+import java.security.GeneralSecurityException;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.security.interfaces.RSAPublicKey;
+
+import org.jruby.ext.openssl.PKeyRSA;
+import org.jruby.ext.openssl.SecurityHelper;
 
 import org.bouncycastle.asn1.ASN1BitString;
 import org.bouncycastle.asn1.ASN1Encodable;
@@ -18,6 +24,70 @@ import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.interfaces.EdDSAPublicKey;
 
 public abstract class PKeyShim {
+
+    /**
+     * Recover the actual PSS salt length used to produce a signature; -1 when undeterminable.
+     * <p>
+     * regular BC: unwrap the signature with the raw RSA primitive (RSA/ECB/NoPadding) and
+     * parse the PSS-encoded message (dataBytes is unused on this path).
+     */
+    public static int autoPSSSaltLength(RSAPublicKey pubKey,
+                                        byte[] dataBytes, byte[] sigBytes,
+                                        String digestAlg, String mgf1Alg) {
+        final byte[] raw;
+        try {
+            javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
+            rsa.init(javax.crypto.Cipher.DECRYPT_MODE, pubKey);
+            raw = rsa.doFinal(sigBytes);
+        }
+        catch (GeneralSecurityException e) {
+            return -1;
+        }
+
+        // emLen = ceil((modBits - 1) / 8) per RFC 8017 §9.1.1
+        int emLen = (pubKey.getModulus().bitLength() - 1 + 7) / 8;
+
+        // raw RSA output may be shorter than emLen if leading bytes are zero; left-pad to emLen
+        byte[] em;
+        if (raw.length < emLen) {
+            em = new byte[emLen];
+            System.arraycopy(raw, 0, em, emLen - raw.length, raw.length);
+        } else {
+            em = raw;
+        }
+
+        int hLen = PKeyRSA.getDigestLength(digestAlg);
+        if (emLen < hLen + 2 || em[emLen - 1] != (byte) 0xBC) return -1;
+
+        int dbLen = emLen - hLen - 1;
+        byte[] H = new byte[hLen];
+        System.arraycopy(em, dbLen, H, 0, hLen);
+
+        // recover DB = MGF1(H, dbLen) XOR maskedDB
+        byte[] DB = new byte[dbLen];
+        System.arraycopy(em, 0, DB, 0, dbLen);
+        final byte[] mask;
+        try {
+            mask = PKeyRSA.mgf1(H, dbLen, mgf1Alg);
+        }
+        catch (NoSuchAlgorithmException e) {
+            return -1;
+        }
+        for (int i = 0; i < dbLen; i++) {
+            DB[i] ^= mask[i];
+        }
+
+        // clear top bits per RFC 8017 §9.1.2
+        int topBits = 8 * emLen - (pubKey.getModulus().bitLength() - 1);
+        if (topBits > 0) DB[0] &= (byte)(0xFF >>> topBits);
+
+        // find the 0x01 separator; salt follows it
+        for (int i = 0; i < dbLen; i++) {
+            if (DB[i] == 0x01) return dbLen - i - 1;
+            if (DB[i] != 0x00) return -1;
+        }
+        return -1;
+    }
 
     /** extract raw point encoding from an EdDSA public key */
     public static byte[] getEdDSAPointEncoding(PublicKey key) {

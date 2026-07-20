@@ -255,6 +255,40 @@ class TestPKeyDH < TestCase
     assert_equal true, dh.private?
   end
 
+  # GH-366: net-ssh generates its kex key this way
+  def test_generate_key_from_params
+    params = Fixtures.pkey_dh("dh2048_ffdhe2048")
+
+    dh = OpenSSL::PKey.generate_key(params)
+
+    assert_instance_of OpenSSL::PKey::DH, dh
+    assert_key dh
+    assert_equal params.p, dh.p
+    assert_equal params.g, dh.g
+    assert_no_key params # generating must not modify the parameters
+  end
+
+  def test_generate_key_from_params_is_not_reused
+    params = Fixtures.pkey_dh("dh2048_ffdhe2048")
+
+    dh1 = OpenSSL::PKey.generate_key(params)
+    dh2 = OpenSSL::PKey.generate_key(params)
+
+    assert_not_equal dh1.priv_key, dh2.priv_key
+    assert_equal dh1.compute_key(dh2.pub_key), dh2.compute_key(dh1.pub_key)
+  end
+
+  # a key with a private part is still only used as a parameter template
+  def test_generate_key_from_key_ignores_its_key
+    key = OpenSSL::PKey.generate_key(Fixtures.pkey_dh("dh2048_ffdhe2048"))
+    assert_key key
+
+    dh = OpenSSL::PKey.generate_key(key)
+
+    assert_equal key.p, dh.p
+    assert_not_equal key.priv_key, dh.priv_key
+  end
+
   private
 
   def assert_no_key(dh)

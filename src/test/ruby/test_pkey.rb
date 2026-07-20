@@ -97,6 +97,24 @@ class TestPKey < TestCase
     assert_equal nil, dh.q
   end
 
+  def test_generate_key_from_ec_params
+    ec_params = OpenSSL::PKey::EC.new("secp384r1")
+
+    pkey = OpenSSL::PKey.generate_key(ec_params)
+
+    assert_instance_of OpenSSL::PKey::EC, pkey
+    assert_equal "secp384r1", pkey.group.curve_name
+    assert_not_nil pkey.private_key
+    assert_not_nil pkey.public_key
+    assert_nil ec_params.private_key # generating must not modify the parameters
+  end
+
+  def test_generate_key_unsupported_parameters
+    assert_raise(OpenSSL::PKey::PKeyError) do
+      OpenSSL::PKey.generate_key(Fixtures.pkey("rsa-1.pem"))
+    end
+  end
+
   def test_compare?
     key1 = Fixtures.pkey("rsa-1.pem")
     key2 = Fixtures.pkey("rsa-1.pem")

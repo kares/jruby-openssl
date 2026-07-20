@@ -214,11 +214,33 @@ public abstract class PKey extends RubyObject {
         @JRubyMethod(name = "generate_key", meta = true, required = 1, optional = 1)
         public static IRubyObject generate_key(final ThreadContext context, IRubyObject recv, IRubyObject[] args) {
             final Ruby runtime = context.runtime;
-            final String algorithm = args[0].asJavaString();
+            final IRubyObject arg = args[0];
+
+            // a key acts as a template - generate a new key off its parameters
+            if (arg instanceof PKey) return generateKeyFromParams(context, (PKey) arg);
+
+            final String algorithm = arg.asJavaString();
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                 return PKeyEdDSA.generate(runtime, algorithm);
             }
             throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
+        }
+
+        private static IRubyObject generateKeyFromParams(final ThreadContext context, final PKey params) {
+            final Ruby runtime = context.runtime;
+
+            if (params instanceof PKeyDH) {
+                final PKeyDH dh = (PKeyDH) params.dup();
+                dh.set_key(context, runtime.getNil(), runtime.getNil()); // never inherit a key
+                return dh.generate_key();
+            }
+
+            if (params instanceof PKeyEC) {
+                return ((PKeyEC) params.dup()).generate_key(context);
+            }
+
+            throw newPKeyError(runtime, "unsupported parameter type for key generation: "
+                    + params.getMetaClass().getRealClass().getName());
         }
 
         @JRubyMethod(name = "new_raw_private_key", meta = true)

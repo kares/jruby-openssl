@@ -1,3 +1,8 @@
+## 0.16.2
+
+- [fix] PKey.generate_key accepts key as parameters (#366)
+- [deps] upgrade BC to version 1.85 (#367)
+
 ## 0.16.1
 
 EdDSA (Ed25519/Ed448) key support.

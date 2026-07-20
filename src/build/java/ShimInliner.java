@@ -4,8 +4,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -35,11 +37,8 @@ import org.objectweb.asm.tree.analysis.Frame;
  * Inlines every static method of org.jruby.ext.openssl.shim and the classes.
  * Classes that do not call into the shim are not rewritten at all.
  *
- * Run via the single-file source launcher (JDK 11+), see <i>Mavenfile</i>:
- *   java -classpath <compile classpath> src/build/java/ShimInliner.java <classes dir>
- *
  * NOTE: unlike ProGuard only removes the *call*; does not fold the constant left behind,
- * so a dead FIPS branch (and whatever it references) stays in the bytecode.
+ * so a dead FIPS branch still stays in the bytecode.
  */
 public class ShimInliner {
 
@@ -53,16 +52,15 @@ public class ShimInliner {
             walk.filter(p -> p.toString().endsWith(".class")).forEach(classFiles::add);
         }
 
-        // every static shim method is a candidate; instance members (ApplicationSpecific)
-        // are left alone
+        // every static shim method is a candidate
         final Map<String, ClassNode> shims = new LinkedHashMap<>();
         for (Path p : classFiles) {
             ClassNode cn = read(p);
             if (cn.name.startsWith(SHIM_PKG)) shims.put(cn.name, cn);
         }
         if (shims.isEmpty()) {
-            // already inlined (re-run over the same output dir) - unless a caller still points
-            // at a shim we just cannot see, which would only blow up at class load
+            // already inlined (re-run over the same output dir)
+            // unless a caller still points at a shim we just cannot see
             if (referencedBy(classFiles, classesDir, SHIM_PKG)) {
                 throw new IllegalStateException("shim classes are gone but still referenced - "
                         + classesDir + " is half-compiled, run a clean build");
@@ -80,20 +78,22 @@ public class ShimInliner {
             }
         }
 
-        // shim methods call each other (decodeString -> private helpers), so flatten the
-        // shim bodies first - otherwise an inlined body keeps pointing at a shim class
+        // some shim methods call each other (decodeString -> private helpers);
+        // flatten the shim bodies first - avoid an inlined body pointing at a shim class
         for (int pass = 0; pass < 3; pass++) {
             for (ClassNode cn : shims.values()) {
-                for (MethodNode mn : cn.methods) inlineInto(cn, mn, candidates);
+                // a skip here may still inline on a later pass, leftovers surface as a kept shim
+                for (MethodNode mn : cn.methods) inlineInto(cn, mn, candidates, new ArrayList<>());
             }
         }
 
+        final Collection<String> skipped = new LinkedHashSet<>();
         int rewritten = 0, inlined = 0;
         for (Path p : classFiles) {
             ClassNode cn = read(p);
             if (cn.name.startsWith(SHIM_PKG)) continue;
             int n = 0;
-            for (MethodNode mn : cn.methods) n += inlineInto(cn, mn, candidates);
+            for (MethodNode mn : cn.methods) n += inlineInto(cn, mn, candidates, skipped);
             if (n > 0) {
                 Files.write(p, write(cn));
                 rewritten++;
@@ -103,9 +103,10 @@ public class ShimInliner {
         }
 
         int deleted = 0;
+        final List<String> kept = new ArrayList<>();
         for (String shim : shims.keySet()) {
             if (referencedBy(classFiles, classesDir, shim)) {
-                System.out.println("[ShimInliner] keeping " + shim + " - still referenced");
+                kept.add(shim);
                 continue;
             }
             Files.delete(classesDir.resolve(shim + ".class"));
@@ -113,11 +114,20 @@ public class ShimInliner {
         }
         System.out.println("[ShimInliner] inlined " + inlined + " call(s) in " + rewritten
                 + " class(es), deleted " + deleted + " of " + shims.size() + " shim class(es)");
+
+        // a shim left behind ships FIPS-variant code in the plain gem, refusing to build beats
+        // shipping it silently
+        if (!skipped.isEmpty() || !kept.isEmpty()) {
+            StringBuilder msg = new StringBuilder("shim inlining incomplete:");
+            for (String s : skipped) msg.append("\n  not inlined: ").append(s);
+            for (String s : kept) msg.append("\n  still referenced: ").append(s);
+            throw new IllegalStateException(msg.toString());
+        }
     }
 
     /** @return number of call sites inlined */
-    private static int inlineInto(ClassNode owner, MethodNode method, Map<String, MethodNode> candidates)
-            throws Exception {
+    private static int inlineInto(ClassNode owner, MethodNode method, Map<String, MethodNode> candidates,
+            Collection<String> skipped) throws Exception {
         if (method.instructions == null || method.instructions.size() == 0) return 0;
 
         final List<MethodInsnNode> calls = new ArrayList<>();
@@ -129,9 +139,9 @@ public class ShimInliner {
         }
         if (calls.isEmpty()) return 0;
 
-        // A body that catches exceptions may only be inlined where the operand stack is
-        // otherwise empty: entering a handler discards the stack, so anything the caller
-        // had parked there would be lost. Indices must be taken before any splicing.
+        // entering a handler clears the operand stack, so a callee that catches can only be
+        // inlined where the stack holds nothing but the call arguments - index up front,
+        // splicing shifts instruction positions
         Frame<BasicValue>[] frames = null;
         final Map<MethodInsnNode, Integer> indices = new HashMap<>();
         for (MethodInsnNode call : calls) {
@@ -148,8 +158,8 @@ public class ShimInliner {
                 Frame<BasicValue> frame = frames[indices.get(call)];
                 int args = Type.getArgumentTypes(call.desc).length;
                 if (frame == null || frame.getStackSize() - args != 0) {
-                    System.out.println("[ShimInliner] skipping " + key(call) + " in " + owner.name
-                            + '.' + method.name + " - catches exceptions, stack not empty");
+                    skipped.add(key(call) + " in " + owner.name + '.' + method.name
+                            + " - catches exceptions, stack not empty");
                     continue;
                 }
             }
@@ -180,7 +190,7 @@ public class ShimInliner {
         final LabelNode end = new LabelNode();
 
         for (AbstractInsnNode insn : callee.instructions.toArray()) {
-            // the callee's line numbers belong to another source file, and frames get
+            // callee's line numbers belong to another source file, and frames get
             // recomputed on write
             if (insn instanceof LineNumberNode || insn instanceof FrameNode) continue;
 

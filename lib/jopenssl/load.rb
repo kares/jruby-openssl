@@ -1,7 +1,7 @@
 require_relative 'version'
 
 # NOTE: assuming user does pull in BC .jars from somewhere else on the class-path
-unless ENV_JAVA['jruby.openssl.load.jars'].eql?('false')
+if ENV_JAVA['jruby.openssl.load.jars'] != 'false'
   version = JOpenSSL::BOUNCY_CASTLE_VERSION
   bc_jars = begin
     require 'jar_dependencies' unless respond_to?(:require_jar, true)

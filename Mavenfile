@@ -81,7 +81,8 @@ end
 
 # we want to have the snapshots on oss.sonatype.org and the released gems on maven central
 plugin :deploy, '3.1.4' do
-  execute_goals( :deploy, skip: false )
+  # gem.deploy.skip is flipped on by the jar-release profile (jar-only deploy)
+  execute_goals( :deploy, skip: '${gem.deploy.skip}' )
 end
 
 supported_bc_versions = %w{ 1.80 1.81 1.82 1.83 1.84 1.85 }
@@ -89,7 +90,8 @@ supported_bc_versions = %w{ 1.80 1.81 1.82 1.83 1.84 1.85 }
 default_bc_version = File.read File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
 default_bc_version = default_bc_version[/BOUNCY_CASTLE_VERSION\s?=\s?'(.*?)'/, 1]
 
-properties( 'jruby.plugins.version' => '3.0.6',
+properties( 'gem.deploy.skip' => 'false', # jar-release profile sets this true
+            'jruby.plugins.version' => '3.0.6',
             'jruby.switches' => '-W0', # https://github.com/torquebox/jruby-maven-plugins/issues/94
             'bc.versions' => default_bc_version,
             'invoker.test' => '${bc.versions}',
@@ -145,6 +147,46 @@ end
 profile id: 'release' do
   plugin :gpg, '3.1.0' do
     execute_goal :sign, phase: :verify
+  end
+end
+
+# packages everything (lib/ included) into a self-contained jruby-openssl.jar
+# and deploys it as a plain (non-gem) Maven artifact under org.jruby.openssl
+profile id: 'jar-release' do
+  jar_release_dir = '${project.build.directory}/jar-release'
+  jar_release_file = '${project.build.directory}/${project.build.finalName}.jar'
+
+  properties 'gem.deploy.skip' => 'true', # publish only the jar, not the gem
+             'jar-release.groupId' => 'org.jruby.openssl',
+             'jar-release.repositoryId' => 'ossrh',
+             # release staging by default; override with the snapshots url for SNAPSHOT versions
+             'jar-release.url' => 'https://oss.sonatype.org/service/local/staging/deploy/maven2/'
+
+  plugin :resources, '3.3.1' do
+    execute_goal 'copy-resources', id: 'jar-release-classes', phase: 'prepare-package',
+        outputDirectory: jar_release_dir,
+        resources: [ { directory: '${project.build.outputDirectory}' } ]
+    execute_goal 'copy-resources', id: 'jar-release-lib', phase: 'prepare-package',
+        outputDirectory: jar_release_dir,
+        resources: [ { directory: 'lib', includes: [ '**/*.rb' ] } ]
+  end
+
+  plugin :jar, '2.4' do
+    execute_goal :jar, id: 'jar-release', phase: 'package',
+        classesDirectory: jar_release_dir,
+        outputDirectory: '${project.build.directory}',
+        finalName: '${project.build.finalName}'
+  end
+
+  plugin :deploy, '3.1.4' do
+    execute_goal 'deploy-file', id: 'jar-release-deploy', phase: 'deploy',
+        file: jar_release_file,
+        groupId: '${jar-release.groupId}',
+        artifactId: '${project.artifactId}',
+        version: '${project.version}',
+        packaging: 'jar',
+        repositoryId: '${jar-release.repositoryId}',
+        url: '${jar-release.url}'
   end
 end
 

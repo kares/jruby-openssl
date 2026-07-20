@@ -61,6 +61,7 @@ DO NOT MODIFY - GENERATED CODE
   </distributionManagement>
   <properties>
     <bc.versions>1.85</bc.versions>
+    <gem.deploy.skip>false</gem.deploy.skip>
     <invoker.skip>${maven.test.skip}</invoker.skip>
     <invoker.test>${bc.versions}</invoker.test>
     <jruby.plugins.version>3.0.6</jruby.plugins.version>
@@ -78,22 +79,22 @@ DO NOT MODIFY - GENERATED CODE
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
-      <version>1.85</version>
+      <version>[1.80,1.85]</version>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
-      <version>1.85</version>
+      <version>[1.80,1.85]</version>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bctls-jdk18on</artifactId>
-      <version>1.85</version>
+      <version>[1.80,1.85]</version>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcutil-jdk18on</artifactId>
-      <version>1.85</version>
+      <version>[1.80,1.85]</version>
     </dependency>
     <dependency>
       <groupId>org.jruby</groupId>
@@ -300,7 +301,7 @@ DO NOT MODIFY - GENERATED CODE
               <goal>deploy</goal>
             </goals>
             <configuration>
-              <skip>false</skip>
+              <skip>${gem.deploy.skip}</skip>
             </configuration>
           </execution>
         </executions>
@@ -787,6 +788,98 @@ DO NOT MODIFY - GENERATED CODE
           </plugin>
         </plugins>
       </build>
+    </profile>
+    <profile>
+      <id>jar-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>jar-release-classes</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/jar-release</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+              <execution>
+                <id>jar-release-lib</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/jar-release</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>lib</directory>
+                      <includes>
+                        <include>**/*.rb</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <artifactId>maven-jar-plugin</artifactId>
+            <version>2.4</version>
+            <executions>
+              <execution>
+                <id>jar-release</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <configuration>
+                  <classesDirectory>${project.build.directory}/jar-release</classesDirectory>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <finalName>${project.build.finalName}</finalName>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <version>3.1.4</version>
+            <executions>
+              <execution>
+                <id>jar-release-deploy</id>
+                <phase>deploy</phase>
+                <goals>
+                  <goal>deploy-file</goal>
+                </goals>
+                <configuration>
+                  <file>${project.build.directory}/${project.build.finalName}.jar</file>
+                  <groupId>${jar-release.groupId}</groupId>
+                  <artifactId>${project.artifactId}</artifactId>
+                  <version>${project.version}</version>
+                  <packaging>jar</packaging>
+                  <repositoryId>${jar-release.repositoryId}</repositoryId>
+                  <url>${jar-release.url}</url>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <gem.deploy.skip>true</gem.deploy.skip>
+        <jar-release.groupId>org.jruby.openssl</jar-release.groupId>
+        <jar-release.repositoryId>ossrh</jar-release.repositoryId>
+        <jar-release.url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</jar-release.url>
+      </properties>
     </profile>
   </profiles>
 </project>

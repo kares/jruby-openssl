@@ -631,6 +631,28 @@ public class PKeyDSA extends PKey {
         return setKeySpecComponent(SPEC_Y, pub_key);
     }
 
+    @JRubyMethod(name = "generate_key!")
+    public synchronized IRubyObject generate_key(final ThreadContext context) {
+        final BigInteger p = getP();
+        final BigInteger q = getQ();
+        final BigInteger g = getG();
+        if (p == null || q == null || g == null) {
+            throw newDSAError(context.runtime, "can't generate key");
+        }
+
+        BigInteger x;
+        do {
+            x = new BigInteger(q.bitLength(), getSecureRandom(context.runtime));
+        } while (x.signum() <= 0 || x.compareTo(q) >= 0);
+
+        this.dsa_x = x;
+        this.dsa_y = g.modPow(x, p);
+        this.privateKey = null;
+        this.publicKey = null;
+        generateKeyInternal();
+        return this;
+    }
+
     private IRubyObject setKeySpecComponent(final int index, final IRubyObject value) {
         final BigInteger val = BN.getBigInteger(value);
         switch (index) {

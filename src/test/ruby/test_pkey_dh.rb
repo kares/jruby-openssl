@@ -78,6 +78,23 @@ class TestPKeyDH < TestCase
     assert_equal dh.compute_key(dh2.pub_key), dh2.compute_key(dh.pub_key)
   end
 
+  def test_generate_key_from_params
+    dh1 = Fixtures.pkey_dh("dh2048_ffdhe2048")
+    dh1.generate_key!
+
+    dh2 = OpenSSL::PKey.generate_key(dh1)
+    dh3 = OpenSSL::PKey.generate_key(Fixtures.pkey_dh("dh2048_ffdhe2048"))
+
+    assert_equal dh1.p, dh2.p
+    assert_equal dh1.g, dh2.g
+    assert_not_nil dh2.pub_key
+    assert_not_nil dh2.priv_key
+    assert_not_equal dh1.pub_key, dh2.pub_key
+    assert_equal dh1.compute_key(dh2.pub_key), dh2.compute_key(dh1.pub_key)
+    assert_not_nil dh3.pub_key
+    assert_not_nil dh3.priv_key
+  end
+
   def test_to_der
     dh = Fixtures.pkey_dh("dh2048_ffdhe2048")
     der = dh.to_der

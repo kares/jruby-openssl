@@ -185,9 +185,9 @@ class TestPKey < TestCase
   end
 
   # RSA key carries no parameters - only selects the algorithm,
-  # the size comes from rsa_keygen_bits (or the 2048 default)
+  # the size comes from rsa_keygen_bits (or the 2048 default), not from the key
   def test_generate_key_from_rsa_key
-    rsa = OpenSSL::PKey::RSA.new(1024)
+    rsa = OpenSSL::PKey::RSA.new(3072) # deliberately not the 2048 default
     pkey = OpenSSL::PKey.generate_key(rsa)
 
     assert_instance_of OpenSSL::PKey::RSA, pkey
@@ -197,19 +197,21 @@ class TestPKey < TestCase
   end
 
   def test_generate_key_from_rsa_key_honours_keygen_bits
-    pkey = OpenSSL::PKey.generate_key(OpenSSL::PKey::RSA.new(1024), "rsa_keygen_bits" => 2048)
+    pkey = OpenSSL::PKey.generate_key(Fixtures.pkey("rsa2048"), "rsa_keygen_bits" => 3072)
 
-    assert_equal 2048, pkey.n.num_bits
+    assert_equal 3072, pkey.n.num_bits
   end
 
   def test_generate_key_from_public_rsa_key
-    rsa = OpenSSL::PKey::RSA.new(1024)
+    rsa = Fixtures.pkey("rsa2048")
     public_rsa = OpenSSL::PKey::RSA.new(rsa.public_to_der)
+    assert_false public_rsa.private?
 
     pkey = OpenSSL::PKey.generate_key(public_rsa)
 
     assert_instance_of OpenSSL::PKey::RSA, pkey
     assert pkey.private?
+    assert_not_equal rsa.n, pkey.n
   end
 
   def test_generate_key_rejects_non_string_algorithm
@@ -291,11 +293,23 @@ class TestPKey < TestCase
     assert_not_nil pkey.private_key
   end
 
-  def test_generate_key_dh_with_options
-    pkey = OpenSSL::PKey.generate_key("DH", {
+  # generate_key does not generate parameters (MRI rejects paramgen controls)
+  def test_generate_key_dh_requires_parameters
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("DH") }
+    assert_raise(OpenSSL::PKey::PKeyError) do
+      OpenSSL::PKey.generate_key("DH", { "dh_paramgen_prime_len" => 512 })
+    end
+  end
+
+  def test_generate_key_dh_from_generated_parameters
+    # DH keys are generated from parameters in two steps
+    params = OpenSSL::PKey.generate_parameters("DH", {
       "dh_paramgen_prime_len" => 512,
       "dh_paramgen_generator" => 5
     })
+    assert_nil params.priv_key
+
+    pkey = OpenSSL::PKey.generate_key(params)
 
     assert_instance_of OpenSSL::PKey::DH, pkey
     assert_equal 512, pkey.p.num_bits
@@ -305,17 +319,19 @@ class TestPKey < TestCase
   end
 
   def test_generate_key_dsa_requires_parameters
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.generate_key("DSA") }
     assert_raise(OpenSSL::PKey::PKeyError) do
-      OpenSSL::PKey.generate_key("DSA")
+      OpenSSL::PKey.generate_key("DSA", { "dsa_paramgen_bits" => 1024 })
     end
   end
 
-  def test_generate_key_dsa_with_options
+  def test_generate_key_dsa_from_generated_parameters
     omit_on_fips 'DSA key generation is not FIPS-approved'
 
-    pkey = OpenSSL::PKey.generate_key("DSA", {
-      "dsa_paramgen_bits" => 1024
-    })
+    params = OpenSSL::PKey.generate_parameters("DSA", { "dsa_paramgen_bits" => 1024 })
+    assert_nil params.priv_key
+
+    pkey = OpenSSL::PKey.generate_key(params)
 
     assert_instance_of OpenSSL::PKey::DSA, pkey
     assert_equal 1024, pkey.p.num_bits

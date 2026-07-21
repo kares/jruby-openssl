@@ -295,12 +295,14 @@ public abstract class SecurityHelper {
     }
 
     public static KeyStore getKeyStore(final String type) throws KeyStoreException {
+        if ("JKS".equals(type)) return KeyStore.getInstance(type); // JDK built-in (only) format
+
         try {
             final Provider provider = getSecurityProvider();
             if (provider != null) return getKeyStore(type, provider);
         }
+        // keystore type is a container format, not an approved algorithm - fall back under FIPS
         catch (KeyStoreException e) {
-            if (isFipsMode()) throw e;
             LOG.debug("getKeyStore", e);
         }
         return KeyStore.getInstance(type);

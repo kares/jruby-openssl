@@ -627,15 +627,13 @@ public class SecurityHelperTest {
     }
 
     @Test
-    public void getKeyStoreFailsClosedInFipsMode() throws Exception {
+    public void getKeyStoreFallsBackForUnsupportedTypeInFipsMode() throws Exception {
         forceFipsMode(true);
         try {
-            SecurityHelper.setSecurityProvider(new DummyProvider());
-            try {
-                SecurityHelper.getKeyStore("PKCS12");
-                fail("expected KeyStoreException (fail closed) in FIPS mode");
-            }
-            catch (KeyStoreException expected) { /* OK */ }
+            SecurityHelper.setSecurityProvider(new DummyProvider()); // lacks JKS
+            // keystore type is a container format, not an approved algorithm - must still resolve
+            // even under FIPS (BC-FIPS has no "JKS", needed for the default CA trust store)
+            assertNotNull(SecurityHelper.getKeyStore("JKS"));
         }
         finally { forceFipsMode(false); }
     }

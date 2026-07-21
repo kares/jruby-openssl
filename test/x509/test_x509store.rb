@@ -273,6 +273,47 @@ class TestX509Store < TestCase
     end
   end if defined?(JRUBY_VERSION) && Gem::Version.create(JRUBY_VERSION) >= Gem::Version.create('9.1.17.0')
 
+  def test_crl_time_boundary
+    #return unless defined?(OpenSSL::X509::V_FLAG_CRL_CHECK)
+
+    rsa = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA2
+    ca_name = OpenSSL::X509::Name.parse("/DC=org/DC=ruby-lang/CN=CRL-Time-CA")
+    ca_exts = [
+        ["basicConstraints", "CA:TRUE", true],
+        ["keyUsage", "cRLSign,keyCertSign", true],
+    ]
+    now = Time.at(Time.now.to_i)
+    ca_cert = issue_cert(ca_name, rsa, 1, ca_exts, nil, nil, not_before: now - 3600, not_after: now + 3600)
+    # CRL valid over [now .. now+1800], revokes nothing
+    crl = issue_crl([], 1, now, now + 1800, [], ca_cert, rsa, OpenSSL::Digest::SHA256.new)
+
+    verify_at = lambda do |check_time|
+      store = OpenSSL::X509::Store.new
+      store.purpose = OpenSSL::X509::PURPOSE_ANY
+      store.flags = OpenSSL::X509::V_FLAG_CRL_CHECK
+      store.time = check_time
+      # fresh cert copies - the underlying X509 struct caches last not-before/signature result
+      store.add_cert(OpenSSL::X509::Certificate.new(ca_cert))
+      store.add_crl(crl)
+      [store.verify(OpenSSL::X509::Certificate.new(ca_cert)), store.error, store.error_string]
+    end
+
+    # thisUpdate == check time -> valid (previously mis-rejected as last-update-field error)
+    ok, err, msg = verify_at.call(now)
+    assert_equal(true, ok, "CRL with thisUpdate == check time should verify, got: #{msg}")
+    assert_equal(OpenSSL::X509::V_OK, err)
+
+    # nextUpdate == check time -> expired per <= semantics, reported as CRL_HAS_EXPIRED
+    ok, err, _ = verify_at.call(now + 1800)
+    assert_equal(false, ok)
+    assert_equal(OpenSSL::X509::V_ERR_CRL_HAS_EXPIRED, err)
+
+    # thisUpdate in the future -> not yet valid (regression guard)
+    ok, err, _ = verify_at.call(now - 1)
+    assert_equal(false, ok)
+    assert_equal(OpenSSL::X509::V_ERR_CRL_NOT_YET_VALID, err)
+  end
+
   def test_verify
     @rsa1024 = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA1 # OpenSSL::TestUtils::TEST_KEY_RSA1024
     @rsa2048 = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA2 # OpenSSL::TestUtils::TEST_KEY_RSA2048

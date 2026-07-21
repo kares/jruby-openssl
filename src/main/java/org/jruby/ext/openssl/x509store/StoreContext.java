@@ -1742,33 +1742,21 @@ public class StoreContext {
             pTime = Calendar.getInstance().getTime();
         }
 
-        int i = crl.getThisUpdate().compareTo(pTime);
-        if (i == 0) {
+        // NOTE: X509_cmp_time uses 0 for parse errors and uses <= semantics
+        final Date thisUpdate = crl.getThisUpdate();
+        if (thisUpdate == null) {
             if (!notify) return false;
-            if (verify_cb_crl(V_ERR_ERROR_IN_CRL_LAST_UPDATE_FIELD) == 0)
-                return false;
+            if (verify_cb_crl(V_ERR_ERROR_IN_CRL_LAST_UPDATE_FIELD) == 0) return false;
+        } else if (thisUpdate.compareTo(pTime) > 0) { // thisUpdate == pTime is valid
+            if (!notify) return false;
+            if (verify_cb_crl(V_ERR_CRL_NOT_YET_VALID) == 0) return false;
         }
 
-        if (i > 0) {
-            if (!notify) return false;
-            if (verify_cb_crl(V_ERR_CRL_NOT_YET_VALID) == 0)
-                return false;
-        }
-
-        if (crl.getNextUpdate() != null) {
-            i = crl.getNextUpdate().compareTo(pTime);
-
-            if (i == 0) {
-                if (!notify) return false;
-                if (verify_cb_crl(V_ERR_ERROR_IN_CRL_NEXT_UPDATE_FIELD) == 0)
-                    return false;
-            }
+        final Date nextUpdate = crl.getNextUpdate(); // optional - absent means no expiry
+        if (nextUpdate != null && nextUpdate.compareTo(pTime) <= 0) { // == is expired
             /* Ignore expiry of base CRL is delta is valid */
-            if ((i < 0) /*&& !(ctx->current_crl_score & CRL_SCORE_TIME_DELTA)*/) {
-                if (!notify) return false;
-                if (verify_cb_crl(V_ERR_CRL_HAS_EXPIRED) == 0)
-                    return false;
-            }
+            if (!notify) return false;
+            if (verify_cb_crl(V_ERR_CRL_HAS_EXPIRED) == 0) return false;
         }
 
         if (notify) this.current_crl = null;

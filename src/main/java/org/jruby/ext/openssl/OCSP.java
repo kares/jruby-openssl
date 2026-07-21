@@ -32,6 +32,7 @@
 */
 package org.jruby.ext.openssl;
 
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -215,12 +216,13 @@ public class OCSP {
         return (RubyModule) runtime.getModule("OpenSSL").getConstant("OCSP");
     }
 
-    static byte[] generateNonce(final ThreadContext context) {
+    static byte[] generateNonce(final ThreadContext context) throws NoSuchAlgorithmException {
         // OSSL currently generates 16 byte nonce by default
         return generateNonce(context, new byte[16]);
     }
 
-    static byte[] generateNonce(final ThreadContext context, byte[] bytes) {
+    static byte[] generateNonce(final ThreadContext context, byte[] bytes)
+        throws NoSuchAlgorithmException {
         OpenSSL.getSecureRandom(context).nextBytes(bytes);
         return bytes;
     }

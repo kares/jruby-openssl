@@ -23,6 +23,7 @@
  */
 package org.jruby.ext.openssl;
 
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Map;
 
@@ -273,7 +274,7 @@ public class OpenSSL {
 
     private static boolean tryContextSecureRandom = true;
 
-    static SecureRandom getSecureRandom(final ThreadContext context) {
+    static SecureRandom getSecureRandom(final ThreadContext context) throws NoSuchAlgorithmException {
         if (tryContextSecureRandom) {
             if (SecurityHelper.isFipsMode()) { // in FIPS mode BC rejects non-approved RNGs
                 tryContextSecureRandom = false;

@@ -39,6 +39,7 @@ import static org.jruby.ext.openssl.X509._X509;
 
 import java.io.IOException;
 import java.security.PublicKey;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -158,7 +159,12 @@ public class OCSPRequest extends RubyObject {
     @JRubyMethod(name = "add_nonce", rest = true)
     public IRubyObject add_nonce(ThreadContext context, IRubyObject[] args) {
         if ( Arity.checkArgumentCount(context.runtime, args, 0, 1) == 0 ) {
-            nonce = generateNonce(context);
+            try {
+                nonce = generateNonce(context);
+            }
+            catch (NoSuchAlgorithmException e) {
+                throw newOCSPError(context.runtime, e);
+            }
         }
         else {
             RubyString input = (RubyString) args[0];

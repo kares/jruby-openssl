@@ -1049,7 +1049,7 @@ public class SSLContext extends RubyObject {
             this.sslContext = SecurityHelper.getSSLContext(protocol);
         }
 
-        void initSSLContext(final ThreadContext context) throws KeyManagementException {
+        void initSSLContext(final ThreadContext context) throws NoSuchAlgorithmException, KeyManagementException {
             final KeyManager[] keyManager = new KeyManager[] { new KeyManagerImpl(this) };
             final TrustManager[] trustManager = new TrustManager[] { new TrustManagerImpl(this) };
             // SSLContext (internals) on Sun JDK :

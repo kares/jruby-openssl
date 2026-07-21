@@ -317,7 +317,7 @@ public abstract class SecurityHelper {
         return MessageDigest.getInstance(algorithm, provider);
     }
 
-    public static SecureRandom getSecureRandom() {
+    public static SecureRandom getSecureRandom() throws NoSuchAlgorithmException {
         try {
             final Provider provider = getSecurityProvider();
             if (provider != null) { // "DEFAULT" supported by BC providers
@@ -326,6 +326,19 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException e) { LOG.debug("getSecureRandom", e); }
         return new SecureRandom();
+    }
+
+    static SecureRandom getSecureRandomStrong() throws NoSuchAlgorithmException {
+        try {
+            final Provider provider = getSecurityProvider();
+            if (provider != null) { // "DEFAULT" supported by BC providers
+                return SecureRandom.getInstance("DEFAULT", provider);
+            }
+        }
+        catch (NoSuchAlgorithmException e) {
+            LOG.debug("getSecureRandom", e);
+        }
+        return SecureRandom.getInstanceStrong();
     }
 
     public static Cipher getCipher(final String transformation)

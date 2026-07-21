@@ -465,6 +465,7 @@ public class PKeyDH extends PKey {
         try {
             return getKeyFactory().generatePublic(new DHPublicKeySpec(dh_y, dh_p, dh_g));
         }
+        catch (NoSuchAlgorithmException ex) { throw newDHError(getRuntime(), ex.getMessage()); }
         catch (InvalidKeySpecException ex) { throw new RuntimeException(ex); }
     }
 
@@ -485,6 +486,7 @@ public class PKeyDH extends PKey {
         try {
             return getKeyFactory().generatePrivate(new DHPrivateKeySpec(dh_x, dh_p, dh_g));
         }
+        catch (NoSuchAlgorithmException ex) { throw newDHError(getRuntime(), ex.getMessage()); }
         catch (InvalidKeySpecException ex) { throw new RuntimeException(ex); }
     }
 
@@ -506,11 +508,8 @@ public class PKeyDH extends PKey {
         return BN.newBN(getRuntime(), value);
     }
 
-    private static KeyFactory getKeyFactory() {
-        try {
-            return SecurityHelper.getKeyFactory("DiffieHellman");
-        }
-        catch (NoSuchAlgorithmException ex) { throw new RuntimeException(ex); }
+    private static KeyFactory getKeyFactory() throws NoSuchAlgorithmException {
+        return SecurityHelper.getKeyFactory("DiffieHellman");
     }
 
 }

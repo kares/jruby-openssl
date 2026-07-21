@@ -669,7 +669,12 @@ public abstract class PKey extends RubyObject {
     }
 
     static SecureRandom getSecureRandom(final ThreadContext context) {
-        return OpenSSL.getSecureRandom(context);
+        try {
+            return OpenSSL.getSecureRandom(context);
+        }
+        catch (NoSuchAlgorithmException e) {
+            throw newPKeyError(context.runtime, e.getMessage());
+        }
     }
 
     // shared Helpers for PKeyRSA / PKeyDSA :

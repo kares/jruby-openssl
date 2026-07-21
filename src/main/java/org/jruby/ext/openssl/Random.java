@@ -33,16 +33,15 @@ import org.jruby.RubyModule;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
+import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.ext.openssl.log.Logger;
 import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -62,22 +61,19 @@ public class Random {
         if (HOLDER_TYPE.equals("shared")) {
             return new SharedHolder();
         }
-        if (HOLDER_TYPE.equals("strong")) { // TODO strong (thread-local) makes sense
+        if (HOLDER_TYPE.equals("strong")) {
             return new StrongHolder();
-        }
-        if (ThreadLocalHolder.secureRandomField == null) {
-            return new SharedHolder(); // fall-back on (older) JRuby <= 1.7.4
         }
         return new ThreadLocalHolder();
     }
 
     static abstract class Holder {
 
-        abstract java.util.Random getPlainRandom() ;
+        abstract java.util.Random getPlainRandom();
 
-        abstract java.security.SecureRandom getSecureRandom(ThreadContext context) ;
+        abstract java.security.SecureRandom getSecureRandom(ThreadContext context) throws NoSuchAlgorithmException;
 
-        void seedSecureRandom(ThreadContext context, byte[] seed) {
+        void seedSecureRandom(ThreadContext context, byte[] seed) throws NoSuchAlgorithmException {
             getSecureRandom(context).setSeed(seed);
         }
 
@@ -103,7 +99,7 @@ public class Random {
             return plainRandom;
         }
 
-        java.security.SecureRandom getSecureRandom(ThreadContext context) {
+        java.security.SecureRandom getSecureRandom(ThreadContext context) throws NoSuchAlgorithmException {
             if (secureRandom == null) {
                 synchronized(this) {
                     if (secureRandom == null) {
@@ -125,100 +121,20 @@ public class Random {
 
         @Override
         void seedPlainRandom(long seed) {
-            return; // NO-OP - UnsupportedOperationException
+            // NO-OP - UnsupportedOperationException
         }
 
         @Override
         java.security.SecureRandom getSecureRandom(ThreadContext context) {
             java.security.SecureRandom secureRandom = context.secureRandom;
             if (secureRandom == null) {
-                secureRandom = getSecureRandomImpl();
-                setSecureRandom(context, secureRandom); // context.secureRandom = ...
+                secureRandom = context.getSecureRandom();
             }
             return secureRandom;
         }
-
-        private static final Field secureRandomField;
-
-        private static void setSecureRandom(ThreadContext context, java.security.SecureRandom secureRandom) {
-            if (secureRandomField != null) {
-                try {
-                    secureRandomField.set(context, secureRandom);
-                }
-                catch (IllegalAccessException ex) { LOG.debugStack(ex);; /* should not happen */ }
-            }
-        }
-
-        private static final String PREFERRED_PRNG;
-        static {
-            String prng = SafePropertyAccessor.getProperty("jruby.preferred.prng", null);
-
-            if (prng == null) { // make sure the default experience is non-blocking for users
-                prng = "NativePRNGNonBlocking";
-                if (SafePropertyAccessor.getProperty("os.name") != null) {
-                    if (jnr.posix.util.Platform.IS_WINDOWS) { // System.getProperty("os.name") won't fail
-                        prng = "Windows-PRNG";
-                    }
-                }
-            }
-            // setting it to "" (empty) or "default" should just use new SecureRandom() :
-            if (prng.isEmpty() || prng.equalsIgnoreCase("default")) {
-                prng = null; tryPreferredPRNG = false;
-            }
-
-            PREFERRED_PRNG = prng;
-
-            Field secureRandom = null;
-            try {
-                secureRandom = ThreadContext.class.getField("secureRandom");
-                if ( ! secureRandom.isAccessible() || Modifier.isFinal(secureRandom.getModifiers()) ) {
-                    secureRandom = null;
-                }
-            }
-            catch (Exception ex) { /* ignore NoSuchFieldException */ }
-            secureRandomField = secureRandom;
-        }
-
-        private static boolean tryPreferredPRNG = true;
-
-        // copied from JRuby (not available in all 1.7.x) :
-        public java.security.SecureRandom getSecureRandomImpl() {
-            java.security.SecureRandom secureRandom = null;
-            // Try preferred PRNG, which defaults to NativePRNGNonBlocking
-            if (tryPreferredPRNG) {
-                try {
-                    secureRandom = java.security.SecureRandom.getInstance(PREFERRED_PRNG);
-                }
-                catch (Exception e) {
-                    tryPreferredPRNG = false;
-                    LOG.debug("SecureRandom '"+ PREFERRED_PRNG +"' failed", e);
-                }
-            }
-
-            // Just let JDK do whatever it does
-            if (secureRandom == null) {
-                secureRandom = new java.security.SecureRandom();
-            }
-
-            return secureRandom;
-        }
-
     }
 
     private static class StrongHolder extends Holder {
-
-        static {
-            Method method = null;
-            if (OpenSSL.javaVersion8(true)) {
-                try {
-                    method = java.security.SecureRandom.class.getMethod("getInstanceStrong");
-                }
-                catch (NoSuchMethodException ex) { LOG.debugStack(ex); }
-            }
-            getInstanceStrong = method;
-        }
-
-        private static final Method getInstanceStrong;
 
         @Override
         java.util.Random getPlainRandom() {
@@ -226,20 +142,8 @@ public class Random {
         }
 
         @Override
-        java.security.SecureRandom getSecureRandom(ThreadContext context) {
-            // return java.security.SecureRandom.getInstanceStrong(); (on Java 8)
-            if (getInstanceStrong == null) return SecurityHelper.getSecureRandom();
-            try {
-                return (java.security.SecureRandom) getInstanceStrong.invoke(null);
-            }
-            catch (IllegalAccessException ex) {
-                LOG.debugStack(ex);
-                return null; // won't happen
-            }
-            catch (InvocationTargetException ex) {
-                LOG.debugStack(ex);
-                return null;
-            }
+        java.security.SecureRandom getSecureRandom(ThreadContext context) throws NoSuchAlgorithmException {
+            return SecurityHelper.getSecureRandomStrong();
         }
 
         void seedSecureRandom(ThreadContext context, byte[] seed) {
@@ -297,16 +201,22 @@ public class Random {
         final IRubyObject self, final int len, final boolean secure) {
         final Holder holder = retrieveHolder((RubyModule) self);
         final byte[] bytes = new byte[len];
-        ( secure ? holder.getSecureRandom(context) : holder.getPlainRandom() ).nextBytes(bytes);
+        try {
+            ( secure ? holder.getSecureRandom(context) : holder.getPlainRandom() ).nextBytes(bytes);
+        }
+        catch (NoSuchAlgorithmException e) {
+            throw newRandomError(context.runtime, e.getMessage());
+        }
         return RubyString.newString(context.runtime, new ByteList(bytes, false));
-    }
-
-    static Holder getHolder(final Ruby runtime) {
-        return retrieveHolder((RubyModule) runtime.getModule("OpenSSL").getConstantAt("Random"));
     }
 
     private static Holder retrieveHolder(final RubyModule Random) {
         return (Holder) Random.dataGetStruct();
+    }
+
+    private static RaiseException newRandomError(final Ruby runtime, final String message) {
+        final RubyModule Random = (RubyModule) runtime.getModule("OpenSSL").getConstantAt("Random");
+        return RubySupport.newError(runtime, (RubyClass) Random.getConstantAt("RandomError"), message);
     }
 
     @JRubyMethod(meta = true) // seed(str) -> str
@@ -320,7 +230,12 @@ public class Random {
         final byte[] seed = str.asString().getBytes();
         final Holder holder = retrieveHolder(Random);
 
-        holder.seedSecureRandom(context, seed); // seed supplements existing (secure) seeding mechanism
+        try {
+            holder.seedSecureRandom(context, seed); // seed supplements existing (secure) seeding mechanism
+        }
+        catch (NoSuchAlgorithmException e) {
+            throw newRandomError(context.runtime, e.getMessage());
+        }
 
         long s; int l = seed.length;
         if ( l >= 4 ) {

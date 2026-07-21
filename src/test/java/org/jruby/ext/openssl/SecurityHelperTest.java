@@ -585,6 +585,71 @@ public class SecurityHelperTest {
     }
 
     @Test
+    public void getKeyFactoryFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getKeyFactory("RSA");
+                fail("expected NoSuchAlgorithmException (fail closed) in FIPS mode");
+            }
+            catch (NoSuchAlgorithmException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void getSecureRandomFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getSecureRandom();
+                fail("expected NoSuchAlgorithmException (fail closed) in FIPS mode");
+            }
+            catch (NoSuchAlgorithmException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void getCertificateFactoryFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getCertificateFactory("X.509");
+                fail("expected CertificateException (fail closed) in FIPS mode");
+            }
+            catch (CertificateException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void getKeyStoreFailsClosedInFipsMode() throws Exception {
+        forceFipsMode(true);
+        try {
+            SecurityHelper.setSecurityProvider(new DummyProvider());
+            try {
+                SecurityHelper.getKeyStore("PKCS12");
+                fail("expected KeyStoreException (fail closed) in FIPS mode");
+            }
+            catch (KeyStoreException expected) { /* OK */ }
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void newGettersFallBackToDefaultProviderWhenNotFips() throws Exception {
+        SecurityHelper.setSecurityProvider(new DummyProvider()); // rejects everything
+        assertNotNull(SecurityHelper.getKeyFactory("RSA"));
+        assertNotNull(SecurityHelper.getSecureRandom());
+        assertNotNull(SecurityHelper.getCertificateFactory("X.509"));
+        assertNotNull(SecurityHelper.getKeyStore("PKCS12"));
+    }
+
+    @Test
     public void getMessageDigestConsultsSecurityProviderFirst() throws Exception {
         final Provider bc = new org.bouncycastle.jce.provider.BouncyCastleProvider();
         SecurityHelper.setSecurityProvider(bc);

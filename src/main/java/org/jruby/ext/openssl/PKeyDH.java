@@ -509,7 +509,7 @@ public class PKeyDH extends PKey {
     }
 
     private static KeyFactory getKeyFactory() throws NoSuchAlgorithmException {
-        return SecurityHelper.getKeyFactory("DiffieHellman");
+        return SecurityHelper.getKeyFactory("DH");
     }
 
 }

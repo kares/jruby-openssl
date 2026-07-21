@@ -63,6 +63,11 @@ plugin :compiler, '3.15.0', compiler_configuration do
                compilerArgs: [ '', '-XDignore.symbol.file=true' ]
 end
 
+plugin! :jar, '2.4',
+        'outputDirectory' => 'lib', 'finalName' => 'jopenssl',
+        'excludes' => [ 'annotated_classes.txt' ],
+        'archive' => { 'manifestEntries' => { 'JOpenSSL-Variant' => 'main' } }
+
 plugin! :clean, '2.4',
         'filesets' => [
           { directory: 'lib', includes: [ 'jopenssl.jar' ] },

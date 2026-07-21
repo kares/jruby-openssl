@@ -163,6 +163,14 @@ DO NOT MODIFY - GENERATED CODE
         <configuration>
           <outputDirectory>lib</outputDirectory>
           <finalName>jopenssl</finalName>
+          <excludes>
+            <exclude>annotated_classes.txt</exclude>
+          </excludes>
+          <archive>
+            <manifestEntries>
+              <JOpenSSL-Variant>main</JOpenSSL-Variant>
+            </manifestEntries>
+          </archive>
         </configuration>
       </plugin>
       <plugin>

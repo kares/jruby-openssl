@@ -6,6 +6,12 @@ Gem::Specification.new do |s|
   version_rb = File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
   version_rb = File.read(version_rb)
   s.version = version_rb.match( /.*\sVERSION\s*=\s*['"](.*)['"]/ )[1]
+  # stays MAJOR.MINOR.PATCH - 4th segment is reserved for the fips variant
+  if Gem::Version.new(s.version).release.segments.size != 3
+    fail "jruby-openssl version must be MAJOR.MINOR.PATCH (got #{s.version})"
+  end
+
+  s.metadata['jopenssl_variant'] = 'main'
 
   s.platform = 'java'
   s.authors = ['Karol Bucek', 'Ola Bini', 'JRuby contributors']

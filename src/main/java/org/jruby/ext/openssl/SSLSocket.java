@@ -474,11 +474,16 @@ public class SSLSocket extends RubyObject {
         final IRubyObject verifyHostname = sslContext.getInstanceVariable("@verify_hostname");
         if (verifyHostname == null || !verifyHostname.isTrue()) return;
 
+        // MRI verifies hostname inside the OpenSSL verify callback, which only runs when peer
+        // verification is enabled; under VERIFY_NONE nothing (incl. the hostname) is verified
+        final IRubyObject verifyMode = verify_mode(context);
+        if (verifyMode.isNil() || RubyNumeric.fix2int(verifyMode) == 0) return; // VERIFY_NONE
+
         final IRubyObject hostname = getInstanceVariable("@hostname");
         if (hostname == null || hostname.isNil()) return;
 
-        // CRuby calls verify_certificate_identity inside the OpenSSL verify
-        // callback and sets V_ERR_HOSTNAME_MISMATCH only when it returns false
+        // MRI calls verify_certificate_identity inside the OpenSSL verify callback
+        // and sets V_ERR_HOSTNAME_MISMATCH only when it returns false
         final CallSite[] sites = getMetaClass().getExtraCallSites();
         final IRubyObject result = sites == null
                 ? callMethod(context, "verify_certificate_identity_internal", hostname)

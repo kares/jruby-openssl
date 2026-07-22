@@ -163,6 +163,32 @@ class TestSSL < TestCase
     end
   end
 
+  # verify_hostname must NOT be enforced under VERIFY_NONE (MRI checks it only inside the
+  # peer-verify callback, which never runs when verification is disabled)
+  def test_verify_hostname_not_enforced_when_verify_none
+    now = Time.now
+    exts = [
+      ["keyUsage", "keyEncipherment,digitalSignature", true],
+      ["subjectAltName", "DNS:a.example.com", false],
+    ]
+    @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
+                           not_before: now, not_after: now + 1800)
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_hostname = true
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.hostname = "wrong.example.com" # mismatch, but VERIFY_NONE -> no check
+      ssl.connect
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
   def test_verify_hostname_not_enforced_when_disabled
     now = Time.now
     exts = [

@@ -52,6 +52,23 @@ class TestHTTPS < TestCase
     end
   end
 
+  def test_session_reuse_but_expire
+    https_server do |port, store|
+      http = Net::HTTP.new('localhost', port)
+      http.use_ssl = true
+      http.cert_store = store
+      http.ssl_timeout = 1
+      http.start; http.get('/'); http.finish
+      sleep 1.25 # let the SSL session expire
+      http.start; http.get('/')
+      socket = http.instance_variable_get(:@socket).io
+      # NOTE: MRI asserts `false` here; JRuby's SSLSocket#session_reused? returns nil (JSSE exposes
+      # no session-reuse flag). Either way the expired session is not reused.
+      assert_nil socket.session_reused?
+      http.finish
+    end
+  end
+
   private
 
   # minimal HTTPS server using SSLTestHelper's @svr_cert/@svr_key; yields (port, client_store)

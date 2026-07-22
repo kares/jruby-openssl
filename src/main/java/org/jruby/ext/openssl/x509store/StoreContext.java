@@ -2254,6 +2254,10 @@ public class StoreContext {
         // look for serial number of certificate in CRL - make sure the reason is not removeFromCRL
         final X509CRLEntry rev = crl.getRevokedCertificate(x.getSerialNumber());
         if (rev != null) {
+            // an entry bearing a certificateIssuer (2.5.29.29) is scoped to a (possibly different) issuer;
+            // indirect-CRL issuer matching is not resolved here -> do not false-revoke same-serial cert of CRL's issuer
+            // NOTE: getCertificateIssuer() is unreliable (BC provider returns null), so check directly
+            if (rev.getExtensionValue("2.5.29.29") != null) return 1;
             if (rev.getRevocationReason() == CRLReason.REMOVE_FROM_CRL) return 2;
             if (ctx.verify_cb_crl(V_ERR_CERT_REVOKED) == 0) return 0;
         }

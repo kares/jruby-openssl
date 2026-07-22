@@ -333,6 +333,63 @@ class TestX509Store < TestCase
     assert_equal(OpenSSL::X509::V_ERR_DIFFERENT_CRL_SCOPE, err)
   end
 
+  def test_crl_entry_certificate_issuer_scope
+    # a CRL entry scoped (certificateIssuer) to another issuer must not revoke
+
+    ca_key = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA2
+    ee_key = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA1
+    now = Time.at(Time.now.to_i)
+    ca = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLEntry-Scope-CA"), ca_key, 1,
+                    [["basicConstraints", "CA:TRUE", true], ["keyUsage", "cRLSign,keyCertSign", true]],
+                    nil, nil, not_before: now - 3600, not_after: now + 7200)
+    ee = issue_cert(OpenSSL::X509::Name.parse("/CN=CRLEntry-Scope-EE"), ee_key, 100,
+                    [["keyUsage", "digitalSignature", true]],
+                    ca, ca_key, not_before: now - 3600, not_after: now + 3600)
+
+    # certificateIssuer (2.5.29.29): GeneralNames with a single directoryName [4] scoping the entry elsewhere
+    cert_issuer_ext = lambda do |dn|
+      name_seq  = OpenSSL::ASN1.decode(OpenSSL::X509::Name.parse(dn).to_der)   # Name (RDNSequence)
+      dir_name  = OpenSSL::ASN1::ASN1Data.new([name_seq], 4, :CONTEXT_SPECIFIC) # GeneralName directoryName [4]
+      gen_names = OpenSSL::ASN1::Sequence.new([dir_name])
+      OpenSSL::X509::Extension.new("2.5.29.29", gen_names.to_der, true)        # MUST be critical per RFC 5280
+    end
+
+    build_crl = lambda do |scope_issuer|
+      crl = OpenSSL::X509::CRL.new
+      crl.issuer = ca.subject
+      crl.version = 1
+      crl.last_update = now
+      crl.next_update = now + 3600
+      revoked = OpenSSL::X509::Revoked.new
+      revoked.serial = 100 # same serial as the EE cert
+      revoked.time = now
+      revoked.add_extension(cert_issuer_ext.call("/CN=Some-Other-Issuer")) if scope_issuer
+      crl.add_revoked(revoked)
+      crl.add_extension(OpenSSL::X509::Extension.new("crlNumber", OpenSSL::ASN1::Integer(1)))
+      crl.sign(ca_key, OpenSSL::Digest::SHA256.new)
+      crl
+    end
+
+    verify = lambda do |crl|
+      store = OpenSSL::X509::Store.new
+      store.purpose = OpenSSL::X509::PURPOSE_ANY
+      store.flags = OpenSSL::X509::V_FLAG_CRL_CHECK
+      store.add_cert(ca)
+      store.add_crl(crl)
+      [store.verify(ee), store.error]
+    end
+
+    # control: a plain entry carrying the EE serial revokes the cert
+    ok, err = verify.call(build_crl.call(false))
+    assert_equal(false, ok)
+    assert_equal(OpenSSL::X509::V_ERR_CERT_REVOKED, err)
+
+    # same serial, but the entry is scoped to a different (indirect) issuer -> must not revoke this cert
+    ok, err = verify.call(build_crl.call(true))
+    assert_not_equal(OpenSSL::X509::V_ERR_CERT_REVOKED, err)
+    assert_equal(true, ok)
+  end
+
   def test_crl_time_boundary
     #return unless defined?(OpenSSL::X509::V_FLAG_CRL_CHECK)
 

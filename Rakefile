@@ -69,6 +69,35 @@ namespace 'net-http' do
   task :test => ['lib/jopenssl.jar', :bundle_check]
 end
 
+namespace 'net-imap' do
+  net_imap_dir = File.expand_path('net-imap', File.dirname(__FILE__))
+  jopenssl_lib = File.expand_path('lib', File.dirname(__FILE__))
+
+  desc "Install net-imap gem dependencies"
+  task :bundle do
+    sh "cd #{net_imap_dir} && bundle install"
+  end
+
+  task :bundle_check do
+    unless File.exist?(File.join(net_imap_dir, 'Gemfile.lock'))
+      fail "bundle not installed, run `rake net-imap:bundle'"
+    end
+  end
+
+  desc "Run net-imap (SSL/STARTTLS) tests against jruby-openssl"
+  task :test => ['lib/jopenssl.jar', :bundle_check] do
+    # jruby-openssl lib is absolute (and first) so the -C chdir below can't shadow the local openssl
+    libs = [ jopenssl_lib, File.join(net_imap_dir, 'lib'), File.join(net_imap_dir, 'test/lib') ]
+    # TLS handshake / STARTTLS tests only (the rest of test_imap.rb hangs on JRuby); a few fail
+    # on JRuby - SSLServer thread teardown race, IOError vs InvalidResponseError - kept visible
+    name_filter = '--name=/^test_(imaps|starttls)/'
+    # array form (no shell) so the regexp metacharacters reach test-unit intact
+    ruby '-C', net_imap_dir, "-I#{libs.join(File::PATH_SEPARATOR)}",
+         '-rbundler/setup', '-rhelper',
+         File.join(net_imap_dir, 'test/net/imap/test_imap.rb'), name_filter, '-v'
+  end
+end
+
 namespace 'net-ssh' do
   net_ssh_dir = File.expand_path('net-ssh', File.dirname(__FILE__))
 

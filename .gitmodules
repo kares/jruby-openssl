@@ -10,3 +10,6 @@
 [submodule "net-ssh"]
 	path = net-ssh
 	url = https://github.com/net-ssh/net-ssh.git
+[submodule "net-imap"]
+	path = net-imap
+	url = https://github.com/ruby/net-imap.git

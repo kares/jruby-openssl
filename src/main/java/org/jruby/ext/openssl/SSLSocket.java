@@ -47,6 +47,7 @@ import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SNIMatcher;
+import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SNIServerName;
 import javax.net.ssl.StandardConstants;
 
@@ -150,14 +151,6 @@ public class SSLSocket extends RubyObject {
 
     private static final ByteBuffer EMPTY_DATA = ByteBuffer.allocate(0).asReadOnlyBuffer();
 
-    // accepts any SNI host name - only there so the server records the client's requested name for servername_cb
-    private static final SNIMatcher ACCEPT_ANY_SNI = new SNIMatcher(StandardConstants.SNI_HOST_NAME) {
-        @Override
-        public boolean matches(SNIServerName serverName) {
-            // servername_cb callback, not the matcher, decides what to do
-            return true;
-        }
-    };
 
     SSLContext sslContext;
     private SSLEngine engine;
@@ -174,6 +167,9 @@ public class SSLSocket extends RubyObject {
     private SSLEngineResult.Status status;
 
     int verifyResult = X509Utils.V_OK;
+
+    // client requested SNI host name, captured during server handshake
+    private volatile String requestedServerName;
 
     @JRubyMethod(name = "initialize", rest = true, frame = true, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, final IRubyObject[] args) {
@@ -394,9 +390,17 @@ public class SSLSocket extends RubyObject {
                         engine.setNeedClientAuth(true);
                     }
                 }
-                // BCJSSE (unlike SunJSSE) only records the client's SNI when a matcher is set
+                // BC-JSSE (unlike SunJSSE) only surfaces the client's SNI when a matcher is set
                 final SSLParameters sslParams = engine.getSSLParameters();
-                sslParams.setSNIMatchers(Collections.singletonList(ACCEPT_ANY_SNI));
+                sslParams.setSNIMatchers(Collections.singletonList(new SNIMatcher(StandardConstants.SNI_HOST_NAME) {
+                    @Override
+                    public boolean matches(SNIServerName serverName) {
+                        if (serverName instanceof SNIHostName) {
+                            requestedServerName = ((SNIHostName) serverName).getAsciiName();
+                        }
+                        return true;
+                    }
+                }));
                 engine.setSSLParameters(sslParams);
                 engine.beginHandshake();
                 handshakeStatus = engine.getHandshakeStatus();
@@ -448,7 +452,8 @@ public class SSLSocket extends RubyObject {
         IRubyObject callback = sslContext.getInstanceVariable("@servername_cb");
         if (callback == null || callback.isNil()) return;
 
-        final String serverName = BCSSLSupport.getRequestedServerName(engine);
+        String serverName = requestedServerName; // captured during the handshake
+        if (serverName == null) serverName = BCSSLSupport.getRequestedServerName(engine);
         if (serverName == null) return;
 
         final Ruby runtime = context.runtime;

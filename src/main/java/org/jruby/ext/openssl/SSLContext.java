@@ -27,6 +27,7 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl;
 
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -49,6 +50,7 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSessionContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
 
 import org.jruby.Ruby;
@@ -1221,7 +1223,8 @@ public class SSLContext extends RubyObject {
 
     }
 
-    private static class TrustManagerImpl implements X509TrustManager {
+    // *extended* trust manager - BCJSSE (unlike SunJSSE) does not invoke a plain X509TrustManager
+    private static class TrustManagerImpl extends X509ExtendedTrustManager {
 
         final InternalContext internalContext;
 
@@ -1231,27 +1234,45 @@ public class SSLContext extends RubyObject {
         }
 
         @Override
-        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
             checkTrusted("ssl_client", chain);
         }
 
         @Override
-        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
             checkTrusted("ssl_server", chain);
         }
 
         @Override
-        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+        public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
+            checkTrusted("ssl_client", chain);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) throws CertificateException {
+            checkTrusted("ssl_server", chain);
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
+            checkTrusted("ssl_client", chain);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) throws CertificateException {
+            checkTrusted("ssl_server", chain);
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
             final int size = internalContext.clientCert.size();
-            return internalContext.clientCert.toArray( new java.security.cert.X509Certificate[size] );
+            return internalContext.clientCert.toArray(new X509Certificate[size]);
         }
 
         // c: ssl_verify_cert_chain
-        // C OpenSSL always runs verification to populate verify_result
-        // (accessible via SSL_get_verify_result), but only aborts the
-        // handshake when VERIFY_PEER is set. VERIFY_NONE still records
-        // the error (e.g. V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) for
-        // inspection after connect.
+        // OpenSSL always runs verification to populate verify_result (accessible via SSL_get_verify_result),
+        // but only aborts the handshake when VERIFY_PEER is set;
+        // VERIFY_NONE still records the error (e.g. V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) for after connect
         private void checkTrusted(final String purpose, final X509Certificate[] chain) throws CertificateException {
             if ( chain != null && chain.length > 0 ) {
                 final StoreContext storeContext = internalContext.createStoreContext(purpose);

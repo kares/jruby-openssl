@@ -78,7 +78,7 @@ public abstract class SecurityHelper {
 
     /**
      * @implNote needs to be lazy; happen after {@link #setFipsMode(boolean)}
-     * @return BC security provider
+     * @return main (BC) security provider
      */
     public static Provider getSecurityProvider() {
         Provider provider = securityProvider;
@@ -111,7 +111,7 @@ public abstract class SecurityHelper {
         setSecurityProvider(provider, true);
     }
 
-    private static synchronized void setSecurityProvider(final Provider provider, final boolean log) {
+    static synchronized void setSecurityProvider(final Provider provider, final boolean log) {
         if (provider != null && log) LOG.info("using security provider: " + provider);
         securityProvider = provider;
     }
@@ -123,12 +123,23 @@ public abstract class SecurityHelper {
     }
 
     /**
-     * @return BCJSSE (SSL SPI) provider
+     * @implNote needs to be lazy; happen after {@link #setFipsMode(boolean)}
+     * @return (BC-JSSE) SSL SPI provider
      */
-    static Provider getJsseProvider() {
+    public static Provider getJsseProvider() {
         Provider provider = jsseProvider;
         if (provider == null && initJsseProvider) provider = initJsseProvider(sslProviderName);
         return provider;
+    }
+
+    static synchronized void setJsseProvider(final Provider provider) {
+        setJsseProvider(provider, true);
+    }
+
+    private static void setJsseProvider(final Provider provider, final boolean log) {
+        if (provider != null && log) LOG.info("using ssl provider: " + provider);
+        jsseProvider = provider; // even if null - we can operate without jsse provider
+        initJsseProvider = false;
     }
 
     private static synchronized Provider initJsseProvider(final String name) {
@@ -145,8 +156,7 @@ public abstract class SecurityHelper {
             } else if (provider == null && name != null) {
                 LOG.debug("unknown ssl provider name: " + name);
             }
-            jsseProvider = provider; // even if null - we can operate without jsse provider
-            initJsseProvider = false;
+            setJsseProvider(provider, false);
         }
         return provider;
     }
@@ -499,21 +509,31 @@ public abstract class SecurityHelper {
     }
 
     public static SSLContext getSSLContext(final String protocol) throws NoSuchAlgorithmException {
-        try {
-            if (sslProviderName == "BCJSSE" && !"SSL".equals(protocol)) { // only TLS supported in BCJSSE
+        // prefer BC-JSSE for real TLS but fall back to JDK (SunJSSE) for "SSL" (SSLv23)
+        if (sslProviderName == "BCJSSE" && !"SSL".equals(protocol)) {
+            try {
                 final Provider provider = getJsseProvider();
                 if (provider != null) return getSSLContext(protocol, provider);
             }
+            catch (NoSuchAlgorithmException e) {
+                LOG.debug("getSSLContext", e);
+                if (isFipsMode()) throw e;
+            }
         }
-        catch (NoSuchAlgorithmException e) {
-            LOG.debug("getSSLContext", e);
-            if (isFipsMode()) throw e;
-        }
-        // in FIPS mode never fall back to a non-BCJSSE (e.g. SunJSSE) TLS stack
-        if (isFipsMode()) {
-            throw new NoSuchAlgorithmException("FIPS mode: no BCJSSE SSLContext for protocol " + protocol);
-        }
+        if (isFipsMode()) return getProviderSSLContext("SSL".equals(protocol) ? "TLS" : protocol);
         return SSLContext.getInstance(protocol); // built-in (SunJSSE) provider
+    }
+
+    // BC has no "SSL" context, default maps to "TLS" (min-version + approved-only keep negotiation at TLS 1.2+)
+    private static SSLContext getProviderSSLContext(final String protocol) throws NoSuchAlgorithmException {
+        assert !"SSL".equals(protocol);
+
+        final Provider provider = getJsseProvider();
+        if (provider == null) {
+            // FIPS: TLS must run on the validated BC-JSSE provider - never fall back to a non-approved stack
+            throw new NoSuchAlgorithmException("No JSSE provider to resolve SSL protocol '" + protocol + "'");
+        }
+        return getSSLContext(protocol, provider);
     }
 
     private static SSLContext getSSLContext(final String protocol, final Provider provider)

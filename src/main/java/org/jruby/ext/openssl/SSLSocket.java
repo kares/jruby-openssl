@@ -38,12 +38,17 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
+import java.util.Collections;
 
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SNIMatcher;
+import javax.net.ssl.SNIServerName;
+import javax.net.ssl.StandardConstants;
 
 import org.jruby.*;
 import org.jruby.anno.JRubyMethod;
@@ -144,6 +149,15 @@ public class SSLSocket extends RubyObject {
     }
 
     private static final ByteBuffer EMPTY_DATA = ByteBuffer.allocate(0).asReadOnlyBuffer();
+
+    // accepts any SNI host name - only there so the server records the client's requested name for servername_cb
+    private static final SNIMatcher ACCEPT_ANY_SNI = new SNIMatcher(StandardConstants.SNI_HOST_NAME) {
+        @Override
+        public boolean matches(SNIServerName serverName) {
+            // servername_cb callback, not the matcher, decides what to do
+            return true;
+        }
+    };
 
     SSLContext sslContext;
     private SSLEngine engine;
@@ -380,6 +394,10 @@ public class SSLSocket extends RubyObject {
                         engine.setNeedClientAuth(true);
                     }
                 }
+                // BCJSSE (unlike SunJSSE) only records the client's SNI when a matcher is set
+                final SSLParameters sslParams = engine.getSSLParameters();
+                sslParams.setSNIMatchers(Collections.singletonList(ACCEPT_ANY_SNI));
+                engine.setSSLParameters(sslParams);
                 engine.beginHandshake();
                 handshakeStatus = engine.getHandshakeStatus();
                 initialHandshake = true;
@@ -688,8 +706,7 @@ public class SSLSocket extends RubyObject {
         netWriteData.flip();
         handshakeStatus = result.getHandshakeStatus();
         status = result.getStatus();
-        if (handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK
-                && status == SSLEngineResult.Status.OK) {
+        if (handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK && status == SSLEngineResult.Status.OK) {
             doTasks();
         }
     }
@@ -730,6 +747,9 @@ public class SSLSocket extends RubyObject {
 
     private void finishInitialHandshake() {
         initialHandshake = false;
+        // sync the verify result the trust manager recorded during the handshake
+        // BCJSSE runs the trust check inline (no delegated task) so doTasks() misses
+        verifyResult = sslContext.getLastVerifyResult();
 
         final javax.net.ssl.SSLSession session = engine.getSession();
         if (session.getValue(SESSION_SOCKET_ID) == null) {

@@ -659,8 +659,7 @@ public class SecurityHelperTest {
     }
 
     public static void setFipsMode(final boolean fipsMode, final boolean reset) {
-        if (reset) SecurityHelper.FIPS_MODE.set(0); // reset flag
-        SecurityHelper.setFipsMode(fipsMode);
+        FipsTestSupport.setFipsMode(fipsMode, reset);
     }
 
     private static Provider getProvider() {

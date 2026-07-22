@@ -56,7 +56,7 @@ public abstract class OpenSSLHelper {
 
     public static String readResource(final String resource) {
         int n;
-        try (InputStream in = SSLSocketTest.class.getResourceAsStream(resource)) {
+        try (InputStream in = OpenSSLHelper.class.getResourceAsStream(resource)) {
             if (in == null) throw new IllegalArgumentException(resource + " not found on classpath");
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();

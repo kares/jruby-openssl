@@ -8,7 +8,7 @@ import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import org.jruby.ext.openssl.SecurityHelperTest;
+import org.jruby.ext.openssl.FipsTestSupport;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,7 +19,7 @@ public class NameTest {
 
     @BeforeAll
     public static void notFipsMode() {
-        SecurityHelperTest.setFipsMode(false, true);
+        FipsTestSupport.setFipsMode(false, true);
     }
 
     @Test

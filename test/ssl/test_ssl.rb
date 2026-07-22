@@ -690,6 +690,27 @@ class TestSSL < TestCase
     assert called['bar.example.com'], 'servername_cb should be called for bar.example.com'
   end
 
+  def test_servername_cb_not_called_without_sni
+    called = []
+    ctx_proc = Proc.new do |ctx|
+      ctx.servername_cb = Proc.new { |_, hostname| called << hostname; nil }
+    end
+    server_proc = Proc.new { |ctx, ssl| readwrite_loop(ctx, ssl) }
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, :ctx_proc => ctx_proc, :server_proc => server_proc) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new('TLSv1_2')
+      sock = TCPSocket.new('127.0.0.1', port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.sync_close = true # no #hostname set -> no SNI sent
+      ssl.connect
+      str = "x" * 100 + "\n"
+      ssl.puts(str)
+      assert_equal(str, ssl.gets) # connection still works without SNI
+      ssl.close
+    end
+    assert_equal([], called, "servername_cb should not be called without SNI (got: #{called.inspect})")
+  end
+
   CUSTOM_CIPHERS = "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:" +
       "ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:" +
       "ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:" +

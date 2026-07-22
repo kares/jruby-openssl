@@ -59,6 +59,16 @@ class TestOpenSSL < TestCase
     end
   end
 
+  def test_fips_mode_bound_to_jar_variant
+    url = org.jruby.ext.openssl::OpenSSL.java_class.to_java.getResource('OpenSSL.class')
+    # omit 'not running from a jar (exploded classes)' if url&.getProtocol != 'jar'
+    manifest = url.openConnection.getManifest
+    variant = manifest && manifest.getMainAttributes.getValue('JOpenSSL-Variant')
+    assert variant, 'JOpenSSL-Variant manifest attribute missing from jopenssl.jar'
+    assert_equal((variant.downcase == 'fips'), OpenSSL.fips_mode,
+                 "fips_mode (#{OpenSSL.fips_mode}) must match jar variant (#{variant})")
+  end if defined?(JRUBY_VERSION)
+
   def test_Digest
     digest = OpenSSL.Digest('MD5')
     assert_equal OpenSSL::Digest::MD5, digest

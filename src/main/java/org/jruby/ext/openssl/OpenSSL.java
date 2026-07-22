@@ -63,8 +63,11 @@ public class OpenSSL {
     private static final FunctionalCachingCallSite WARN_CALL_SITE = new FunctionalCachingCallSite("warn");
 
     public static void load(final Ruby runtime) {
-        final boolean fipsMode = runtime.getModule("JOpenSSL").hasConstant("BOUNCY_CASTLE_FIPS_VERSIONS");
-        SecurityHelper.setFipsMode(fipsMode);
+        doLoad(runtime, false);
+    }
+
+    static void doLoad(final Ruby runtime, final boolean fips) {
+        SecurityHelper.setFipsMode(fips);
         SecurityHelper.checkAndRegisterProviderOnce();
         LoggingSupport.silenceBouncyCastleLoggers();
 

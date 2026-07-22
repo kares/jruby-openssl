@@ -371,6 +371,62 @@ class TestSSL < TestCase
     end
   end
 
+  # Server-side verify_mode (ported from Ruby OpenSSL test_ssl.rb#test_verify_mode :
+  # VERIFY_PEER|VERIFY_FAIL_IF_NO_PEER_CERT requires the client to present a cert the server trusts
+  # TLS 1.2 pinned so a rejected client cert fails during the handshake (1.3 auths post-handshake)
+  def test_server_verify_mode_requires_trusted_client_cert
+    now = Time.now
+    ee = [["keyUsage", "digitalSignature", true]]
+    cli_key = OpenSSL::PKey::RSA.new(2048)
+    cli_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=Client"), cli_key, 11, ee,
+                          @ca_cert, @ca_key, not_before: now, not_after: now + 1800)
+    rogue_key = OpenSSL::PKey::RSA.new(2048)
+    rogue_cert = issue_cert(OpenSSL::X509::Name.parse("/CN=Rogue"), rogue_key, 12, ee,
+                            nil, nil, not_before: now, not_after: now + 1800) # self-signed, untrusted
+
+    vmode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+    tls12 = proc { |c| c.max_version = OpenSSL::SSL::TLS1_2_VERSION }
+    start_server(vmode, true, ignore_listener_error: true, ctx_proc: tls12) do |server, port|
+      connect = lambda do |cert, key|
+        ctx = OpenSSL::SSL::SSLContext.new
+        ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE # isolate the server-side check
+        ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION
+        if cert then ctx.cert = cert; ctx.key = key end
+        sock = TCPSocket.new("127.0.0.1", port)
+        ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+        begin
+          ssl.connect
+          :ok
+        ensure
+          ssl.close rescue nil
+          sock.close rescue nil
+        end
+      end
+
+      assert_raise(OpenSSL::SSL::SSLError) { connect.call(nil, nil) }              # no client cert
+      assert_raise(OpenSSL::SSL::SSLError) { connect.call(rogue_cert, rogue_key) } # untrusted cert
+      assert_equal :ok, connect.call(cli_cert, cli_key)                           # trusted cert
+    end
+  end
+
+  # VERIFY_PEER without FAIL_IF_NO_PEER_CERT: client cert is requested but optional, so a client
+  # presenting none still connects (setWantClientAuth vs setNeedClientAuth).
+  def test_server_verify_peer_allows_missing_client_cert
+    tls12 = proc { |c| c.max_version = OpenSSL::SSL::TLS1_2_VERSION }
+    start_server(OpenSSL::SSL::VERIFY_PEER, true, ignore_listener_error: true, ctx_proc: tls12) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      ssl.connect # no client cert - VERIFY_PEER alone must not require one
+      assert ssl.peer_cert # server cert still available
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
   # verify_result should report V_ERR_HOSTNAME_MISMATCH when hostname
   # verification fails during connect (matches CRuby behavior).
   def test_verify_result_hostname_mismatch

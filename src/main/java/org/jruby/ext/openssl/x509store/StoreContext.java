@@ -44,6 +44,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import javax.security.auth.x500.X500Principal;
 
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -1064,11 +1065,11 @@ public class StoreContext {
 
     private static final String NAME_CONSTRAINT_EXCLUDED_MESSAGE = "excluded subtree";
 
-    /**
+    /*
      * c: check_name_constraints
      *
-     * checks that each certificate's subject DN and SANs are within the name constraints (permitted/excluded subtrees)
-     * of all CA certificates higher in the chain
+     * checks that each certificate's subject DN and SANs are within the name constraints
+     * (permitted/excluded subtrees) of all CA certificates higher in the chain
      */
     private int checkNameConstraints() throws Exception {
         final int num = chain.size();
@@ -1111,7 +1112,7 @@ public class StoreContext {
 
                 // check subject DN as directoryName
                 try {
-                    javax.security.auth.x500.X500Principal subj = x.getSubjectX500Principal();
+                    X500Principal subj = x.getSubjectX500Principal();
                     final byte[] subjEncoded = subj != null ? subj.getEncoded() : ByteList.NULL_ARRAY;
                     if (subjEncoded.length > 2) {
                         X500Name dn = X500Name.getInstance(subjEncoded);
@@ -1127,7 +1128,7 @@ public class StoreContext {
                 try {
                     byte[] sanBytes = x.getExtensionValue(OID_SUBJECT_ALT_NAME);
                     if (sanBytes != null) {
-                        GeneralNames sans = parseGeneralNamesOctets(sanBytes);;
+                        GeneralNames sans = parseGeneralNamesOctets(sanBytes);
                         for (GeneralName san : sans.getNames()) {
                             validator.checkPermitted(san);
                             validator.checkExcluded(san);
@@ -1135,6 +1136,9 @@ public class StoreContext {
                     }
                 } catch (NameConstraintValidatorException e) {
                     if (handleNameConstraintViolation(e, x, i, "checkNameConstraints subject alt name")) return 0;
+                } catch (IllegalArgumentException e) { // malformed SAN
+                    LOG.debug("checkNameConstraints subject alt name", e);
+                    if (verify_cb_cert(x, i, V_ERR_INVALID_EXTENSION) == 0) return 0;
                 }
 
                 // EE cert with no SAN dNSName: check DNS-name-like CNs (NAME_CONSTRAINTS_check_CN)

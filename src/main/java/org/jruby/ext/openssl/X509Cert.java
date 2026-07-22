@@ -910,7 +910,9 @@ public class X509Cert extends RubyObject {
 
     @Override
     public Object toJava(Class target) {
-        if ( target.isAssignableFrom(X509Certificate.class) ) {
+        // NOTE: isAssignableFrom(X509AuxCertificate) so that target == X509AuxCertificate works
+        // (Aux is a subclass - isAssignableFrom(X509Certificate) would miss it)
+        if ( target.isAssignableFrom(X509AuxCertificate.class) ) {
             if ( target == X509AuxCertificate.class ) return getAuxCert();
             return cert;
         }

@@ -575,6 +575,13 @@ public abstract class PKey extends RubyObject {
 
     @Override
     public Object toJava(final Class target) {
+        if (target == KeyPair.class) {
+            final PrivateKey privateKey = getPrivateKey();
+            if (privateKey == null) {
+                throw getRuntime().newRuntimeError("private key not available, to convert to " + target);
+            }
+            return new KeyPair(getPublicKey(), privateKey);
+        }
         if (PrivateKey.class.isAssignableFrom(target)) {
             final PrivateKey key = getPrivateKey();
             if (key == null) {

@@ -797,6 +797,15 @@ public class X509Name extends RubyObject {
         }
     }
 
+    @Override
+    public Object toJava(Class target) {
+        // explicit-target only (Object keeps returning the Ruby object as with other RubyObjects)
+        if ( target != Object.class && target.isAssignableFrom(X500Principal.class) ) {
+            return new X500Principal( to_der(getRuntime().getCurrentContext()).getBytes() );
+        }
+        return super.toJava(target);
+    }
+
     private static RaiseException newNameError(Ruby runtime, String msg, Throwable e) {
         return newError(runtime, _X509(runtime).getClass("NameError"), msg, e);
     }

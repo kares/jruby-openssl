@@ -384,6 +384,15 @@ public class Digest extends RubyObject {
 
     }
 
+    @Override
+    public Object toJava(Class target) {
+        // explicit-target only; NOTE: returns the live impl - shares (mutable) digest state
+        if ( target != Object.class && target.isAssignableFrom(MessageDigest.class) && digest != null ) {
+            return digest;
+        }
+        return super.toJava(target);
+    }
+
     static RaiseException newDigestError(Ruby runtime, String message, Throwable cause) {
         return newError(runtime, _Digest(runtime).getClass("DigestError"), message, cause);
     }

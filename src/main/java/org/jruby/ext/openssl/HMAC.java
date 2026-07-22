@@ -240,6 +240,15 @@ public class HMAC extends RubyObject {
         return out;
     }
 
+    @Override
+    public Object toJava(Class target) {
+        // explicit-target only; NOTE: returns the live impl - shares (mutable) mac state
+        if ( target != Object.class && target.isAssignableFrom(Mac.class) && mac != null ) {
+            return mac;
+        }
+        return super.toJava(target);
+    }
+
     private static RaiseException newHMACError(Ruby runtime, String message, Throwable cause) {
         return newError(runtime, runtime.getModule("OpenSSL").getClass("HMACError"), message, cause);
     }

@@ -54,6 +54,9 @@ import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.asn1.x509.CRLDistPoint;
+import org.bouncycastle.asn1.x509.DistributionPoint;
+import org.bouncycastle.asn1.x509.DistributionPointName;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.GeneralSubtree;
@@ -2072,7 +2075,43 @@ public class StoreContext {
         } else if (idp.onlyContainsCACerts()) {
             return IDP_SCOPE_DIFFERENT;
         }
+        // when the IDP names a distribution point, the cert must reference it via a matching
+        // CRL distribution point, otherwise this CRL only covers a different partition
+        final DistributionPointName idpPoint = idp.getDistributionPoint();
+        if (idpPoint != null && !certReferencesDistPoint(cert, idpPoint)) {
+            return IDP_SCOPE_DIFFERENT;
+        }
         return IDP_SCOPE_OK;
+    }
+
+    private static boolean certReferencesDistPoint(final X509AuxCertificate cert, final DistributionPointName idpPoint) {
+        final byte[] crlDistPoints = cert.getExtensionValue("2.5.29.31"); // cRLDistributionPoints
+        if (crlDistPoints == null) return false; // no CRLDP -> can't be in scope of a partitioned CRL
+        final CRLDistPoint crlPoint;
+        try {
+            ASN1OctetString oct = ASN1OctetString.getInstance(crlDistPoints);
+            crlPoint = CRLDistPoint.getInstance(ASN1Sequence.getInstance(oct.getOctets()));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        for (DistributionPoint point : crlPoint.getDistributionPoints()) {
+            if (idpCheckDistributionPoint(point.getDistributionPoint(), idpPoint)) return true;
+        }
+        return false;
+    }
+
+    // x509_vfy.c: idp_check_dp() - do two DistributionPointNames refer to the same point?
+    private static boolean idpCheckDistributionPoint(final DistributionPointName a, final DistributionPointName b) {
+        if (a == null || b == null) return true; // a missing name matches anything
+        if (a.getType() == DistributionPointName.FULL_NAME && b.getType() == DistributionPointName.FULL_NAME) {
+            for (GeneralName ga : GeneralNames.getInstance(a.getName()).getNames()) {
+                for (GeneralName gb : GeneralNames.getInstance(b.getName()).getNames()) {
+                    if (ga.equals(gb)) return true;
+                }
+            }
+            return false;
+        }
+        return a.equals(b); // nameRelativeToCRLIssuer or mixed types: require an exact match
     }
 
     final static Store.GetCRLFunction defaultGetCRL = (context, crls, x) -> {

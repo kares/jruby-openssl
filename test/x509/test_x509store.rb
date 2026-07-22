@@ -273,6 +273,66 @@ class TestX509Store < TestCase
     end
   end if defined?(JRUBY_VERSION) && Gem::Version.create(JRUBY_VERSION) >= Gem::Version.create('9.1.17.0')
 
+  # build an issuingDistributionPoint (2.5.29.28) extension with a fullName URI distributionPoint
+  def idp_extension(uri)
+    gn         = OpenSSL::ASN1::ASN1Data.new(uri.b, 6, :CONTEXT_SPECIFIC)         # GeneralName URI [6]
+    full_name  = OpenSSL::ASN1::ASN1Data.new([gn], 0, :CONTEXT_SPECIFIC)          # DistributionPointName fullName [0]
+    dist_point = OpenSSL::ASN1::ASN1Data.new([full_name], 0, :CONTEXT_SPECIFIC)   # IDP distributionPoint [0]
+    OpenSSL::X509::Extension.new("2.5.29.28", OpenSSL::ASN1::Sequence.new([dist_point]).to_der, true)
+  end
+
+  def test_crl_idp_distribution_point_scope # F13 - IDP distributionPoint must match the cert's CRLDP
+    return unless defined?(OpenSSL::X509::V_FLAG_CRL_CHECK)
+    return unless defined?(OpenSSL::X509::V_ERR_DIFFERENT_CRL_SCOPE)
+
+    ca_key = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA2
+    ee_key = OpenSSL::PKey::RSA.new SSLTestHelper::TEST_KEY_RSA1
+    now = Time.at(Time.now.to_i)
+    ca = issue_cert(OpenSSL::X509::Name.parse("/CN=IDP-Scope-CA"), ca_key, 1,
+                    [["basicConstraints", "CA:TRUE", true], ["keyUsage", "cRLSign,keyCertSign", true]],
+                    nil, nil, not_before: now - 3600, not_after: now + 7200)
+    # EE references CRL distribution point "crlA"
+    ee = issue_cert(OpenSSL::X509::Name.parse("/CN=IDP-Scope-EE"), ee_key, 100,
+                    [["keyUsage", "digitalSignature", true],
+                     ["crlDistributionPoints", "URI:http://ca/crlA.pem", false]],
+                    ca, ca_key, not_before: now - 3600, not_after: now + 3600)
+
+    idp_crl = lambda do |dp_uri|
+      crl = OpenSSL::X509::CRL.new
+      crl.issuer = ca.subject
+      crl.version = 1
+      crl.last_update = now
+      crl.next_update = now + 3600
+      revoked = OpenSSL::X509::Revoked.new
+      revoked.serial = 100 # revoke the EE cert
+      revoked.time = now
+      crl.add_revoked(revoked)
+      crl.add_extension(OpenSSL::X509::Extension.new("crlNumber", OpenSSL::ASN1::Integer(1)))
+      crl.add_extension(idp_extension(dp_uri))
+      crl.sign(ca_key, OpenSSL::Digest::SHA256.new)
+      crl
+    end
+
+    verify = lambda do |crl|
+      store = OpenSSL::X509::Store.new
+      store.purpose = OpenSSL::X509::PURPOSE_ANY
+      store.flags = OpenSSL::X509::V_FLAG_CRL_CHECK
+      store.add_cert(ca)
+      store.add_crl(crl)
+      [store.verify(ee), store.error]
+    end
+
+    # CRL scoped to the same distribution point the cert references -> in scope, revocation applies
+    ok, err = verify.call(idp_crl.call("http://ca/crlA.pem"))
+    assert_equal(false, ok)
+    assert_equal(OpenSSL::X509::V_ERR_CERT_REVOKED, err)
+
+    # CRL scoped to a different distribution point -> out of scope, must not revoke the cert
+    ok, err = verify.call(idp_crl.call("http://ca/crlB.pem"))
+    assert_equal(false, ok)
+    assert_equal(OpenSSL::X509::V_ERR_DIFFERENT_CRL_SCOPE, err)
+  end
+
   def test_crl_time_boundary
     #return unless defined?(OpenSSL::X509::V_FLAG_CRL_CHECK)
 

@@ -46,7 +46,7 @@ public abstract class ExceptionUtil {
     }
 
     @SuppressWarnings("unchecked")
-    private static <E extends Throwable> void throwException(Throwable ex) throws E {
+    public static <E extends Throwable> void throwException(Throwable ex) throws E {
         throw (E) ex;
     }
 }

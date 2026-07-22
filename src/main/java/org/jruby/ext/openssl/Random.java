@@ -34,6 +34,7 @@ import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.util.ExceptionUtil;
 import org.jruby.ext.openssl.util.RubySupport;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -42,6 +43,7 @@ import org.jruby.util.ByteList;
 import org.jruby.util.SafePropertyAccessor;
 
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -114,6 +116,15 @@ public class Random {
 
     private static class ThreadLocalHolder extends Holder {
 
+        private final ThreadLocal<SecureRandom> secureRandomLocal =
+                ThreadLocal.withInitial(() -> {
+                    try {
+                        return SecurityHelper.getSecureRandom();
+                    } catch (NoSuchAlgorithmException e) {
+                        ExceptionUtil.throwException(e); return null;
+                    }
+                });
+
         @Override
         java.util.Random getPlainRandom() {
             return ThreadLocalRandom.current();
@@ -125,12 +136,8 @@ public class Random {
         }
 
         @Override
-        java.security.SecureRandom getSecureRandom(ThreadContext context) {
-            java.security.SecureRandom secureRandom = context.secureRandom;
-            if (secureRandom == null) {
-                secureRandom = context.getSecureRandom();
-            }
-            return secureRandom;
+        java.security.SecureRandom getSecureRandom(ThreadContext context) throws NoSuchAlgorithmException {
+            return secureRandomLocal.get();
         }
     }
 

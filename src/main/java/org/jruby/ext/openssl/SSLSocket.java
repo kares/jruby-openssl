@@ -873,10 +873,16 @@ public class SSLSocket extends RubyObject {
         SSLEngineResult result;
         do {
             result = engine.unwrap(netReadData, appReadData);
+            if ( result.getStatus() == SSLEngineResult.Status.BUFFER_OVERFLOW ) {
+                // record produced more data - grow and retry, otherwise full appReadData
+                // would make read() return 0 with buffered net data -> busy-loop
+                appReadData = ensureCapacity(appReadData, appReadData.position() + engine.getSession().getApplicationBufferSize());
+            }
         }
-        while ( result.getStatus() == SSLEngineResult.Status.OK &&
+        while ( result.getStatus() == SSLEngineResult.Status.BUFFER_OVERFLOW ||
+              ( result.getStatus() == SSLEngineResult.Status.OK &&
 				result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP &&
-				result.bytesProduced() == 0 );
+				result.bytesProduced() == 0 ) );
 
         if ( result.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED ) {
             finishInitialHandshake();

@@ -143,31 +143,43 @@ public class Name {
         return builder.build();
     }
 
-    private static ASN1Encodable canonicalize(final ASN1Encodable value) {
+    public static ASN1Encodable canonicalize(final ASN1Encodable value) {
         if (value instanceof ASN1String) {
-            return new DERUTF8String(canonicalize(((ASN1String) value)));
+            return new DERUTF8String(canonicalize(((ASN1String) value).getString()));
         }
         return value;
     }
 
-    // asn1_string_canon: trim, lower-case, collapse spaces
-    private static String canonicalize(ASN1String string) {
-        final String content = string.getString().trim();
-        if (content.length() == 0) return content;
+    // asn1_string_canon: trim, collapse internal whitespace to one space, lower-case A-Z
+    // ASCII-only (matching OpenSSL) on purpose: lower-cases only A-Z and treats only ASCII
+    // whitespace, leaving non-ASCII bytes verbatim
+    // Character.toLowerCase/isWhitespace would fold e.g. 'É'/Turkish 'İ' and diverge from c_rehash
+    public static String canonicalize(final String content) {
+        int begin = 0, end = content.length();
+        while (begin < end && isAsciiWhitespace(content.charAt(begin))) begin++;
+        while (end > begin && isAsciiWhitespace(content.charAt(end - 1))) end--;
+        if (begin == end) return "";
 
-        final StringBuilder out = new StringBuilder(content.length());
-        int i = 0;
-        while (i < content.length()) {
+        final StringBuilder out = new StringBuilder(end - begin);
+        int i = begin;
+        while (i < end) {
             final char c = content.charAt(i);
-            if (Character.isWhitespace(c)) {
+            if (isAsciiWhitespace(c)) {
                 out.append(' ');
-                while (i < content.length() && Character.isWhitespace(content.charAt(i))) i++;
+                do { i++; } while (i < end && isAsciiWhitespace(content.charAt(i)));
+            } else if (c >= 'A' && c <= 'Z') {
+                out.append((char) (c + ('a' - 'A')));
+                i++;
             } else {
-                out.append(Character.toLowerCase(c));
+                out.append(c);
                 i++;
             }
         }
         return out.toString();
+    }
+
+    private static boolean isAsciiWhitespace(final char c) { // OpenSSL ossl_v_isspace
+        return c == ' ' || c == '\t' || c == '\n' || c == '\u000B' || c == '\f' || c == '\r';
     }
 
     /**

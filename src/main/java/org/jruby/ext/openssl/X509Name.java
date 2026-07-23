@@ -609,42 +609,10 @@ public class X509Name extends RubyObject {
         final X500NameBuilder builder = new X500NameBuilder( BCStyle.INSTANCE );
         for ( int i = 0; i < oids.size(); i++ ) {
             ASN1Encodable value = values.get(i);
-            value = canonicalize(value);
+            value = Name.canonicalize(value);
             builder.addRDN( oids.get(i), value );
         }
         return canonicalName = builder.build();
-    }
-
-    private ASN1Encodable canonicalize(ASN1Encodable value) {
-        if (value instanceof ASN1String) {
-            ASN1String string = (ASN1String) value;
-            return new DERUTF8String(canonicalize(string.getString()));
-        }
-        return value;
-    }
-
-    private String canonicalize(String string) {
-        //asn1_string_canon (trim, to lower case, collapse multiple spaces)
-        string = string.trim();
-        if (string.length() == 0) {
-            return string;
-        }
-
-        StringBuilder out = new StringBuilder();
-        int i = 0;
-        while (i < string.length()) {
-            char c = string.charAt(i);
-            if (Character.isWhitespace(c)){
-                out.append(' ');
-                while (i < string.length() && Character.isWhitespace(string.charAt(i))) {
-                    i++;
-                }
-            } else {
-                out.append(Character.toLowerCase(c));
-                i++;
-            }
-        }
-        return out.toString();
     }
 
     @JRubyMethod(name = { "cmp", "<=>" })

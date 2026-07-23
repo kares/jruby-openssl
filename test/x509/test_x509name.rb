@@ -125,6 +125,16 @@ class TestX509Name < TestCase
     assert_equal 214469118, name.hash
   end
 
+  def test_hash_non_ascii_not_case_folded # asn1_string_canon lower-cases only A-Z
+    # `openssl x509 -subject_hash` for /CN=Éé Test (UTF8String) on OpenSSL 3.5
+    name = OpenSSL::X509::Name.new [['CN', 'Éé Test', OpenSSL::ASN1::UTF8STRING]]
+    assert_equal 0xaef52d11, name.hash
+    # non-ASCII uppercase is kept verbatim (not folded like ASCII A-Z)
+    upper = OpenSSL::X509::Name.new([['CN', 'É', OpenSSL::ASN1::UTF8STRING]]).hash
+    lower = OpenSSL::X509::Name.new([['CN', 'é', OpenSSL::ASN1::UTF8STRING]]).hash
+    assert_not_equal upper, lower
+  end
+
   def test_hash_old
     omit_on_fips 'hash_old is MD5-based, which is not FIPS-approved'
 

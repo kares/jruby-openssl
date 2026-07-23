@@ -156,15 +156,24 @@ public class SSLSocket extends RubyObject {
     private SSLEngine engine;
     private RubyIO io;
 
+    // concurrency contract (~ MRI SSLSocket): one reader + one writer thread at a time,
+    // e.g. net/imap reads on a receiver thread while the main thread writes commands
+    // MRI needs no locking since OpenSSL serializes all outbound bytes internally;
+    // in JOSSL outbound side (netWriteData + engine.wrap + channel writes) is shared between
+    // write() and read-triggered flushes/handshake wraps, so it is guarded by writeLock
+    //
+    // inbound side (netReadData/appReadData + engine.unwrap) is single-reader and lock-free
     ByteBuffer appReadData;
     ByteBuffer netReadData;
     ByteBuffer netWriteData;
+    private final Object writeLock = new Object();
 
-    private boolean initialHandshake = false;
+    private volatile boolean initialHandshake = false;
     private transient long initializeTime;
 
-    private SSLEngineResult.HandshakeStatus handshakeStatus; // != null after hand-shake starts
-    private SSLEngineResult.Status status;
+    // mutated by both the reader and writer thread (only writes are writeLock-guarded)
+    private volatile SSLEngineResult.HandshakeStatus handshakeStatus; // != null after hand-shake starts
+    private volatile SSLEngineResult.Status status;
 
     int verifyResult = X509Utils.V_OK;
 
@@ -687,20 +696,18 @@ public class SSLSocket extends RubyObject {
                 }
                 break;
             case NEED_WRAP:
-                if ( netWriteData.hasRemaining() ) {
-                    while ( flushData(blocking) ) { /* loop */ }
-                }
-                assert !netWriteData.hasRemaining();
-                doWrap(blocking);
-                flushData(blocking);
-                assert status != SSLEngineResult.Status.BUFFER_UNDERFLOW;
-                if (status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
-                    netWriteData.compact();
-                    netWriteData = ensureCapacity(netWriteData, engine.getSession().getPacketBufferSize());
-                    netWriteData.flip();
-                    if (handshakeStatus != SSLEngineResult.HandshakeStatus.NEED_UNWRAP) {
-                        sel = waitSelect(SelectionKey.OP_WRITE, blocking, exception);
-                        if ( sel instanceof IRubyObject ) return (IRubyObject) sel; // :wait_writeable
+                synchronized (writeLock) { // post-handshake wraps (renegotiation) may race a write()
+                    doWrap(blocking);
+                    flushData(blocking);
+                    assert status != SSLEngineResult.Status.BUFFER_UNDERFLOW;
+                    if (status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+                        netWriteData.compact();
+                        netWriteData = ensureCapacity(netWriteData, engine.getSession().getPacketBufferSize());
+                        netWriteData.flip();
+                        if (handshakeStatus != SSLEngineResult.HandshakeStatus.NEED_UNWRAP) {
+                            sel = waitSelect(SelectionKey.OP_WRITE, blocking, exception);
+                            if ( sel instanceof IRubyObject ) return (IRubyObject) sel; // :wait_writeable
+                        }
                     }
                 }
                 break;
@@ -711,13 +718,18 @@ public class SSLSocket extends RubyObject {
     }
 
     private void doWrap(final boolean blocking) throws IOException {
-        netWriteData.clear();
-        SSLEngineResult result = engine.wrap(EMPTY_DATA.duplicate(), netWriteData);
-        netWriteData.flip();
-        handshakeStatus = result.getHandshakeStatus();
-        status = result.getStatus();
-        if (handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK && status == SSLEngineResult.Status.OK) {
-            doTasks();
+        synchronized (writeLock) {
+            // drain leftover encrypted bytes first
+            // clear() would silently discard them, corrupting TLS record stream
+            while ( netWriteData.hasRemaining() && flushData(blocking) ) { /* loop */ }
+            netWriteData.clear();
+            SSLEngineResult result = engine.wrap(EMPTY_DATA.duplicate(), netWriteData);
+            netWriteData.flip();
+            handshakeStatus = result.getHandshakeStatus();
+            status = result.getStatus();
+            if (handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK && status == SSLEngineResult.Status.OK) {
+                doTasks();
+            }
         }
     }
 
@@ -736,14 +748,16 @@ public class SSLSocket extends RubyObject {
      * @throws IOException
      */
     private boolean flushData(boolean blocking) throws IOException {
-        try {
-            writeToChannel(netWriteData, blocking);
+        synchronized (writeLock) {
+            try {
+                writeToChannel(netWriteData, blocking);
+            }
+            catch (IOException ex) {
+                netWriteData.position(netWriteData.limit());
+                throw ex;
+            }
+            return netWriteData.hasRemaining();
         }
-        catch (IOException ex) {
-            netWriteData.position(netWriteData.limit());
-            throw ex;
-        }
-        return netWriteData.hasRemaining();
     }
 
     private int writeToChannel(ByteBuffer buffer, boolean blocking) throws IOException {
@@ -801,19 +815,21 @@ public class SSLSocket extends RubyObject {
         if ( ! blocking ) channel.configureBlocking(false);
 
         try {
-            if ( netWriteData.hasRemaining() ) {
+            synchronized (writeLock) {
+                if ( netWriteData.hasRemaining() ) {
+                    flushData(blocking);
+                }
+                // compact() to preserve encrypted bytes flushData could not send (non-blocking partial write)
+                // clear() would discard them, corrupting the TLS record stream:
+                netWriteData.compact();
+                final SSLEngineResult result = engine.wrap(src, netWriteData);
+                if ( result.getStatus() == SSLEngineResult.Status.CLOSED ) {
+                    throw getRuntime().newIOError("closed SSL engine");
+                }
+                netWriteData.flip();
                 flushData(blocking);
+                return result.bytesConsumed();
             }
-            // compact() to preserve encrypted bytes flushData could not send (non-blocking partial write)
-            // clear() would discard them, corrupting the TLS record stream:
-            netWriteData.compact();
-            final SSLEngineResult result = engine.wrap(src, netWriteData);
-            if ( result.getStatus() == SSLEngineResult.Status.CLOSED ) {
-                throw getRuntime().newIOError("closed SSL engine");
-            }
-            netWriteData.flip();
-            flushData(blocking);
-            return result.bytesConsumed();
         }
         finally {
             if ( ! blocking ) channel.configureBlocking(blockingMode);
@@ -920,24 +936,26 @@ public class SSLSocket extends RubyObject {
     private void doShutdown() throws IOException {
         if (engine.isOutboundDone()) return;
 
-        if (flushData(false)) {
-            LOG.debug(getRuntime(), "doShutdown data in the data buffer; can't send close");
-            return;
+        synchronized (writeLock) {
+            if (flushData(false)) {
+                LOG.debug(getRuntime(), "doShutdown data in the data buffer; can't send close");
+                return;
+            }
+            netWriteData.clear();
+            try {
+                engine.wrap(EMPTY_DATA.duplicate(), netWriteData); // send close (after sslEngine.closeOutbound)
+            }
+            catch (SSLException e) {
+                LOG.debug(getRuntime(), "doShutdown", e);
+                return;
+            }
+            catch (RuntimeException e) {
+                LOG.debugStack(getRuntime(), "doShutdown", e);
+                return;
+            }
+            netWriteData.flip();
+            flushData(true);
         }
-        netWriteData.clear();
-        try {
-            engine.wrap(EMPTY_DATA.duplicate(), netWriteData); // send close (after sslEngine.closeOutbound)
-        }
-        catch (SSLException e) {
-            LOG.debug(getRuntime(), "doShutdown", e);
-            return;
-        }
-        catch (RuntimeException e) {
-            LOG.debugStack(getRuntime(), "doShutdown", e);
-            return;
-        }
-        netWriteData.flip();
-        flushData(true);
     }
 
     /**
@@ -967,11 +985,14 @@ public class SSLSocket extends RubyObject {
         }
 
         try {
-            // Flush pending write data before reading (after write_nonblock encrypted bytes may still be buffered)
-            if ( engine != null && netWriteData.hasRemaining() ) {
-                if ( flushData(blocking) && ! blocking ) {
-                    if ( exception ) throw newSSLErrorWaitWritable(runtime, "write would block");
-                    return runtime.newSymbol("wait_writable");
+            // flush pending write before reading (after write_nonblock bytes may be buffered)
+            // writeLock: don't inspect/flush netWriteData while another thread is writing...
+            synchronized (writeLock) {
+                if ( engine != null && netWriteData.hasRemaining() ) {
+                    if ( flushData(blocking) && ! blocking ) {
+                        if ( exception ) throw newSSLErrorWaitWritable(runtime, "write would block");
+                        return runtime.newSymbol("wait_writable");
+                    }
                 }
             }
 

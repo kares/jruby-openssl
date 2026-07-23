@@ -220,6 +220,81 @@ public class SSLSocketTest extends OpenSSLHelper {
         }
     }
 
+    /**
+     * Concurrent one-reader + one-writer usage (net/imap pattern: receiver thread reads while the
+     * main thread writes commands). The read path flushes pending write data (sysreadImpl) which
+     * used to race the writer on the shared netWriteData, corrupting TLS records - the server
+     * would fail with e.g. "Input record too big" (net-imap test_imaps_with_ca_file failure)
+     */
+    @Test
+    public void concurrentReadWriteDoesNotCorruptRecords() throws Exception {
+        final RubyArray pair = (RubyArray) runtime.evalScriptlet(start_ssl_server_rb());
+        final SSLSocket client = (SSLSocket) pair.entry(0).toJava(SSLSocket.class);
+        final SSLSocket server = (SSLSocket) pair.entry(1).toJava(SSLSocket.class);
+
+        final byte[] MSG = "RUBY0001 LOGOUT - concurrent read/write round-trip\r\n".getBytes();
+        final int ROUNDS = 300;
+        final long expectedBytes = (long) MSG.length * ROUNDS;
+
+        try {
+            // server: echo everything back (round-trips keep the client receiver busy in sysread)
+            final ServerReadResult echoResult = new ServerReadResult();
+            final Thread echo = new Thread(() -> {
+                try {
+                    final RubyFixnum len = RubyFixnum.newFixnum(runtime, 8192);
+                    while (echoResult.bytesRead < expectedBytes) {
+                        IRubyObject data = server.sysread(currentContext(), len);
+                        echoResult.bytesRead += ((RubyString) data).getByteList().getRealSize();
+                        server.syswrite(currentContext(), data);
+                    }
+                } catch (Throwable t) {
+                    echoResult.failure = t;
+                } finally {
+                    echoResult.finish();
+                }
+            }, "ssl-echo-server");
+            echo.start();
+
+            // client receiver: blocking sysread loop - its pre-read flush is what raced the writer
+            final ServerReadResult received = new ServerReadResult();
+            final Thread receiver = new Thread(() -> {
+                try {
+                    final RubyFixnum len = RubyFixnum.newFixnum(runtime, 8192);
+                    while (received.bytesRead < expectedBytes) {
+                        IRubyObject data = client.sysread(currentContext(), len);
+                        received.bytesRead += ((RubyString) data).getByteList().getRealSize();
+                    }
+                } catch (Throwable t) {
+                    received.failure = t;
+                } finally {
+                    received.finish();
+                }
+            }, "ssl-client-receiver");
+            receiver.start();
+
+            // client main thread: write commands while the receiver is (blocking) in sysread
+            final RubyString msg = RubyString.newString(runtime, MSG);
+            for (int i = 0; i < ROUNDS; i++) {
+                client.syswrite(currentContext(), msg);
+            }
+
+            assertTrue(received.await(15, TimeUnit.SECONDS),
+                    "client receiver did not get all echoes back - corrupt TLS records? " +
+                    "(echo: " + echoResult.bytesRead + "/" + expectedBytes + " " + echoResult.failure +
+                    ", received: " + received.bytesRead + ")");
+            if (echoResult.failure != null) {
+                throw new AssertionError("server echo failed - corrupt TLS records on the wire", echoResult.failure);
+            }
+            if (received.failure != null) {
+                throw new AssertionError("client receiver failed", received.failure);
+            }
+            assertEquals(expectedBytes, received.bytesRead);
+            echo.join(1000); receiver.join(1000);
+        } finally {
+            closeQuietly(pair);
+        }
+    }
+
     private void closeQuietly(final RubyArray sslPair) {
         for (int i = 0; i < sslPair.getLength(); i++) {
             final IRubyObject elem = sslPair.entry(i);

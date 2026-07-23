@@ -1551,7 +1551,7 @@ public class ASN1 {
 
             final IRubyObject value = callMethod(context, "value");
             if (value instanceof RubyArray) {
-                // Cruby openssl joins elements of array and casts to string
+                // MRI OpenSSL joins elements of array and casts to string
                 final RubyArray arr = (RubyArray) value;
 
                 StringBuilder values = new StringBuilder();
@@ -1573,12 +1573,10 @@ public class ASN1 {
                     }
                 }
 
-                if (values.length() > 0) {
-                    return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, new DERGeneralString(values.toString()));
-                } else {
-                    // array of strings as value (default)
+                if (values.length() == 0) { // array of strings as value (default)
                     return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, new BERSequence(vec));
                 }
+                return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, new DERGeneralString(values.toString()));
             } else if (value instanceof ASN1Data) {
                 return ASN1Shim.newDERTaggedObject(isExplicitTagging(), tagClass, tag, ((ASN1Data) value).toASN1(context));
             } else if (value instanceof RubyObject) {

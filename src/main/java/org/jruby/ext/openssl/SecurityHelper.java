@@ -92,15 +92,23 @@ public abstract class SecurityHelper {
     private static synchronized Provider initSecurityProvider() {
         Provider provider = securityProvider;
         if (provider == null && initSecurityProvider) {
-            final String providerName = isFipsMode() ? BC_FIPS_PROVIDER_NAME : BC_PROVIDER_NAME;
+            final boolean fips = isFipsMode();
+            final String providerName = fips ? BC_FIPS_PROVIDER_NAME : BC_PROVIDER_NAME;
+            final String providerClass = fips ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS;
             // reuse when provider already registered (e.g. via java.security configuration)
             provider = Security.getProvider(providerName);
+            if (provider != null && !providerClass.equals(provider.getClass().getName())) {
+                // a provider registered under the BC name but of a different class
+                final String msg = "registered security provider '" + providerName + "' is not " +
+                        providerClass + " (got " + provider.getClass().getName() + ')';
+                if (fips) throw new SecurityException(msg);
+                LOG.info(msg);
+            }
             if (provider != null) {
                 LOG.info("reusing registered security provider: " + providerName);
                 setSecurityProvider(provider, false);
             } else {
-                final String className = isFipsMode() ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS;
-                provider = setBouncyCastleProvider(className);
+                provider = setBouncyCastleProvider(providerClass);
             }
             initSecurityProvider = false;
         }
@@ -108,6 +116,10 @@ public abstract class SecurityHelper {
     }
 
     public static synchronized void setSecurityProvider(final Provider provider) {
+        // once resolved in FIPS mode the (validated) provider must not be swapped out
+        if (isFipsMode() && securityProvider != null) {
+            throw new SecurityException("can not replace security provider");
+        }
         setSecurityProvider(provider, true);
     }
 
@@ -130,10 +142,6 @@ public abstract class SecurityHelper {
         Provider provider = jsseProvider;
         if (provider == null && initJsseProvider) provider = initJsseProvider(sslProviderName);
         return provider;
-    }
-
-    static synchronized void setJsseProvider(final Provider provider) {
-        setJsseProvider(provider, true);
     }
 
     private static void setJsseProvider(final Provider provider, final boolean log) {
@@ -204,8 +212,14 @@ public abstract class SecurityHelper {
 
     static void setFipsMode(final boolean fipsMode) {
         final int fipsModeValue = fipsMode ? FIPS_MODE_TRUE : FIPS_MODE_FALSE;
-        if (!FIPS_MODE.compareAndSet(0, fipsModeValue) && FIPS_MODE.get() != fipsModeValue) {
+        final boolean latched = FIPS_MODE.compareAndSet(0, fipsModeValue);
+        if (!latched && FIPS_MODE.get() != fipsModeValue) {
             throw new SecurityException("unexpected FIPS mode adjustment (" + fipsMode + ")");
+        }
+        // provider is resolved lazily against the mode; if it was already resolved
+        // (e.g. an early getSecurityProvider) setting FIPS would keep a non-FIPS provider
+        if (latched && fipsMode && !initSecurityProvider) {
+            throw new SecurityException("FIPS mode requested after the security provider was initialized");
         }
     }
 

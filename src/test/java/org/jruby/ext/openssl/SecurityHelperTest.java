@@ -70,6 +70,11 @@ public class SecurityHelperTest {
         }
     }
 
+    // a provider registered under an arbitrary name (e.g. impersonating "BCFIPS")
+    static final class NamedProvider extends Provider {
+        NamedProvider(final String name) { super(name, 1.0, name); }
+    }
+
     @Test
     public void doesNotRegisterBouncyCastleSecurityProviderByDefault() {
         SecurityHelper.getSecurityProvider();
@@ -652,6 +657,45 @@ public class SecurityHelperTest {
         final Provider bc = new org.bouncycastle.jce.provider.BouncyCastleProvider();
         SecurityHelper.setSecurityProvider(bc);
         assertEquals("BC", SecurityHelper.getMessageDigest("SHA-256").getProvider().getName());
+    }
+
+    @Test
+    public void setFipsModeRejectedAfterProviderInit() {
+        resetProvidersState(); // initSecurityProvider = true, securityProvider = null
+        setFipsMode(false, true);
+        assertNotNull(SecurityHelper.getSecurityProvider()); // resolves (non-FIPS) BC
+        assertFalse(SecurityHelper.initSecurityProvider);
+        SecurityHelper.FIPS_MODE.set(0); // simulate FIPS being latched only after init
+        try {
+            assertThrows(SecurityException.class, () -> SecurityHelper.setFipsMode(true));
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void setSecurityProviderSealedInFipsMode() {
+        SecurityHelper.setSecurityProvider(new DummyProvider()); // non-FIPS: establishes a provider
+        forceFipsMode(true);
+        try {
+            assertThrows(SecurityException.class,
+                () -> SecurityHelper.setSecurityProvider(new DummyProvider()));
+        }
+        finally { forceFipsMode(false); }
+    }
+
+    @Test
+    public void initRejectsImpostorProviderNamedBCFIPSInFipsMode() {
+        Security.addProvider(new NamedProvider("BCFIPS")); // not the validated BC-FIPS class
+        try {
+            forceFipsMode(true);
+            SecurityHelper.securityProvider = null; // force the lazy init path
+            SecurityHelper.initSecurityProvider = true;
+            assertThrows(SecurityException.class, () -> SecurityHelper.getSecurityProvider());
+        }
+        finally {
+            Security.removeProvider("BCFIPS");
+            forceFipsMode(false);
+        }
     }
 
     private static void forceFipsMode(final boolean fipsMode) {

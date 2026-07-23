@@ -327,6 +327,46 @@ class TestCipher < TestCase
     end
   end
 
+  # CTR keeps a running counter across updates split on arbitrary boundaries;
+  # chunked output must equal a single-shot encrypt
+  def test_aes_ctr_streaming_arbitrary_chunks
+    iv = ['f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff'].pack('H*')
+    data = ("Streaming CTR keeps a running counter across updates. " * 5).b # 265 bytes
+    %w[aes-128-ctr aes-256-ctr].each do |algo|
+      key = OpenSSL::Cipher.new(algo).random_key
+      one = OpenSSL::Cipher.new(algo).encrypt; one.key = key; one.iv = iv
+      expected = one.update(data) + one.final
+
+      c = OpenSSL::Cipher.new(algo).encrypt; c.key = key; c.iv = iv
+      out = "".b; off = 0
+      [1, 7, 13, 16, 31, 64, 3].cycle do |n|
+        break if off >= data.bytesize
+        out << c.update(data[off, n]); off += n
+      end
+      out << c.final
+      assert_equal expected, out, "#{algo} arbitrary-chunk streaming"
+    end
+  end
+
+  # NIST SP 800-38A F.5.5/F.5.6 AES-256-CTR known-answer vector
+  def test_aes256_ctr_nist_kat
+    key = ['603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4'].pack('H*')
+    iv  = ['f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff'].pack('H*')
+    pt  = ['6bc1bee22e409f96e93d7e117393172a' \
+           'ae2d8a571e03ac9c9eb76fac45af8e51' \
+           '30c81c46a35ce411e5fbc1191a0a52ef' \
+           'f69f2445df4f9b17ad2b417be66c3710'].pack('H*')
+    ct  = ['601ec313775789a5b7a7f504bbf3d228' \
+           'f443e3ca4d62b59aca84e990cacaf5c5' \
+           '2b0930daa23de94ce87017ba2d84988d' \
+           'dfc9c58db67aada613c2dd08457941a6'].pack('H*')
+
+    enc = OpenSSL::Cipher.new('aes-256-ctr').encrypt; enc.key = key; enc.iv = iv
+    assert_equal ct, enc.update(pt) + enc.final, "aes-256-ctr encrypt KAT"
+    dec = OpenSSL::Cipher.new('aes-256-ctr').decrypt; dec.key = key; dec.iv = iv
+    assert_equal pt, dec.update(ct) + dec.final, "aes-256-ctr decrypt KAT"
+  end
+
   # Ensure encrypt-decrypt on the same object still works
   def test_encrypt_then_decrypt_same_object
     key, iv = "0123456789abcdef", "fedcba9876543210"

@@ -12,12 +12,13 @@ jobs:
 
     strategy:
       matrix:
-        ruby-version: [ jruby-9.4.14.0, jruby-10.0.6.0 ]
+        # NOTE: failing on JRuby 10 due bundle -> pulling in rbs
+        ruby-version: [ jruby-9.4.14.0 ] # jruby-10.0.6.0
         include:
           - ruby-version: jruby-9.4.14.0
             java-version: 11
-          - ruby-version: jruby-10.0.6.0
-            java-version: 21
+          #- ruby-version: jruby-10.0.6.0
+          #  java-version: 21
       fail-fast: false
 
     steps:

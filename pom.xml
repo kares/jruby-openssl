@@ -15,7 +15,6 @@ DO NOT MODIFY - GENERATED CODE
   <packaging>gem</packaging>
   <name>SSL/TLS and general-purpose cryptography for JRuby</name>
   <description>Ruby OpenSSL compatibility for JRuby, based on Java JCA/JCE and Bouncy Castle libraries (does not depend on native OpenSSL).</description>
-  <url>https://github.com/jruby/jruby-openssl</url>
   <licenses>
     <license>
       <name>EPL-1.0</name>
@@ -36,7 +35,7 @@ DO NOT MODIFY - GENERATED CODE
   <developers>
     <developer>
       <name>Karol Bucek</name>
-      <email>self+jruby-openssl@kares.org</email>
+      <email>jossl@kares.org</email>
     </developer>
     <developer>
       <name>Ola Bini</name>
@@ -45,10 +44,6 @@ DO NOT MODIFY - GENERATED CODE
       <name>JRuby contributors</name>
     </developer>
   </developers>
-  <scm>
-    <connection>https://github.com/jruby/jruby-openssl.git</connection>
-    <url>https://github.com/jruby/jruby-openssl</url>
-  </scm>
   <distributionManagement>
     <repository>
       <id>ossrh</id>
@@ -1157,7 +1152,7 @@ DO NOT MODIFY - GENERATED CODE
           </plugin>
           <plugin>
             <artifactId>maven-jar-plugin</artifactId>
-            <version>2.4</version>
+            <version>3.4.1</version>
             <executions>
               <execution>
                 <id>jar-release</id>

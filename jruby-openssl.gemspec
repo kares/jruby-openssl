@@ -12,14 +12,16 @@ Gem::Specification.new do |s|
   end
 
   s.metadata['jopenssl_variant'] = 'main'
+  s.metadata['source_code_uri'] = 'https://github.com/jruby/jruby-openssl'
+  s.metadata['bug_tracker_uri'] = 'https://github.com/jruby/jruby-openssl/issues'
+  s.metadata['rubygems_mfa_required'] = 'true'
 
   s.platform = 'java'
   s.authors = ['Karol Bucek', 'Ola Bini', 'JRuby contributors']
-  s.email = 'self+jruby-openssl@kares.org'
+  s.email = 'jossl@kares.org'
   s.summary = "SSL/TLS and general-purpose cryptography for JRuby"
   s.description = "Ruby OpenSSL compatibility for JRuby, "  +
                   "based on Java JCA/JCE and Bouncy Castle libraries (does not depend on native OpenSSL)."
-  s.homepage = 'https://github.com/jruby/jruby-openssl'
   s.licenses = [ 'EPL-1.0', 'GPL-2.0', 'LGPL-2.1' ]
 
   s.require_paths = ['lib']
@@ -27,7 +29,7 @@ Gem::Specification.new do |s|
   s.files = `git ls-files`.split("\n").
     select { |f| f =~ /^(lib)/ ||
                  f =~ /^(History|LICENSE|README|Rakefile|Mavenfile|pom.xml)/i } +
-    Dir.glob('lib/jopenssl.jar') + Dir.glob('vendor/**/*.jar')
+            ['lib/jopenssl.jar'] + Dir.glob('vendor/**/*.jar').sort
 
   bc_version = version_rb.match( /.*\sBOUNCY_CASTLE_VERSION\s*=\s*['"](.*)['"]/ )[1]
   raise 'BOUNCY_CASTLE_VERSION not matched' if (bc_version || '').empty?

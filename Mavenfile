@@ -63,7 +63,7 @@ plugin :compiler, '3.15.0', compiler_configuration do
                compilerArgs: [ '', '-XDignore.symbol.file=true' ]
 end
 
-plugin! :jar, '2.4',
+plugin! :jar, '3.4.1',
         'outputDirectory' => 'lib', 'finalName' => 'jopenssl',
         'excludes' => [ 'annotated_classes.txt' ],
         'archive' => { 'manifestEntries' => { 'JOpenSSL-Variant' => 'main' } }
@@ -106,7 +106,8 @@ supported_bc_versions = %w{ 1.80 1.81 1.82 1.83 1.84 1.85 }
 default_bc_version = File.read File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
 default_bc_version = default_bc_version[/BOUNCY_CASTLE_VERSION\s?=\s?'(.*?)'/, 1]
 
-properties( 'shim.inline.skip' => 'false', # ShimInliner, see exec-maven-plugin above
+# reproducible builds: Rakefile passes -Dproject.build.outputTimestamp=$SOURCE_DATE_EPOCH
+properties( 'shim.inline.skip' => 'false',
             'gem.deploy.skip' => 'false', # jar-release profile sets this true
             'jruby.plugins.version' => '3.0.6',
             'jruby.switches' => '-W0', # https://github.com/torquebox/jruby-maven-plugins/issues/94
@@ -237,7 +238,7 @@ profile id: 'jar-release' do
                      '${basedir}/src/main/module/module-info.java' ]
   end
 
-  plugin :jar, '2.4' do
+  plugin :jar, '3.4.1' do
     execute_goal :jar, id: 'jar-release', phase: 'package',
         classesDirectory: jar_release_dir,
         outputDirectory: '${project.build.directory}',

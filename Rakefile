@@ -2,16 +2,21 @@ require 'rake/testtask'
 
 mvnw = File.expand_path('./mvnw', File.dirname(__FILE__))
 
+# reproducible build: SOURCE_DATE_EPOCH shared by jopenssl.jar and gem
+# read from env by RubyGems; pass via -D so dev builds don't churn pom.xml
+def source_date_epoch!
+  ENV['SOURCE_DATE_EPOCH'] ||= `git log -1 --pretty=%ct`.strip
+end
+
+def _build_output_timestamp
+  "-Dproject.build.outputTimestamp=#{ENV['SOURCE_DATE_EPOCH']}" if ENV['SOURCE_DATE_EPOCH']
+end
+
 desc "Package jopenssl.jar with the compiled classes"
 task :jar do
   sh("#{mvnw} prepare-package -Dmaven.test.skip=true")
 end
-namespace :jar do
-  desc "Package jopenssl.jar file (and dependent jars)"
-  task :all do
-    sh("#{mvnw} package -Dmaven.test.skip=true")
-  end
-end
+
 task :test_prepare => :jar do
   sh("#{mvnw} test-compile") # separate due -Dmaven.test.skip=true
 end
@@ -21,7 +26,47 @@ task :clean do
 end
 
 task :build do
-  sh("#{mvnw} package")
+  source_date_epoch!
+  sh("#{mvnw} package #{_build_output_timestamp}")
+end
+
+desc "Sanity-check the tree/version, then build a reproducible release gem"
+task :release => :release_check do
+  source_date_epoch! # pin to the release commit so the gem + jar use the same
+  puts "SOURCE_DATE_EPOCH=#{ENV['SOURCE_DATE_EPOCH']} (#{Time.at(ENV['SOURCE_DATE_EPOCH'].to_i).utc})"
+  Rake::Task[:build].invoke
+  gem = Dir['target/*.gem', 'pkg/*.gem'].max_by { |f| File.mtime(f) }
+  abort "release aborted - no .gem produced" unless gem
+  puts "built #{gem}"
+  # gem push #{gem}  (or: #{File.basename(mvnw)} deploy -Pjar-release for the jar artifact)"
+end
+
+task :release_check do
+  dirty = `git status --porcelain`.strip
+  abort "release aborted - working tree is not clean:\n#{dirty}" unless dirty.empty?
+
+  load File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
+  version = JOpenSSL::VERSION
+
+  if Gem::Version.new(version).prerelease? && ENV['PRERELEASE'] != 'true'
+    abort "release aborted - #{version} is a prerelease"
+  end
+
+  branch = `git rev-parse --abbrev-ref HEAD`.strip
+  warn "WARNING: releasing from '#{branch}' (not 'master')" unless branch == 'master'
+
+  tag = `git tag --points-at HEAD`.split("\n").find { |t| t =~ /#{Regexp.escape(version)}/ }
+  warn "WARNING: no git tag matching #{version} points at HEAD" unless tag
+
+  puts "release checks passed for #{version}"
+end
+
+desc "Build the self-contained jar-release artifacts (-Pjar-release)"
+task :jar_release => :release_check do
+  source_date_epoch!
+  puts "SOURCE_DATE_EPOCH=#{ENV['SOURCE_DATE_EPOCH']} (#{Time.at(ENV['SOURCE_DATE_EPOCH'].to_i).utc})"
+  sh("#{mvnw} package -Pjar-release -Dmaven.test.skip=true #{_build_output_timestamp}")
+  # deploy (gpg-sign + push): #{File.basename(mvnw)} deploy -Prelease,jar-release -D...
 end
 
 task :default => :build

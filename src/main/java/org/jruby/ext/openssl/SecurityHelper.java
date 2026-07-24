@@ -223,12 +223,9 @@ public abstract class SecurityHelper {
         }
     }
 
-    /**
-     * @implNote execute {@link #setFipsMode(boolean)} BEFORE
-     */
     static void checkAndRegisterProviderOnce() {
         final String register = SafePropertyAccessor.getProperty("jruby.openssl.provider.register");
-        setRegisterProvider(register == null ? isFipsMode() : Boolean.parseBoolean(register));
+        setRegisterProvider(Boolean.parseBoolean(register));
     }
 
     static synchronized void setRegisterProvider(final boolean register) {

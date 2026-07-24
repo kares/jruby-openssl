@@ -227,8 +227,6 @@ public abstract class SecurityHelper {
      * @implNote execute {@link #setFipsMode(boolean)} BEFORE
      */
     static void checkAndRegisterProviderOnce() {
-        if (securityProvider != null) return;
-
         final String register = SafePropertyAccessor.getProperty("jruby.openssl.provider.register");
         setRegisterProvider(register == null ? isFipsMode() : Boolean.parseBoolean(register));
     }
@@ -563,7 +561,7 @@ public abstract class SecurityHelper {
     static boolean verify(final X509CRL crl, final PublicKey publicKey, final boolean silent)
         throws NoSuchAlgorithmException, CRLException, InvalidKeyException, SignatureException {
         try {
-            final Provider provider = securityProvider;
+            final Provider provider = getSecurityProvider();
             if (provider != null) {
                 crl.verify(publicKey, provider);
             }

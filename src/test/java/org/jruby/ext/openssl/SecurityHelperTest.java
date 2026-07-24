@@ -139,6 +139,24 @@ public class SecurityHelperTest {
         }
     }
 
+    @Test
+    public void registersPresetProviderWhenRequested() {
+        SecurityHelper.setSecurityProvider(new DummyProvider()); // embedder presets before load
+        final String register = System.getProperty("jruby.openssl.provider.register");
+        System.setProperty("jruby.openssl.provider.register", "true");
+        try {
+            SecurityHelper.checkAndRegisterProviderOnce();
+            // a preset provider must still be registered globally (not skipped)
+            assertNotNull(java.security.Security.getProvider("DUMMY"));
+        }
+        finally {
+            java.security.Security.removeProvider("DUMMY");
+            SecurityHelper.setRegisterProvider(false);
+            if (register == null) System.clearProperty("jruby.openssl.provider.register");
+            else System.setProperty("jruby.openssl.provider.register", register);
+        }
+    }
+
     // Standart java.security
 
     @Test

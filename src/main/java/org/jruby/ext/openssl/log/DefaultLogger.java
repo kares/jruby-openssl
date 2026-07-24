@@ -79,7 +79,7 @@ final class DefaultLogger implements Logger {
         if (!isWarn()) return;
 
         final String message = msgWithPrefix(msg, false);
-        if (runtime != null) {
+        if (runtime != null && OpenSSL.isLoaded()) {
             OpenSSL.doWarn(runtime.getCurrentContext(), message);
         }
         else {
@@ -92,7 +92,7 @@ final class DefaultLogger implements Logger {
         if (!isWarn()) return;
 
         final String message = msgWithPrefix(msg, true) + ex;
-        if (runtime != null) {
+        if (runtime != null && OpenSSL.isLoaded()) {
             OpenSSL.doWarn(runtime.getCurrentContext(), message);
         }
         else {
@@ -105,7 +105,7 @@ final class DefaultLogger implements Logger {
     public void warnWithCaller(final Ruby runtime, CharSequence msg) {
         if (!isWarn()) return;
 
-        if (runtime != null) {
+        if (runtime != null && OpenSSL.isLoaded()) {
             final ThreadContext context = runtime.getCurrentContext();
             final CharSequence caller = RubySupport.callerTraceAt(context, 1);
             if (caller != null) msg = msgWithPrefix(msg, true) + '<' + caller + '>';

@@ -62,6 +62,8 @@ public class OpenSSL {
 
     private static final FunctionalCachingCallSite WARN_CALL_SITE = new FunctionalCachingCallSite("warn");
 
+    private static boolean loaded = false;
+
     public static void load(final Ruby runtime) {
         doLoad(runtime, false);
     }
@@ -72,6 +74,11 @@ public class OpenSSL {
         LoggingSupport.silenceBouncyCastleLoggers();
 
         createOpenSSL(runtime);
+        loaded = true;
+    }
+
+    public static boolean isLoaded() {
+        return loaded;
     }
 
     public static void createOpenSSL(final Ruby runtime) {

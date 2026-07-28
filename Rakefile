@@ -91,18 +91,18 @@ require_relative 'tasks/vendor_tests'
 define_vendor_test_tasks # root + jopenssl_lib default to this tree
 
 namespace :integration do
-  it_path = File.expand_path('src/test/integration', File.dirname(__FILE__))
+  it_path = File.expand_path('integration', File.dirname(__FILE__))
   task :install do
     ruby "-C #{it_path} -S bundle install"
   end
-  # desc "Run IT tests"
+  desc "Run tests via invoker (bc-compat)"
   task :test => 'lib/jopenssl.jar' do
     unless File.exist?(File.join(it_path, 'Gemfile.lock'))
-      raise "bundle not installed, run `rake integration:install'"
+      fail "bundle not installed, run `rake integration:install'"
     end
     loader = "ARGV.each { |file| require(file) }"
     lib = [ File.expand_path('../lib', __FILE__), it_path ]
-    test_files = FileList['src/test/integration/*_test.rb'].map { |path| path.sub('src/test/integration/', '') }
-    ruby "-I#{lib.join(':')} -C src/test/integration -e \"#{loader}\" #{test_files.map { |f| "\"#{f}\"" }.join(' ')}"
+    test_files = FileList['integration/*_test.rb'].map { |path| path.sub('integration/', '') }
+    ruby "-I#{lib.join(':')} -C integration -e \"#{loader}\" #{test_files.map { |f| "\"#{f}\"" }.join(' ')}"
   end
 end

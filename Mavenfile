@@ -134,7 +134,7 @@ end
 
 invoker_run_options = {
     id: 'tests-with-different-bc-versions',
-    projectsDirectory: 'integration',
+    projectsDirectory: 'src/it',
     pomIncludes: [ '*/pom.xml' ],
     streamLogs: true,
     # pass those properties on to the test project

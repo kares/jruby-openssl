@@ -1,4 +1,4 @@
-name: integration test
+name: bc-compat test
 
 on: [push, pull_request]
 
@@ -9,7 +9,7 @@ env:
 # runs the Ruby suite against each supported Bouncy Castle version
 jobs:
 
-  integration:
+  bc-compat:
     runs-on: ubuntu-22.04
 
     strategy:
@@ -44,6 +44,6 @@ jobs:
       - name: build jopenssl.jar
         run: jruby -rbundler/setup -S rake jar
 
-      - name: ~integration test (BC ${{ matrix.bc-version }})
-        run: ./mvnw -ntp test -f integration/${{ matrix.bc-version }}/pom.xml
+      - name: invoker test (BC ${{ matrix.bc-version }})
+        run: ./mvnw -ntp test -f src/it/${{ matrix.bc-version }}/pom.xml
         timeout-minutes: 15

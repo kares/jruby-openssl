@@ -1,0 +1,45 @@
+---
+store: :moneta
+store_options:
+  adapter: :YAML
+  adapter_options:
+    :file: '/tmp/trocla.yaml'
+
+encryption: :none
+options:
+    random: true
+    length: 16
+    charset: default
+
+profiles:
+  rootpw:
+    charset: consolesafe
+    length: 32
+  mysql:
+    charset: shellsafe
+    length: 32
+  login:
+    charset: consolesafe
+    length: 16
+  x509veryverylong:
+    # 15 years
+    days: 5475
+    # 5475 days
+    expires: 466560000
+  x509verylong:
+    # 10 years
+    days: 3650
+    # 3600 days
+    expires: 311040000
+  x509long:
+    # 5 years
+    days: 1825
+    # 1800 days
+    expires: 155520000
+  x509auto:
+    days: 40
+    # 30 days
+    expires: 2592000
+  x509short:
+    days: 2
+    # 1 day

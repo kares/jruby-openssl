@@ -35,10 +35,22 @@ class TestOpenSSL < TestCase
 
   def test_debug
     debug = OpenSSL.debug
-    assert (OpenSSL.debug == true || OpenSSL.debug == false)
-    assert OpenSSL.debug= true
+    assert debug == true || debug == false
+
+    # JUL back-end gates the reader on the JUL level, as well, so pin level for test
+    jul_logger = jul_level = nil
+    if defined?(JRUBY_VERSION) && ENV_JAVA['jruby.openssl.log.logger'].to_s.downcase == 'jul'
+      jul_logger = java.util.logging.Logger.getLogger('org.jruby.ext.openssl.OpenSSL')
+      jul_level = jul_logger.getLevel
+      jul_logger.setLevel(java.util.logging.Level::FINE)
+    end
+
+    OpenSSL.debug = true
     assert_equal true, OpenSSL.debug
+    OpenSSL.debug = false
+    assert_equal false, OpenSSL.debug
   ensure
+    jul_logger.setLevel(jul_level) if jul_logger
     OpenSSL.debug = debug
   end
 

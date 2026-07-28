@@ -7,7 +7,6 @@ env:
     -XX:+TieredCompilation
     -XX:TieredStopAtLevel=1
     -Djruby.openssl.debug=true
-    -Djavax.net.debug=ssl,handshake
   JRUBY_OPTS: '-J-ea'
   MAVEN_OPTS: '-Dstyle.color=always' # force Maven colored output
 
@@ -89,3 +88,4 @@ jobs:
 
       - name: rake test
         run: jruby -rbundler/setup -S rake test
+        timeout-minutes: 15

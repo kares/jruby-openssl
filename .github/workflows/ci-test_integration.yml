@@ -46,3 +46,4 @@ jobs:
 
       - name: ~integration test (BC ${{ matrix.bc-version }})
         run: ./mvnw -ntp test -f integration/${{ matrix.bc-version }}/pom.xml
+        timeout-minutes: 15

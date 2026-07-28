@@ -47,3 +47,4 @@ jobs:
 
       - name: sigstore tests
         run: jruby -S rake sigstore:test
+        timeout-minutes: 15

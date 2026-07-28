@@ -47,3 +47,4 @@ jobs:
 
       - name: net-ssh tests
         run: jruby -S rake net-ssh:test
+        timeout-minutes: 15

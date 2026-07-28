@@ -5,6 +5,8 @@ on: [push, pull_request]
 env:
   JAVA_TOOL_OPTIONS: >-
     -Djruby.openssl.provider.register=true
+    -Djruby.openssl.log.logger=jul
+    -Djruby.openssl.log.silence=false
     --add-opens=java.base/java.security=org.jruby.dist
   JRUBY_OPTS: '-J-ea -Xjit.threshold=0'
 
@@ -50,3 +52,4 @@ jobs:
 
       - name: rake test
         run: jruby -rbundler/setup -S rake test
+        timeout-minutes: 15

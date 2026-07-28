@@ -51,3 +51,4 @@ jobs:
 
       - name: ruby-jwt specs
         run: jruby -S rake ruby-jwt:test
+        timeout-minutes: 15

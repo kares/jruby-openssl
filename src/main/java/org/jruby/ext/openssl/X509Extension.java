@@ -61,6 +61,8 @@ import org.bouncycastle.asn1.x509.AccessDescription;
 import org.bouncycastle.asn1.x509.AuthorityInformationAccess;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.GeneralSubtree;
+import org.bouncycastle.asn1.x509.NameConstraints;
 import org.bouncycastle.util.encoders.Hex;
 
 import org.jruby.Ruby;
@@ -315,9 +317,6 @@ public class X509Extension extends RubyObject {
     private static final byte[] Object_Signing_CA = {'O', 'b', 'j', 'e', 'c', 't', ' ', 'S', 'i', 'g', 'n', 'i', 'n', 'g', ' ', 'C', 'A'};
     private static final byte[] Unused = {'U', 'n', 'u', 's', 'e', 'd'};
     private static final byte[] Unspecified = {'U', 'n', 's', 'p', 'e', 'c', 'i', 'f', 'i', 'e', 'd'};
-    //private static final byte[] Key_Compromise = { 'K','e','y',' ','C','o','m','p','r','o','m','i','s','e' };
-    //private static final byte[] CA_Compromise = { 'C','A',' ','C','o','m','p','r','o','m','i','s','e' };
-    //private static final byte[] Affiliation_Changed = { 'A','f','f','i','l','i','a','t','i','o','n',' ','C','h','a','n','g','e','d' };
     private static final byte[] keyid_ = {'k', 'e', 'y', 'i', 'd', ':'};
 
     @JRubyMethod
@@ -329,6 +328,18 @@ public class X509Extension extends RubyObject {
         final Ruby runtime = context.runtime;
         final String oid = getRealObjectID().getId();
         try {
+            if ( oid.equals("2.5.29.30") ) { // nameConstraints
+                ASN1Encodable value = getRealValue();
+                if ( value instanceof ASN1OctetString ) {
+                    value = ASN1.readObject( ((ASN1OctetString) value).getOctets() );
+                }
+                final NameConstraints nameConstraints = NameConstraints.getInstance(value);
+                final ByteList val = new ByteList(64);
+                appendGeneralSubtrees(val, "Permitted", nameConstraints.getPermittedSubtrees());
+                appendGeneralSubtrees(val, "Excluded", nameConstraints.getExcludedSubtrees());
+                return runtime.newString( val );
+            }
+
             if ( oid.equals("2.5.29.19") ) { // basicConstraints
                 ASN1Sequence seq2 = (ASN1Sequence) ASN1.readObject( getRealValueEncoded() );
                 final ByteList val = new ByteList(32);
@@ -709,6 +720,50 @@ public class X509Extension extends RubyObject {
         return method.getId();
     }
 
+    static final String MS_UPN_OID = "1.3.6.1.4.1.311.20.2.3"; // otherName type used by AD
+
+    // C: "Permitted:\n  DNS:example.com\n  DNS:other.com" (and/or an "Excluded:" block)
+    private static void appendGeneralSubtrees(final ByteList out, final String label,
+        final GeneralSubtree[] subtrees) {
+        if ( subtrees == null || subtrees.length == 0 ) return;
+
+        if ( out.length() > 0 ) out.append('\n');
+        out.append( ByteList.plain(label) );
+        out.append(':');
+        for ( int i = 0; i < subtrees.length; i++ ) {
+            out.append('\n').append(' ').append(' ');
+            final GeneralName base = subtrees[i].getBase();
+            // a constrained iPAddress carries address *and* mask (8 or 32 octets)
+            if ( base.getTagNo() == GeneralName.iPAddress ) {
+                final byte[] ip = ((ASN1OctetString) base.getName()).getOctets();
+                if ( ip.length == 8 || ip.length == 32 ) {
+                    out.append('I').append('P').append(':');
+                    final int half = ip.length / 2;
+                    appendIPAddress(out, ip, 0, half);
+                    out.append('/');
+                    appendIPAddress(out, ip, half, half);
+                    continue;
+                }
+            }
+            formatGeneralName(base, out, false);
+        }
+    }
+
+    private static void appendIPAddress(final ByteList out, final byte[] ip, final int off, final int len) {
+        if ( len == 4 ) {
+            for ( int i = 0; i < len; i++ ) {
+                out.append( ConvertBytes.intToCharBytes( ((int) ip[off + i]) & 0xff ) );
+                if ( i != len - 1 ) out.append('.');
+            }
+        }
+        else {
+            for ( int i = 0; i < len; i += 2 ) {
+                out.append( ConvertBytes.intToHexBytes( ((ip[off+i] & 0xff) << 8 | (ip[off+i+1] & 0xff)) ) );
+                if ( i != len - 2 ) out.append(':');
+            }
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static boolean formatGeneralName(final GeneralName name, final ByteList out, final boolean slashed) {
         final ASN1Encodable obj = name.getName();
@@ -762,11 +817,24 @@ public class X509Extension extends RubyObject {
             }
             break;
         case GeneralName.otherName:
-            out.append('o').append('t').append('h').append('e').append('r').append('N').append('a').append('m').append('e').
-                append(':');
-            out.append( ByteList.plain( obj.toString() ) );
-            return true;
-            //tagged = true;
+            // OtherName ::= SEQUENCE { type-id OBJECT IDENTIFIER, value [0] EXPLICIT ANY }
+            // C: "othername: UPN:<value>" for the MS UPN type, "othername: <oid>:<value>" otherwise
+            out.append( ByteList.plain("othername: ") );
+            final ASN1Sequence otherName = ASN1Sequence.getInstance(obj);
+            final String typeId = ASN1ObjectIdentifier.getInstance(otherName.getObjectAt(0)).getId();
+            out.append( ByteList.plain( MS_UPN_OID.equals(typeId) ? "UPN" : typeId ) );
+            out.append(':');
+            ASN1Encodable otherValue = otherName.getObjectAt(1);
+            if ( otherValue instanceof ASN1TaggedObject ) { // [0] EXPLICIT
+                otherValue = ASN1Shim.getTaggedObject((ASN1TaggedObject) otherValue);
+            }
+            if ( otherValue instanceof ASN1String ) {
+                out.append( ByteList.plain( ((ASN1String) otherValue).getString() ) );
+            }
+            else {
+                out.append( ByteList.plain( otherValue.toString() ) );
+            }
+            break; // NOTE: not a ';' separated entry (OpenSSL separates every name with ", ")
         case GeneralName.registeredID:
             out.append('R').append('I').append('D').
                 append(':');

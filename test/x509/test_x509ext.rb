@@ -3,11 +3,7 @@ require File.expand_path('../test_helper', File.dirname(__FILE__))
 
 class TestX509Extension < TestCase
 
-  if defined? JRUBY_VERSION
-    def setup; require 'jopenssl/load' end
-  else
-    def setup; require 'openssl' end
-  end
+  def setup; require 'openssl' end
 
   def test_new
     assert_raise(ArgumentError) { OpenSSL::X509::Extension.new }
@@ -244,6 +240,68 @@ class TestX509Extension < TestCase
         assert_equal (test[:output] || test[:input]), ext.value
         assert_equal test[:der], ext.to_der
     }
+  end
+
+  # -- SAN with otherName + nameConstraints value formatting -------------------
+  # built straight from DER so both engines decode byte-identical input
+
+  MS_UPN_OID = '1.3.6.1.4.1.311.20.2.3' # otherName type used by Active Directory
+
+  # [0] IMPLICIT OtherName ::= SEQUENCE { type-id OBJECT IDENTIFIER, value [0] EXPLICIT ANY }
+  def other_name(oid, value)
+    seq = OpenSSL::ASN1::Sequence.new([
+        OpenSSL::ASN1::ObjectId.new(oid),
+        OpenSSL::ASN1::ASN1Data.new([ OpenSSL::ASN1::UTF8String.new(value) ], 0, :CONTEXT_SPECIFIC)
+    ])
+    OpenSSL::ASN1::ASN1Data.new(seq.value, 0, :CONTEXT_SPECIFIC)
+  end
+
+  def dns_name(name); OpenSSL::ASN1::ASN1Data.new(name, 2, :CONTEXT_SPECIFIC) end
+
+  def san_extension(*entries)
+    OpenSSL::X509::Extension.new('subjectAltName', OpenSSL::ASN1::Sequence.new(entries).to_der, false)
+  end
+
+  def test_subject_alt_name_value_with_other_name_upn
+    ext = san_of(cert_with_san(other_name(MS_UPN_OID, 'HOST1$@example.com'),
+                               dns_name('host1.example.com'), dns_name('example.com')))
+    assert_equal 'othername: UPN:HOST1$@example.com, DNS:host1.example.com, DNS:example.com', ext.value
+  end
+
+  def test_subject_alt_name_value_with_generic_other_name
+    ext = san_of(cert_with_san(other_name('1.2.3.4', 'xx'), dns_name('a.example.com')))
+    assert_equal 'othername: 1.2.3.4:xx, DNS:a.example.com', ext.value
+  end
+
+  def san_of(cert); cert.extensions.find { |e| e.oid == 'subjectAltName' } end
+
+  # GH-324: the otherName dump used to leak ", " (and a ';' separator) into the value,
+  # which made ssl.rb's split(/,\s+/) swallow the DNS entry that followed
+  def test_verify_certificate_identity_with_other_name
+    cert = cert_with_san(other_name(MS_UPN_OID, 'HOST1$@example.com'),
+                         dns_name('host1.example.com'), dns_name('example.com'))
+    assert_equal true, OpenSSL::SSL.verify_certificate_identity(cert, 'host1.example.com')
+    assert_equal true, OpenSSL::SSL.verify_certificate_identity(cert, 'example.com')
+    assert_equal false, OpenSSL::SSL.verify_certificate_identity(cert, 'other.example.com')
+  end
+
+  def test_name_constraints_value
+    ext = OpenSSL::X509::ExtensionFactory.new.
+        create_extension('nameConstraints', 'permitted;DNS:example.com,permitted;DNS:bla.example.net', true)
+    assert_equal "Permitted:\n  DNS:example.com\n  DNS:bla.example.net", ext.value
+  end
+
+  # signed + re-parsed (as received over the wire);
+  # subject CN deliberately does not match so the identity check can only pass through the SAN
+  def cert_with_san(*entries)
+    key = OpenSSL::PKey::RSA.new(2048)
+    cert = OpenSSL::X509::Certificate.new
+    cert.subject = cert.issuer = OpenSSL::X509::Name.parse('/CN=not.the.name')
+    cert.not_before = Time.now - 60; cert.not_after = Time.now + 3600
+    cert.public_key = key.public_key; cert.serial = 1; cert.version = 2
+    cert.add_extension(san_extension(*entries))
+    cert.sign(key, OpenSSL::Digest.new('SHA256'))
+    OpenSSL::X509::Certificate.new(cert.to_der)
   end
 
   def test_authority_key_identifier

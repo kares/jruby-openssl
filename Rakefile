@@ -27,7 +27,7 @@ end
 
 task :build do
   source_date_epoch!
-  sh("#{mvnw} package #{_build_output_timestamp}")
+  sh("#{mvnw} -Prelease -DupdateReleaseInfo=true #{_build_output_timestamp} clean package")
 end
 
 desc "Sanity-check the tree/version, then build a reproducible release gem"

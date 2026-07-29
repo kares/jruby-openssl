@@ -55,4 +55,23 @@ jobs:
           JAVA_TOOL_OPTIONS: >-
             -Djruby.openssl.debug=true
             -Djavax.net.debug=ssl,handshake
-        run: jruby -S rake net-imap:test
+        # the suite normally finishes in well under a minute - if it is still running the
+        # watchdog dumps the stacks of *every* JRuby JVM (tests run in a child process)
+        # two dumps a couple of minutes apart tell a parked thread from a spinning one
+        run: |
+          # jcmd -l lists attachable JVMs only (pgrep would also match this very script)
+          dump_stacks() {
+            echo "::group::thread dumps ($1)"
+            for pid in $(env -u JAVA_TOOL_OPTIONS jcmd -l 2>/dev/null | awk '/org\.jruby\.Main/ {print $1}'); do
+              echo "──────── pid $pid ────────"
+              env -u JAVA_TOOL_OPTIONS jcmd "$pid" Thread.print -l 2>&1 || kill -QUIT "$pid" 2>/dev/null || true
+            done
+            echo "::endgroup::"
+          }
+          ( sleep 180; dump_stacks 'after 3m'; sleep 180; dump_stacks 'after 6m' ) &
+          watchdog=$!
+          set +e
+          jruby -S rake net-imap:test
+          rc=$?
+          kill "$watchdog" 2>/dev/null
+          exit $rc

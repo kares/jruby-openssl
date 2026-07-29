@@ -123,13 +123,14 @@ Please report it on the [bug tracker][2], ideally with a test case.
 
 ## FIPS
 
-A FIPS 140-3 build of jruby-openssl (separate gem), is available on request.
+A FIPS 140-3 build of jruby-openssl is available as a separate gem.
 It's the very same library but uses the NIST-validated BC FIPS module (BC-FJA) instead of 
-the regular Bouncy Castle, for deployments that need a validated cryptographic module.
-Ships separately (under GPL 3.0) - reach out to `jossl+fips@kares.org` if you're interested.
+regular Bouncy Castle, for deployments that need a validated cryptographic module.
+Ships separately under GPL 3.0, with commercial licensing available - see the 
+[FIPS variant][6] wiki page for details.
 
-NOTE: unlike C OpenSSL, `OpenSSL.fips_mode` cannot be changed at runtime, the flag reports which
-gem variant is activated (`true` under the FIPS gem, `false` otherwise).
+NOTE: unlike C OpenSSL, `OpenSSL.fips_mode` cannot be changed at runtime, the flag reports 
+which gem variant is activated (`true` under the FIPS gem, `false` otherwise).
 
 ## License
 
@@ -141,3 +142,4 @@ gem variant is activated (`true` under the FIPS gem, `false` otherwise).
 [3]: https://github.com/jruby/jruby-openssl/tree/master/integration
 [4]: https://repo1.maven.org/maven2/org/jruby/
 [5]: https://www.jruby.org/nightly
+[6]: https://github.com/jruby/jruby-openssl/wiki/FIPS

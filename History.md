@@ -1,3 +1,107 @@
+## 0.19.0
+
+FIPS support, distributed as a **separate, dual GPL/commercial artifact**.
+
+Alongside FIPS, this release switches TLS to BouncyCastle's JSSE provider by
+default (session reuse, ChaCha20-Poly1305, session/servername callbacks), and
+lands an extensive X.509 verification hardening (name constraints, CRL scope, 
+path-length, partial-chain handling and improved hostname verification).
+
+NOTE: due considerable amount of changes please treat 0.19 as a beta release.
+
+- [feat] FIPS support as a separate `jruby-openssl` artifact bundling BC-FIPS
+- [feat] leverage BouncyCastle's JSSE provider by default for SSL/TLS
+- [build] restore binary compatibility with BC < 1.84
+- [feat] `to_java` conversions (`X500Principal`, `KeyPair`, `MessageDigest`, `Mac`)
+- [feat] pluggable internal logging via a logger interface
+- [feat] route logs through `java.util.logging` (`jruby.openssl.log.logger=jul`)
+- [chore] remove long-deprecated methods and legacy JRuby/JOpenSSL constants
+
+### SSL / TLS
+
+- [feat] proper TLS session reuse with the BC provider
+- [compat] add `SSLSession#to_der`, `#to_pem` and `#to_text`
+- [feat] (re)implement SSLContext session callbacks
+- [feat] start calling `servername_cb`
+- [feat] server-only `renegotiation_cb`
+- [feat] TLS 1.2 ChaCha20-Poly1305 cipher suites
+- [fix] `read_nonblock(exception: false)` throwing on TLS 1.3
+- [fix] SSL write data loss on non-blocking partial flush
+- [fix] keep TLS 1.3 with `ciphers=` and a default timeout
+- [fix] `SSLSocket#cipher` returns `[name, version, bits, alg_bits]`
+- [fix] raise on `sysread`/`syswrite` before handshake
+- [fix] `session_reused?` raises before handshake
+- [fix] close connection on hostname-verification failure
+- [compat] emulate early `verify_hostname` during `SSLSocket#connect`
+- [compat] normalize IP address in SAN verify to match MRI
+- [compat] `undef` `SSLContext#dup`/`clone` and reject option writers
+- [compat] `set_params` must OR options (not overwrite them)
+- [fix] serialize concurrent SSL reads/writes to avoid buffer corruption
+- [fix] grow the application read buffer on TLS unwrap `BUFFER_OVERFLOW`
+- [compat] honor `verify_callback` on the `ca_file`/`ca_path` lookup path
+
+### X.509 / certificate verification
+
+- [compat] implement `nameConstraints` verification
+- [fix] properly encode `nameConstraints` extension
+- [compat] enforce dNSName name constraints against EE subject CN
+- [compat] enforce CRL issuing-distribution-point scope
+- [fix] align `cert_crl` critical-extension and `removeFromCRL` handling
+- [fix] proper path-length constraint on self-signed roots
+- [fix] make `V_FLAG_PARTIAL_CHAIN` verify correctly
+- [fix] canonicalize X.509 name before hashed-dir lookup
+- [fix] `StoreContext#getExtraData` IndexOutOfBoundsException
+- [fix] cert time checks when not-before/after are equal
+- [compat] `StoreContext#verify` raises on internal error
+- [compat] implement `Store#add_path` for cert lookup
+- [compat] `verify_result` reporting with `VERIFY_NONE` (#25)
+- [compat] set `V_ERR_HOSTNAME_MISMATCH` on hostname fail
+- [compat] expose missing `V_ERR`/`V_FLAG` constants to Ruby
+- [compat] keep X.509 extension order for certs
+- [fix] don't clobber shared (store) verify settings
+- [compat] drop `V_FLAG_CRL_CHECK_ALL` on `DEFAULT_CERT_STORE`
+- [fix] report a malformed `subjectAltName` as an invalid extension
+- [fix] avoid false revocation from `certificateIssuer` CRL entries
+- [fix] proper escaping in `X509::Name`
+- [fix] ASCII-only X.509 name canonicalization
+- [compat] align `X509::StoreContext` state exposure
+- [fix] `subjectAltName` with an `otherName` entry breaking hostname verification (#324)
+- [fix] format the `nameConstraints` extension value like OpenSSL does
+
+### PKey / Cipher / ASN.1
+
+- [feat] AES-CCM cipher mode support (#96)
+- [feat] implement `OpenSSL::PKey::EC::Point#invert!`
+- [compat] `PKey.generate_key`/`generate_parameters` (with params/String)
+- [compat] support HMAC key with the generic PKey API
+- [compat] implement `PKey::EC#check_key` validation
+- [compat] support `PKey::EC.new` with 4 args
+- [fix] RSA-PSS reject negative salt and align `sign_pss` default
+- [fix] handle mismatched PSS content/MGF1 digests via fallback
+- [fix] `Cipher#key=` rejects any length mismatch
+- [fix] reject over-length IV for AEAD ciphers
+- [compat] align `Cipher#iv=` and AEAD-only writers
+- [fix] manual block cipher (buffer/padding) edge cases under CBC/ECB
+- [compat] match MRI no-salt cipher derivation
+- [compat] derive cipher IV length from the real block size
+- [fix] PBKDF2 raw password bytes and reject `< 0` iterations
+- [compat] OpenSSL default PBKDF2 iterations for key export
+- [fix] bound ASN.1 nesting depth and fix truncated-input error class
+- [fix] add missing ASN.1 object-ids for SHA-2
+- [compat] switch `BN.pseudo_rand` to secure random
+- [compat] allow CRT parameter setters on RSA
+- [fix] Cipher authentication-tag reset behavior
+- [fix] break `OpenSSL::Config` `.include` reference cycles
+
+### PKCS7 / PKCS12 / OCSP
+
+- [feat] implement missing PKCS7 wrapper methods
+- [feat] implement `X509::Request#to_text`
+- [fix] protect PKCS12 key entries with password
+- [fix] wrap mode for PKCS7 key transport
+- [compat] handle `File` object in `PKCS7.obj2bio`
+- [fix] preserve OCSP `NOCERTS` with explicit flags
+
 ## 0.16.2
 
 - [fix] PKey.generate_key accepts key as parameters (#366)

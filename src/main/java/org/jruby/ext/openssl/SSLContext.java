@@ -383,18 +383,18 @@ public class SSLContext extends RubyObject {
         }
 
         value = getInstanceVariable("@client_ca");
-        final List<X509AuxCertificate> clientCert;
+        final List<X509AuxCertificate> clientCA;
         if ( value != null && ! value.isNil() ) {
             if ( value.respondsTo("each") ) {
-                clientCert = convertToAuxCerts(context, value);
+                clientCA = convertToAuxCerts(context, value);
             } else {
                 if ( ! ( value instanceof X509Cert ) ) {
                     throw runtime.newTypeError("OpenSSL::X509::Certificate expected but got @client_ca = " + value.inspect());
                 }
-                clientCert = Collections.singletonList( ((X509Cert) value).getAuxCert() );
+                clientCA = Collections.singletonList( ((X509Cert) value).getAuxCert() );
             }
         }
-        else clientCert = Collections.emptyList();
+        else clientCA = Collections.emptyList();
 
         value = getInstanceVariable("@extra_chain_cert");
         final List<X509AuxCertificate> extraChainCert;
@@ -501,7 +501,7 @@ public class SSLContext extends RubyObject {
         */
 
         try {
-            internalContext = createInternalContext(context, cert, key, store, clientCert, extraChainCert,
+            internalContext = createInternalContext(context, cert, key, store, clientCA, extraChainCert,
                                                     verifyMode, verifyCallback, verifyDepth, timeout, alpnProtocols, alpnSelectCb);
         }
         catch (GeneralSecurityException e) {
@@ -1001,10 +1001,10 @@ public class SSLContext extends RubyObject {
 
     private InternalContext createInternalContext(ThreadContext context,
         final X509Cert xCert, final PKey pKey, final Store store,
-        final List<X509AuxCertificate> clientCert, final List<X509AuxCertificate> extraChainCert,
+        final List<X509AuxCertificate> clientCA, final List<X509AuxCertificate> extraChainCert,
         final int verifyMode, final IRubyObject verifyCallback, final int verifyDepth, final int timeout,
         final String[] alpnProtocols, final RubyProc alpnSelectCb) throws NoSuchAlgorithmException, KeyManagementException {
-        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCert, extraChainCert, verifyMode, verifyCallback, verifyDepth, timeout, alpnProtocols, alpnSelectCb);
+        InternalContext internalContext = new InternalContext(xCert, pKey, store, clientCA, extraChainCert, verifyMode, verifyCallback, verifyDepth, timeout, alpnProtocols, alpnSelectCb);
         internalContext.initSSLContext(context);
         return internalContext;
     }
@@ -1018,7 +1018,7 @@ public class SSLContext extends RubyObject {
             final X509Cert xCert,
             final PKey pKey,
             final Store store,
-            final List<X509AuxCertificate> clientCert,
+            final List<X509AuxCertificate> clientCA,
             final List<X509AuxCertificate> extraChainCert,
             final int verifyMode,
             final IRubyObject verifyCallback,
@@ -1039,7 +1039,7 @@ public class SSLContext extends RubyObject {
             }
 
             this.store = store;
-            this.clientCert = clientCert;
+            this.clientCA = clientCA;
             this.extraChainCert = extraChainCert;
             this.verifyMode = verifyMode;
             this.verifyCallback = verifyCallback;
@@ -1087,7 +1087,8 @@ public class SSLContext extends RubyObject {
         final IRubyObject verifyCallback; // null when unset
         final int verifyDepth; // -1 when unset
 
-        final List<X509AuxCertificate> clientCert; // assumed always != null
+        // @client_ca - CAs whose names go into the CertificateRequest message
+        final List<X509AuxCertificate> clientCA; // assumed always != null
         final List<X509AuxCertificate> extraChainCert; // empty assumed == null
 
         private final int timeout;
@@ -1265,8 +1266,8 @@ public class SSLContext extends RubyObject {
 
         @Override
         public X509Certificate[] getAcceptedIssuers() {
-            final int size = internalContext.clientCert.size();
-            return internalContext.clientCert.toArray(new X509Certificate[size]);
+            final int size = internalContext.clientCA.size();
+            return internalContext.clientCA.toArray(new X509Certificate[size]);
         }
 
         // c: ssl_verify_cert_chain

@@ -632,6 +632,27 @@ class TestSSL < TestCase
     end
   end
 
+  # GH-204: a handshake that JSSE aborts with a plain runtime exception
+  # (nothing left to negotiate) used to escape SSLSocket#connect as a raw Java exception
+  def test_connect_raises_ssl_error_on_disabled_protocol
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      # disabling the only enabled protocol leaves an empty set, no matter what
+      # the JDK's jdk.tls.disabledAlgorithms happens to allow
+      ctx.ssl_version = "TLSv1"
+      ctx.options |= OpenSSL::SSL::OP_NO_TLSv1
+
+      sock = TCPSocket.new("127.0.0.1", port)
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, ctx)
+      err = assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+      assert err.message && !err.message.empty?
+    ensure
+      ssl&.close rescue nil
+      sock&.close rescue nil
+    end
+  end
+
   MAX_SSL_VERSION = "TLSv1.3"
 
   [

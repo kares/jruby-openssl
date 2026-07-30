@@ -119,7 +119,7 @@ public class SSL {
         }
     }
 
-    static RaiseException handleCouldNotGenerateDHKeyPairError(final Ruby runtime, final RuntimeException ex) {
+    static RaiseException handleCouldNotGenerateDHKeyPairError(final Ruby runtime, final Exception ex) {
         String message = ex.getMessage();
         if ( OpenSSL.javaHotSpot() || OpenSSL.javaOpenJDK() ) {
             if ( OpenSSL.javaVersion8(false) ) { // == 1.8

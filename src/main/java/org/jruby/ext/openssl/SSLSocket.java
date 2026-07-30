@@ -145,6 +145,15 @@ public class SSLSocket extends RubyObject {
         return SSL.newSSLError(runtime, cause);
     }
 
+    // JSSE may abort a handshake with a plain runtime exception (e.g. no protocol left enabled)
+    private static RaiseException newSSLErrorFromException(Ruby runtime, Exception exception) {
+        LOG.debugStack(runtime, null, exception);
+        if ( "Could not generate DH keypair".equals( exception.getMessage() ) ) {
+            return SSL.handleCouldNotGenerateDHKeyPairError(runtime, exception);
+        }
+        return SSL.newSSLError(runtime, exception);
+    }
+
     private static CallSite callSite(final CallSite[] sites, final CallSiteIndex index) {
         return sites[ index.ordinal() ];
     }
@@ -344,6 +353,13 @@ public class SSLSocket extends RubyObject {
         catch (NotYetConnectedException e) {
             throw newErrnoEPIPEError(context.runtime, "SSL_connect");
         }
+        catch (RaiseException e) {
+            throw e;
+        }
+        catch (Exception e) {
+            forceClose();
+            throw newSSLErrorFromException(context.runtime, e);
+        }
 
         // MRI enforces verify_hostname inside OpenSSL ossl_ssl_verify_callback during the handshake
         // JSSE has no equivalent hook, so we check after the handshake completes
@@ -439,12 +455,8 @@ public class SSLSocket extends RubyObject {
         catch (RaiseException e) {
             throw e;
         }
-        catch (RuntimeException e) {
-            LOG.debugStack(context.runtime, null, e);
-            if ( "Could not generate DH keypair".equals( e.getMessage() ) ) {
-                throw SSL.handleCouldNotGenerateDHKeyPairError(context.runtime, e);
-            }
-            throw newSSLError(context.runtime, e);
+        catch (Exception e) {
+            throw newSSLErrorFromException(context.runtime, e);
         }
 
         sslContext.sessionAcceptGoodCount++;

@@ -55,8 +55,12 @@ task :release_check do
   branch = `git rev-parse --abbrev-ref HEAD`.strip
   warn "WARNING: releasing from '#{branch}' (not 'master')" unless branch == 'master'
 
-  tag = `git tag --points-at HEAD`.split("\n").find { |t| t =~ /#{Regexp.escape(version)}/ }
-  warn "WARNING: no git tag matching #{version} points at HEAD" unless tag
+  expected_tag = "v#{version}" # release tags are vX.Y.Z
+  tags = `git tag --points-at HEAD`.split("\n")
+  unless tags.include?(expected_tag)
+    found = tags.empty? ? 'none' : tags.join(', ')
+    warn "WARNING: no #{expected_tag} tag points at HEAD (tags at HEAD: #{found})"
+  end
 
   puts "release checks passed for #{version}"
 end

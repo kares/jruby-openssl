@@ -74,6 +74,10 @@ public class SSL {
     public static final long OP_NO_TLSv1_1 =                                0x10000000L;
     public static final long OP_NO_TLSv1_3 =                                0x20000000L;
 
+    // NOTE: BC-JSSE never renegotiates - refuses a peer-initiated renegotiation
+    // with a no_renegotiation warning alert (as OpenSSL does with this option)
+    public static final long OP_NO_RENEGOTIATION =                          0x40000000L;
+
     // define SSL_OP_NO_SSL_MASK (SSL_OP_NO_SSLv3|SSL_OP_NO_TLSv1|SSL_OP_NO_TLSv1_1|SSL_OP_NO_TLSv1_2|SSL_OP_NO_TLSv1_3)
 
     /* Deprecated in OpenSSL 1.0.1. */
@@ -164,6 +168,7 @@ public class SSL {
         SSL.setConstant("OP_NO_TLSv1_1", runtime.newFixnum(OP_NO_TLSv1_1));
         SSL.setConstant("OP_NO_TLSv1_2", runtime.newFixnum(OP_NO_TLSv1_2));
         SSL.setConstant("OP_NO_TLSv1_3", runtime.newFixnum(OP_NO_TLSv1_3));
+        SSL.setConstant("OP_NO_RENEGOTIATION", runtime.newFixnum(OP_NO_RENEGOTIATION));
         SSL.setConstant("OP_PKCS1_CHECK_1", runtime.newFixnum(OP_PKCS1_CHECK_1));
         SSL.setConstant("OP_PKCS1_CHECK_2", runtime.newFixnum(OP_PKCS1_CHECK_2));
         SSL.setConstant("OP_NETSCAPE_CA_DN_BUG", runtime.newFixnum(OP_NETSCAPE_CA_DN_BUG));

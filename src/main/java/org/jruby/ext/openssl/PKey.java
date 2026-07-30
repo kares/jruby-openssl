@@ -43,6 +43,8 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAKeyGenParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 
+import javax.crypto.spec.DHParameterSpec;
+
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -222,6 +224,17 @@ public abstract class PKey extends RubyObject {
             }
             if (PKeyEdDSA.isEdDSAKey(pubKey)) {
                 return new PKeyEdDSA(runtime, pubKey);
+            }
+
+            // PEM_read_bio_DHparams / d2i_DHparams (last resort) - DH parameters carry no algorithm id
+            try {
+                DHParameterSpec spec = PEMInputOutput.readDHParameters(new StringReader(str.toString()));
+                if (spec == null) {
+                    spec = org.jruby.ext.openssl.impl.PKey.readDHParameter(str.getByteList().bytes());
+                }
+                if (spec != null) return new PKeyDH(runtime, spec);
+            } catch (IOException e) {
+                LOG.debugStack(runtime, "readDHParameters", e); /* ignore */
             }
 
             throw newPKeyError(runtime, "Could not parse PKey: unsupported");

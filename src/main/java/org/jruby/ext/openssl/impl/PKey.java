@@ -176,6 +176,9 @@ public class PKey {
         try {
             SubjectPublicKeyInfo publicKeyInfo = SubjectPublicKeyInfo.getInstance(ASN1Primitive.fromByteArray(input));
             if (publicKeyInfo != null) return readPublicKey(publicKeyInfo);
+        } catch (IllegalArgumentException e) {
+            // BC signals a non SubjectPublicKeyInfo shape (input is not a public key)
+            throw new IOException("Could not parse public key: " + e.getMessage(), e);
         } catch (Exception e) {
             if (e instanceof RuntimeException) throw (RuntimeException) e;
             throw new IOException("Could not parse public key: " + e.getMessage(), e);
@@ -302,12 +305,16 @@ public class PKey {
 
     // d2i_DHparams_bio
     public static DHParameterSpec readDHParameter(final byte[] input) throws IOException {
-        ASN1InputStream aIn = new ASN1InputStream(input);
-        ASN1Primitive obj = aIn.readObject();
-        if (!(obj instanceof ASN1Sequence) || ((ASN1Sequence) obj).size() < 2) {
-            throw new IOException("malformed DH parameters (expected sequence with at least 2 elements)");
+        ASN1Primitive obj = new ASN1InputStream(input).readObject();
+        // DHparameter ::= SEQUENCE { prime INTEGER, base INTEGER, privateValueLength INTEGER OPTIONAL }
+        // the size bounds matter: an RSA (9) or DSA (6) private key also starts with two INTEGERs
+        if (!(obj instanceof ASN1Sequence) || ((ASN1Sequence) obj).size() < 2 || ((ASN1Sequence) obj).size() > 3) {
+            throw new IOException("malformed DH parameters (expected sequence of 2 or 3 elements)");
         }
         ASN1Sequence seq = (ASN1Sequence) obj;
+        if (!(seq.getObjectAt(0) instanceof ASN1Integer) || !(seq.getObjectAt(1) instanceof ASN1Integer)) {
+            throw new IOException("malformed DH parameters (expected p and g integers)");
+        }
         BigInteger p = ((ASN1Integer) seq.getObjectAt(0)).getValue();
         BigInteger g = ((ASN1Integer) seq.getObjectAt(1)).getValue();
         return new DHParameterSpec(p, g);

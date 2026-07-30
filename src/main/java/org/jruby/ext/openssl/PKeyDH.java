@@ -111,6 +111,12 @@ public class PKeyDH extends PKey {
         this(runtime, _PKey(runtime).getClass("DH"));
     }
 
+    PKeyDH(Ruby runtime, DHParameterSpec spec) {
+        this(runtime);
+        this.dh_p = spec.getP();
+        this.dh_g = spec.getG();
+    }
+
     @Override
     @JRubyMethod
     public RubyString oid() {

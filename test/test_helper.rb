@@ -150,7 +150,6 @@ class TestCase
     end
 
     def pkey_dh(name)
-      # DH parameters can be read by OpenSSL::PKey.read atm
       OpenSSL::PKey::DH.new(read_file("pkey", name))
     end
 

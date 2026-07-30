@@ -44,6 +44,34 @@ class TestPKeyDH < TestCase
     assert_equal dh_params.g, dh.g
   end
 
+  # OpenSSL::PKey.read used to reject DH parameters
+  def test_pkey_read_parameters
+    dh_params = Fixtures.pkey_dh("dh2048_ffdhe2048")
+
+    [dh_params.to_pem, dh_params.to_der].each do |input|
+      dh = OpenSSL::PKey.read(input)
+      assert_kind_of OpenSSL::PKey::DH, dh
+      assert_equal dh_params.p, dh.p
+      assert_equal dh_params.g, dh.g
+      assert_nil dh.pub_key
+      assert_nil dh.priv_key
+    end
+  end
+
+  # DH parameters are a SEQUENCE of INTEGERs, which an RSA (9) or DSA (6)
+  # private key also starts with - those must never be taken for DH parameters
+  def test_pkey_read_der_private_key_is_not_dh
+    %w[rsa2048 dsa2048].each do |name|
+      der = Fixtures.pkey(name).to_der
+      begin
+        parsed = OpenSSL::PKey.read(der)
+      rescue OpenSSL::PKey::PKeyError
+        next # DER private keys are not supported yet - but must not parse as DH
+      end
+      assert !parsed.is_a?(OpenSSL::PKey::DH), "#{name} DER parsed as DH: #{parsed.inspect}"
+    end
+  end
+
   def test_params
     dh = Fixtures.pkey_dh("dh2048_ffdhe2048")
     assert_kind_of OpenSSL::BN, dh.p

@@ -292,6 +292,12 @@ public class ASN1 {
         addObject(runtime, 674, "SHA512", "sha512", "2.16.840.1.101.3.4.2.3");
         addObject(runtime, 675, "SHA224", "sha224", "2.16.840.1.101.3.4.2.4");
 
+        // RFC 8410 - objects.txt gives these a single name, so sn == ln
+        addObject(runtime, 1034, "X25519", "X25519", "1.3.101.110");
+        addObject(runtime, 1035, "X448", "X448", "1.3.101.111");
+        addObject(runtime, 1087, "ED25519", "ED25519", "1.3.101.112");
+        addObject(runtime, 1088, "ED448", "ED448", "1.3.101.113");
+
         addObject(runtime, 660, "street", "streetAddress", "2.5.4.9");
         addObject(runtime, 391, "DC", "domainComponent", "0.9.2342.19200300.100.1.25");
         //addObject(runtime, 509, null, "generationQualifier", "2.5.4.44");

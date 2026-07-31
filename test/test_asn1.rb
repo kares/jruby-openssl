@@ -340,6 +340,21 @@ class TestASN1 < TestCase
     scts = OpenSSL::ASN1::ObjectId.new("1.3.6.1.4.1.11129.2.4.2")
     assert_equal "ct_precert_scts", scts.sn
     assert_equal "CT Precertificate SCTs", scts.ln
+    # RFC 8410 curves carry a single name so `sn == ln`
+    {
+      "X25519"  => "1.3.101.110",
+      "X448"    => "1.3.101.111",
+      "ED25519" => "1.3.101.112",
+      "ED448"   => "1.3.101.113",
+    }.each do |name, oid|
+      obj = OpenSSL::ASN1::ObjectId.new(name)
+      assert_equal oid, obj.oid
+      assert_equal name, obj.sn
+      assert_equal name, obj.ln
+      obj = OpenSSL::ASN1::ObjectId.new(oid)
+      assert_equal name, obj.sn
+      assert_equal name, obj.ln
+    end
     # TODO: Import Issue
     # Fails with: <OpenSSL::ASN1::ASN1Error> expected but was <RuntimeError(<(TypeError) string  not an OID>)
     #assert_raise(OpenSSL::ASN1::ASN1Error) {

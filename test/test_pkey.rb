@@ -67,6 +67,18 @@ class TestPKey < TestCase
     assert_true cert.check_private_key(pkey)
   end
 
+  # SubjectPublicKeyInfo with an unsupported algorithm (used to escape as a Java exception)
+  def test_pkey_read_public_key_unknown_algorithm
+    spki = OpenSSL::ASN1::Sequence([
+      OpenSSL::ASN1::Sequence([ OpenSSL::ASN1::ObjectId('1.2.3.4.5.6.7.8') ]),
+      OpenSSL::ASN1::BitString("\x00" * 32)
+    ])
+    pem = "-----BEGIN PUBLIC KEY-----\n" + [spki.to_der].pack('m') + "-----END PUBLIC KEY-----\n"
+
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.read(pem) }
+    assert_raise(OpenSSL::PKey::PKeyError) { OpenSSL::PKey.read(spki.to_der) }
+  end
+
   def test_pkey_pem_file_error
     begin
       ret = OpenSSL::PKey.read('not a PEM file')

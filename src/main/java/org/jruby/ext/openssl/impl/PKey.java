@@ -193,7 +193,7 @@ public class PKey {
         return keyFactory.generatePublic(new X509EncodedKeySpec(publicKeyInfo.getEncoded()));
     }
 
-    private static Type matchPublicKeyType(final AlgorithmIdentifier algId) throws IllegalArgumentException {
+    private static Type matchPublicKeyType(final AlgorithmIdentifier algId) throws IOException {
         final ASN1ObjectIdentifier algIdentifier = algId.getAlgorithm();
 
         if (X9ObjectIdentifiers.id_ecPublicKey.equals(algIdentifier)) return Type.EC;
@@ -202,7 +202,7 @@ public class PKey {
         if (EdECObjectIdentifiers.id_Ed25519.equals(algIdentifier)) return Type.EdDSA;
         if (EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) return Type.EdDSA;
 
-        return Type.valueOf(algIdentifier.getId());
+        throw new IOException("unsupported public key algorithm: " + algIdentifier);
     }
 
     // d2i_RSAPrivateKey_bio

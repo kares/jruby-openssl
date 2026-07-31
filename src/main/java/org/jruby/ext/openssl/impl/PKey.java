@@ -52,7 +52,9 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import javax.crypto.interfaces.DHPrivateKey;
 import javax.crypto.spec.DHParameterSpec;
+import javax.crypto.spec.DHPublicKeySpec;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -88,7 +90,7 @@ import org.jruby.ext.openssl.shim.PKeyShim;
  */
 public class PKey {
 
-    public enum Type { RSA, DSA, EC, EdDSA, XDH; }
+    public enum Type { RSA, DSA, EC, EdDSA, XDH, DH; }
 
     public static KeyPair readPrivateKey(final Type type, final byte[] input)
         throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
@@ -156,6 +158,8 @@ public class PKey {
                 return readEdDSAPrivateKey(keyInfo);
             case XDH:
                 return readXDHPrivateKey(keyInfo);
+            case DH:
+                return readDHPrivateKey(keyInfo);
             default:
                 throw new AssertionError("unexpected key type: " + type);
         }
@@ -206,6 +210,7 @@ public class PKey {
         if (EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) return Type.EdDSA;
         if (EdECObjectIdentifiers.id_X25519.equals(algIdentifier)) return Type.XDH;
         if (EdECObjectIdentifiers.id_X448.equals(algIdentifier)) return Type.XDH;
+        if (PKCSObjectIdentifiers.dhKeyAgreement.equals(algIdentifier)) return Type.DH;
 
         throw new IOException("unsupported public key algorithm: " + algIdentifier);
     }
@@ -337,6 +342,17 @@ public class PKey {
         BigInteger p = ((ASN1Integer) seq.getObjectAt(0)).getValue();
         BigInteger g = ((ASN1Integer) seq.getObjectAt(1)).getValue();
         return new DHParameterSpec(p, g);
+    }
+
+    // PKCS#8 DH - only the private value is stored, the public one gets derived
+    private static KeyPair readDHPrivateKey(final PrivateKeyInfo keyInfo)
+        throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        KeyFactory keyFactory = SecurityHelper.getKeyFactory("DH");
+        DHPrivateKey privateKey = (DHPrivateKey) keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyInfo.getEncoded()));
+        DHParameterSpec params = privateKey.getParams();
+        BigInteger y = params.getG().modPow(privateKey.getX(), params.getP());
+        PublicKey publicKey = keyFactory.generatePublic(new DHPublicKeySpec(y, params.getP(), params.getG()));
+        return new KeyPair(publicKey, privateKey);
     }
 
     // XDH (X25519 / X448)

@@ -58,6 +58,25 @@ class TestPKeyDH < TestCase
     end
   end
 
+  # a DH key (rather than bare parameters) is a plain PKCS#8 / SubjectPublicKeyInfo
+  def test_pkey_read_key
+    key = OpenSSL::PKey.generate_key(Fixtures.pkey_dh('dh2048_ffdhe2048'))
+
+    priv = OpenSSL::PKey.read(key.private_to_pem)
+    assert_kind_of OpenSSL::PKey::DH, priv
+    assert_equal key.priv_key, priv.priv_key
+    assert_equal key.pub_key, priv.pub_key # not stored in PKCS#8, gets derived
+    assert_equal key.p, priv.p
+
+    pub = OpenSSL::PKey.read(key.public_to_pem)
+    assert_kind_of OpenSSL::PKey::DH, pub
+    assert_nil pub.priv_key
+    assert_equal key.pub_key, pub.pub_key
+
+    assert_equal key.priv_key, OpenSSL::PKey::DH.new(key.private_to_pem).priv_key
+    assert_equal key.pub_key, OpenSSL::PKey::DH.new(key.public_to_pem).pub_key
+  end
+
   # DH parameters are a SEQUENCE of INTEGERs, which an RSA (9) or DSA (6)
   # private key also starts with - those must never be taken for DH parameters
   def test_pkey_read_der_private_key_is_not_dh

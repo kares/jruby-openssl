@@ -43,6 +43,8 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAKeyGenParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 
+import javax.crypto.interfaces.DHPrivateKey;
+import javax.crypto.interfaces.DHPublicKey;
 import javax.crypto.spec.DHParameterSpec;
 
 import org.bouncycastle.asn1.ASN1InputStream;
@@ -119,6 +121,9 @@ public abstract class PKey extends RubyObject {
         }
         if (PKeyXDH.isXDHKey(publicKey)) {
             return new PKeyXDH(runtime, publicKey);
+        }
+        if (publicKey instanceof DHPublicKey) {
+            return new PKeyDH(runtime, (DHPublicKey) publicKey, null);
         }
         throw runtime.newNotImplementedError("public key algorithm: " + (publicKey != null ? publicKey.getAlgorithm() : "nil"));
     }
@@ -198,6 +203,9 @@ public abstract class PKey extends RubyObject {
                 if ( PKeyXDH.isXDHAlgorithm(alg) ) {
                     return PKeyXDH.newInstance(runtime, keyPair);
                 }
+                if ( "DH".equals(alg) ) {
+                    return new PKeyDH(runtime, (DHPublicKey) keyPair.getPublic(), (DHPrivateKey) keyPair.getPrivate());
+                }
                 LOG.debug(runtime, "readPrivateKey unexpected key pair algorithm: " + alg);
             }
 
@@ -245,6 +253,9 @@ public abstract class PKey extends RubyObject {
             }
             if (PKeyXDH.isXDHKey(pubKey)) {
                 return new PKeyXDH(runtime, pubKey);
+            }
+            if (pubKey instanceof DHPublicKey) {
+                return new PKeyDH(runtime, (DHPublicKey) pubKey, null);
             }
 
             // PEM_read_bio_DHparams / d2i_DHparams (last resort) - DH parameters carry no algorithm id

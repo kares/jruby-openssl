@@ -32,6 +32,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.security.KeyFactory;
+import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -39,6 +40,8 @@ import java.util.HashMap;
 
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
+import javax.crypto.interfaces.DHPrivateKey;
+import javax.crypto.interfaces.DHPublicKey;
 import javax.crypto.spec.DHParameterSpec;
 import javax.crypto.spec.DHPrivateKeySpec;
 import javax.crypto.spec.DHPublicKeySpec;
@@ -117,6 +120,11 @@ public class PKeyDH extends PKey {
         this.dh_g = spec.getG();
     }
 
+    PKeyDH(Ruby runtime, javax.crypto.interfaces.DHPublicKey publicKey, javax.crypto.interfaces.DHPrivateKey privateKey) {
+        this(runtime);
+        initKey(publicKey, privateKey);
+    }
+
     @Override
     @JRubyMethod
     public RubyString oid() {
@@ -192,11 +200,17 @@ public class PKeyDH extends PKey {
                 try {
                     DHParameterSpec spec = PEMInputOutput.readDHParameters(new StringReader(str.toString()));
                     if (spec == null) {
-                        spec = org.jruby.ext.openssl.impl.PKey.readDHParameter(str.getByteList().bytes());
+                        try {
+                            spec = org.jruby.ext.openssl.impl.PKey.readDHParameter(str.getByteList().bytes());
+                        }
+                        catch (IOException e) { // not parameters - a PKCS#8 or SubjectPublicKeyInfo DH key then
+                            if (!initFromKey(context, str)) throw e;
+                            return this;
+                        }
                     }
-                    if (spec == null) {
-                        throw runtime.newArgumentError("invalid DH PARAMETERS");
-                    }
+
+                    if (spec == null) throw runtime.newArgumentError("invalid DH PARAMETERS");
+
                     this.dh_p = spec.getP();
                     this.dh_g = spec.getG();
                 }
@@ -211,6 +225,35 @@ public class PKeyDH extends PKey {
             }
         }
         return this;
+    }
+
+    // a DH key (not just parameters) is a plain PKCS#8 PrivateKeyInfo or SubjectPublicKeyInfo
+    private boolean initFromKey(final ThreadContext context, final RubyString str) {
+        try {
+            KeyPair keyPair = PKey.readPrivateKey(str, null);
+            if (keyPair != null && keyPair.getPrivate() instanceof DHPrivateKey) {
+                initKey((DHPublicKey) keyPair.getPublic(), (DHPrivateKey) keyPair.getPrivate());
+                return true;
+            }
+        }
+        catch (Exception e) { /* not a DH private key */ }
+        try {
+            PublicKey pubKey = org.jruby.ext.openssl.impl.PKey.readPublicKey(StringHelper.readX509PEM(context, str));
+            if (pubKey instanceof DHPublicKey) {
+                initKey((DHPublicKey) pubKey, null);
+                return true;
+            }
+        }
+        catch (Exception e) { /* not a DH public key */ }
+        return false;
+    }
+
+    private void initKey(DHPublicKey publicKey, DHPrivateKey privateKey) {
+        final DHParameterSpec params = privateKey != null ? privateKey.getParams() : publicKey.getParams();
+        this.dh_p = params.getP();
+        this.dh_g = params.getG();
+        if (privateKey != null) this.dh_x = privateKey.getX();
+        if (publicKey != null) this.dh_y = publicKey.getY();
     }
 
     private void generate(final Ruby runtime, final IRubyObject bits, final int gval) {

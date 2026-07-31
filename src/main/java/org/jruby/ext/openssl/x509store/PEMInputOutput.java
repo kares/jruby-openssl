@@ -1478,6 +1478,9 @@ public class PEMInputOutput {
             org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_X448.equals(algIdentifier)) {
             return Type.XDH;
         }
+        if (PKCSObjectIdentifiers.dhKeyAgreement.equals(algIdentifier)) {
+            return Type.DH;
+        }
 
         return Type.valueOf(algIdentifier.getId());
     }

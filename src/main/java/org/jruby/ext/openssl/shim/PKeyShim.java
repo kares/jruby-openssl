@@ -22,6 +22,7 @@ import org.bouncycastle.asn1.pkcs.CertificationRequestInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.interfaces.EdDSAPublicKey;
+import org.bouncycastle.jcajce.interfaces.XDHPublicKey;
 
 public abstract class PKeyShim {
 
@@ -92,6 +93,11 @@ public abstract class PKeyShim {
     /** extract raw point encoding from an EdDSA public key */
     public static byte[] getEdDSAPointEncoding(PublicKey key) {
         return ((EdDSAPublicKey) key).getPointEncoding();
+    }
+
+    /** extract the raw u-coordinate from an XDH public key */
+    public static byte[] getXDHUEncoding(PublicKey key) {
+        return ((XDHPublicKey) key).getUEncoding();
     }
 
     /** get the EC parameters ASN.1 object from an ECPrivateKey structure */

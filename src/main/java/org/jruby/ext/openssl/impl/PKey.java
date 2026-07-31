@@ -74,6 +74,7 @@ import org.bouncycastle.asn1.x509.DSAParameter;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jcajce.interfaces.EdDSAPrivateKey;
+import org.bouncycastle.jcajce.interfaces.XDHPrivateKey;
 import org.bouncycastle.openssl.PEMParser;
 
 import org.jruby.ext.openssl.SecurityHelper;
@@ -87,7 +88,7 @@ import org.jruby.ext.openssl.shim.PKeyShim;
  */
 public class PKey {
 
-    public enum Type { RSA, DSA, EC, EdDSA; }
+    public enum Type { RSA, DSA, EC, EdDSA, XDH; }
 
     public static KeyPair readPrivateKey(final Type type, final byte[] input)
         throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
@@ -153,6 +154,8 @@ public class PKey {
                 return readECPrivateKey(SecurityHelper.getKeyFactory("EC"), keyInfo);
             case EdDSA:
                 return readEdDSAPrivateKey(keyInfo);
+            case XDH:
+                return readXDHPrivateKey(keyInfo);
             default:
                 throw new AssertionError("unexpected key type: " + type);
         }
@@ -201,6 +204,8 @@ public class PKey {
         if (X9ObjectIdentifiers.id_dsa.equals(algIdentifier)) return Type.DSA;
         if (EdECObjectIdentifiers.id_Ed25519.equals(algIdentifier)) return Type.EdDSA;
         if (EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) return Type.EdDSA;
+        if (EdECObjectIdentifiers.id_X25519.equals(algIdentifier)) return Type.XDH;
+        if (EdECObjectIdentifiers.id_X448.equals(algIdentifier)) return Type.XDH;
 
         throw new IOException("unsupported public key algorithm: " + algIdentifier);
     }
@@ -318,6 +323,20 @@ public class PKey {
         BigInteger p = ((ASN1Integer) seq.getObjectAt(0)).getValue();
         BigInteger g = ((ASN1Integer) seq.getObjectAt(1)).getValue();
         return new DHParameterSpec(p, g);
+    }
+
+    // XDH (X25519 / X448)
+    private static KeyPair readXDHPrivateKey(final PrivateKeyInfo keyInfo)
+        throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        final String algorithm =
+            EdECObjectIdentifiers.id_X448.equals(keyInfo.getPrivateKeyAlgorithm().getAlgorithm()) ? "X448" : "X25519";
+        KeyFactory keyFactory = SecurityHelper.getKeyFactory(algorithm);
+        PrivateKey privateKey = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyInfo.getEncoded()));
+        PublicKey publicKey = null;
+        if (privateKey instanceof XDHPrivateKey) { // assuming BC provider
+            publicKey = ((XDHPrivateKey) privateKey).getPublicKey();
+        }
+        return new KeyPair(publicKey, privateKey);
     }
 
     // EdDSA (Ed25519 / Ed448)

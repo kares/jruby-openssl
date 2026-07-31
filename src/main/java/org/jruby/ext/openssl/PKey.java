@@ -99,6 +99,10 @@ public abstract class PKey extends RubyObject {
         return newError(runtime, (RubyClass) _PKey(runtime).getConstantAt("PKeyError"), message);
     }
 
+    static RaiseException newPKeyError(Ruby runtime, Exception cause) {
+        return newError(runtime, (RubyClass) _PKey(runtime).getConstantAt("PKeyError"), cause);
+    }
+
     public static PKey newInstance(final Ruby runtime, final PublicKey publicKey) {
         assert publicKey != null;
         if (publicKey instanceof RSAPublicKey) {
@@ -112,6 +116,9 @@ public abstract class PKey extends RubyObject {
         }
         if (PKeyEdDSA.isEdDSAKey(publicKey)) {
             return new PKeyEdDSA(runtime, publicKey);
+        }
+        if (PKeyXDH.isXDHKey(publicKey)) {
+            return new PKeyXDH(runtime, publicKey);
         }
         throw runtime.newNotImplementedError("public key algorithm: " + (publicKey != null ? publicKey.getAlgorithm() : "nil"));
     }
@@ -180,6 +187,9 @@ public abstract class PKey extends RubyObject {
                 if ( PKeyEdDSA.isEdDSAAlgorithm(alg) ) {
                     return PKeyEdDSA.newInstance(runtime, keyPair);
                 }
+                if ( PKeyXDH.isXDHAlgorithm(alg) ) {
+                    return PKeyXDH.newInstance(runtime, keyPair);
+                }
                 LOG.debug(runtime, "readPrivateKey unexpected key pair algorithm: " + alg);
             }
 
@@ -225,6 +235,9 @@ public abstract class PKey extends RubyObject {
             if (PKeyEdDSA.isEdDSAKey(pubKey)) {
                 return new PKeyEdDSA(runtime, pubKey);
             }
+            if (PKeyXDH.isXDHKey(pubKey)) {
+                return new PKeyXDH(runtime, pubKey);
+            }
 
             // PEM_read_bio_DHparams / d2i_DHparams (last resort) - DH parameters carry no algorithm id
             try {
@@ -258,6 +271,9 @@ public abstract class PKey extends RubyObject {
                 }
                 if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                     return PKeyEdDSA.generate(context, algorithm);
+                }
+                if ( PKeyXDH.isXDHAlgorithm(algorithm) ) {
+                    return PKeyXDH.generate(context, algorithm);
                 }
                 if ( "RSA".equalsIgnoreCase(algorithm) ) {
                     return generateRSAKey(context, options);
@@ -396,6 +412,10 @@ public abstract class PKey extends RubyObject {
                 final byte[] bytes = key.convertToString().getBytes();
                 return PKeyEdDSA.fromRawPrivateKey(runtime, algorithm, bytes);
             }
+            if ( PKeyXDH.isXDHAlgorithm(algorithm) ) {
+                final byte[] bytes = key.convertToString().getBytes();
+                return PKeyXDH.fromRawPrivateKey(runtime, algorithm, bytes);
+            }
             throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
         }
 
@@ -407,6 +427,9 @@ public abstract class PKey extends RubyObject {
             final byte[] raw = key.convertToString().getBytes();
             if ( PKeyEdDSA.isEdDSAAlgorithm(algorithm) ) {
                 return PKeyEdDSA.fromRawPublicKey(runtime, algorithm, raw);
+            }
+            if ( PKeyXDH.isXDHAlgorithm(algorithm) ) {
+                return PKeyXDH.fromRawPublicKey(runtime, algorithm, raw);
             }
             throw newPKeyError(runtime, "unsupported algorithm: " + algorithm);
         }

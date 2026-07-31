@@ -1473,6 +1473,11 @@ public class PEMInputOutput {
             org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_Ed448.equals(algIdentifier)) {
             return Type.EdDSA;
         }
+        // XDH: X25519 (1.3.101.110) and X448 (1.3.101.111)
+        if (org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_X25519.equals(algIdentifier) ||
+            org.bouncycastle.asn1.edec.EdECObjectIdentifiers.id_X448.equals(algIdentifier)) {
+            return Type.XDH;
+        }
 
         return Type.valueOf(algIdentifier.getId());
     }

@@ -113,4 +113,10 @@ class TestPKeyXDH < TestCase
     priv = OpenSSL::PKey.read(ALICE_PEM)
     assert_match(/\AX25519 Private-Key:/, priv.to_text)
   end
+
+  def test_inspect
+    priv = OpenSSL::PKey.read(ALICE_PEM)
+    assert_match(/oid=X25519/, priv.inspect)
+    assert_match(/type_name=X25519/, priv.inspect)
+  end
 end

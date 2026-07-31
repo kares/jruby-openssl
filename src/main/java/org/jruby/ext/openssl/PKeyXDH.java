@@ -161,6 +161,9 @@ public class PKeyXDH extends PKey {
     public String getKeyType() { return "XDH"; }
 
     @Override
+    public String getTypeName() { return getAlgorithm().toUpperCase(); }
+
+    @Override
     public RubyString oid() { // MRI: OBJ_nid2sn returns "X25519" or "X448"
         return getRuntime().newString(getAlgorithm().toUpperCase());
     }

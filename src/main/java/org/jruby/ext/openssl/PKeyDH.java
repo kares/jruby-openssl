@@ -124,6 +124,9 @@ public class PKeyDH extends PKey {
     }
 
     @Override
+    public String getTypeName() { return "DH"; } // no JCA key - getKeyType() is "NONE"
+
+    @Override
     @JRubyMethod
     public RubyString to_text() {
         StringBuilder result = new StringBuilder();

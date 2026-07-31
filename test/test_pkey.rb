@@ -67,6 +67,22 @@ class TestPKey < TestCase
     assert_true cert.check_private_key(pkey)
   end
 
+  # MRI also reports provider=... which has no meaning in terms of Java
+  def test_pkey_inspect
+    rsa = OpenSSL::PKey::RSA.new(2048)
+    assert_match(/\A#<OpenSSL::PKey::RSA:0x\h+ /, rsa.inspect)
+    assert_match(/oid=rsaEncryption/, rsa.inspect)
+    assert_match(/type_name=RSA/, rsa.inspect)
+
+    ec = OpenSSL::PKey::EC.generate('prime256v1')
+    assert_match(/oid=id-ecPublicKey/, ec.inspect)
+    assert_match(/type_name=EC/, ec.inspect)
+
+    dh = Fixtures.pkey_dh('dh2048_ffdhe2048')
+    assert_match(/oid=dhKeyAgreement/, dh.inspect)
+    assert_match(/type_name=DH/, dh.inspect)
+  end
+
   # SubjectPublicKeyInfo with an unsupported algorithm (used to escape as a Java exception)
   def test_pkey_read_public_key_unknown_algorithm
     spki = OpenSSL::ASN1::Sequence([

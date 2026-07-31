@@ -459,6 +459,15 @@ public abstract class PKey extends RubyObject {
 
     public String getKeyType() { return getAlgorithm(); }
 
+    // EVP_PKEY_get0_type_name (key type as MRI reports in #inspect)
+    public String getTypeName() { return getKeyType(); }
+
+    @JRubyMethod
+    public RubyString inspect(final ThreadContext context) {
+        // MRI also prints provider=, there is no such notion behind a JCA provider
+        return ObjectSupport.inspectAddr(this, "oid=" + oid().asJavaString() + " type_name=" + getTypeName());
+    }
+
     public boolean isPrivateKey() { return getPrivateKey() != null; }
 
     @JRubyMethod(name = { "public?", "public_key?" })

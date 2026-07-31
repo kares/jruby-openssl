@@ -170,6 +170,9 @@ public class PKeyEdDSA extends PKey {
     public String getKeyType() { return "EdDSA"; }
 
     @Override
+    public String getTypeName() { return getAlgorithm().toUpperCase(); }
+
+    @Override
     public RubyString oid() { // MRI: OBJ_nid2sn returns "ED25519" or "ED448"
         return getRuntime().newString(getAlgorithm().toUpperCase());
     }

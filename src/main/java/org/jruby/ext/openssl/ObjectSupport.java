@@ -49,6 +49,14 @@ abstract class ObjectSupport {
         return RubyString.newString(runtime, part);
     }
 
+    /** like {@link #inspect(RubyBasicObject, CharSequence)} but keeps the object address */
+    static RubyString inspectAddr(final RubyBasicObject self, final CharSequence content) {
+        final StringBuilder part = inspectHeader(self).append(":0x");
+        part.append(Integer.toHexString(System.identityHashCode(self)));
+        part.append(' ').append(content).append('>');
+        return RubyString.newString(self.getRuntime(), part);
+    }
+
     private static StringBuilder inspectHeader(final RubyBasicObject self) {
         final StringBuilder part = new StringBuilder();
         part.append("#<").append(self.getMetaClass().getRealClass().getName());

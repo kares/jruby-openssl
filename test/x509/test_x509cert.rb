@@ -114,7 +114,7 @@ END
     ]
     aki = ef.create_extension("authorityKeyIdentifier", "keyid:always,issuer:always")
     cert.add_extension(aki)
-    cert.sign(key, OpenSSL::Digest::SHA1.new)
+    cert.sign(key, sha1_or_approved)
 
     cert
   end
@@ -133,7 +133,7 @@ END
 
     now = Time.now
     ca_cert = issue_cert(ca, rsa2048, 1, ca_exts, nil, nil,
-                         not_before: now, not_after: now + 3600, digest: OpenSSL::Digest::SHA1.new)
+                         not_before: now, not_after: now + 3600, digest: sha1_or_approved)
 
     assert_equal 5, ca_cert.extensions.size
 
@@ -181,7 +181,7 @@ END
 
     now = Time.now
     ca_cert = issue_cert(ca, rsa2048, 1, ca_exts, nil, nil,
-                         not_before: now, not_after: now + 3600, digest: OpenSSL::Digest::SHA1.new)
+                         not_before: now, not_after: now + 3600, digest: sha1_or_approved)
 
     assert_equal 8, ca_cert.extensions.size
     ca_cert.extensions.each_with_index do |ext, i|
@@ -210,6 +210,7 @@ END
   end
 
   def test_inspect_to_text
+    omit_on_fips 'hardcoded 1024-bit RSA / sha1WithRSAEncryption expectations'
     subj = OpenSSL::X509::Name.parse("/DC=org/DC=ruby-lang/CN=TestCA")
     key = OpenSSL::PKey::RSA.new TEST_KEY_RSA1024
     now = Time.at 1412840060 # Time.now.to_i suppress usec
@@ -407,7 +408,7 @@ EOF
     subject.add_entry('L', 'Chiyoda')
     subject.add_entry('CN', 'demo.example.com')
 
-    digest = OpenSSL::Digest::SHA1.new
+    digest = sha1_or_approved
 
     cert = OpenSSL::X509::Certificate.new
     cert.not_before = Time.at(0)
@@ -474,12 +475,12 @@ EOF
 
     if defined? JRUBY_VERSION
       begin
-        res = context.cert.sign(context.key, OpenSSL::Digest::SHA1.new)
+        res = context.cert.sign(context.key, sha1_or_approved)
       rescue OpenSSL::X509::CertificateError
         return
       end
     else
-      res = context.cert.sign(context.key, OpenSSL::Digest::SHA1.new)
+      res = context.cert.sign(context.key, sha1_or_approved)
     end
     # MRI allows (invalid) serial == 0 :
     assert res.is_a?(OpenSSL::X509::Certificate)
@@ -488,7 +489,7 @@ EOF
 
   def test_tbs_precert_bytes
     ca = OpenSSL::X509::Name.parse('/DC=org/DC=ruby-lang/CN=CA')
-    cert = issue_cert(ca, OpenSSL::PKey::RSA.new(TEST_KEY_RSA1024), 1, [], nil, nil)
+    cert = issue_cert(ca, OpenSSL::PKey::RSA.new(TEST_KEY_RSA2048), 1, [], nil, nil)
     seq = OpenSSL::ASN1.decode(cert.tbs_bytes)
 
     assert_equal 7, seq.value.size
@@ -496,7 +497,7 @@ EOF
 
   def test_tbs_bytes_reflects_current_extensions
     ca = OpenSSL::X509::Name.parse('/DC=org/DC=ruby-lang/CN=CA')
-    cert = issue_cert(ca, OpenSSL::PKey::RSA.new(TEST_KEY_RSA1024), 1,
+    cert = issue_cert(ca, OpenSSL::PKey::RSA.new(TEST_KEY_RSA2048), 1,
                       [['basicConstraints', 'CA:TRUE', true]], nil, nil)
 
     assert_equal 8, OpenSSL::ASN1.decode(cert.tbs_bytes).value.size
@@ -553,8 +554,8 @@ EOF
     now = Time.now
     ca = OpenSSL::X509::Name.parse('/DC=org/DC=ruby-lang/CN=CA')
     ee = OpenSSL::X509::Name.parse('/DC=org/DC=example/CN=ServerCert')
-    ca_key = OpenSSL::PKey::RSA.new(TEST_KEY_RSA1024)
-    ee_key = OpenSSL::PKey::RSA.new(TEST_KEY_RSA1024)
+    ca_key = OpenSSL::PKey::RSA.new(TEST_KEY_RSA2048)
+    ee_key = OpenSSL::PKey::RSA.new(TEST_KEY_RSA2048)
 
     cacert = issue_cert(ca, ca_key, 1, [], nil, nil,
                         not_before: now, not_after: now + 3600)

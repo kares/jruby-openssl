@@ -35,6 +35,7 @@ import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.Provider;
 import java.security.PublicKey;
 import java.security.SignatureException;
 import java.security.cert.Certificate;
@@ -727,9 +728,11 @@ public class X509Cert extends RubyObject {
         final String signatureAlg = (digAlg == null) ? keyAlg : digAlg + "WITH" + keyAlg;
         final X509CertificateHolder certHolder;
         try {
-            ContentSigner signer =
-                    new JcaContentSignerBuilder(signatureAlg).
-                            build(((PKey) key).getPrivateKey());
+            final JcaContentSignerBuilder signerBuilder = new JcaContentSignerBuilder(signatureAlg);
+            // pin the provider - the default helper signs on any registered provider
+            final Provider provider = SecurityHelper.getSecurityProvider();
+            if (provider != null) signerBuilder.setProvider(provider);
+            ContentSigner signer = signerBuilder.build(((PKey) key).getPrivateKey());
             certHolder = builder.build(signer);
         } catch (OperatorCreationException e) {
             Exception cause = (Exception) e.getCause(); // GeneralSecurityException

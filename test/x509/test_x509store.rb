@@ -458,16 +458,16 @@ class TestX509Store < TestCase
 
     revoke_info = []
     crl1   = issue_crl(revoke_info, 1, now, now+1800, [],
-                       ca1_cert, @rsa2048, OpenSSL::Digest::SHA1.new)
+                       ca1_cert, @rsa2048, sha1_or_approved)
     revoke_info = [ [2, now, 1], ]
     crl1_2 = issue_crl(revoke_info, 2, now, now+1800, [],
-                       ca1_cert, @rsa2048, OpenSSL::Digest::SHA1.new)
+                       ca1_cert, @rsa2048, sha1_or_approved)
     revoke_info = [ [20, now, 1], ]
     crl2   = issue_crl(revoke_info, 1, now, now+1800, [],
-                       ca2_cert, @rsa1024, OpenSSL::Digest::SHA1.new)
+                       ca2_cert, @rsa1024, sha1_or_approved)
     revoke_info = []
     crl2_2 = issue_crl(revoke_info, 2, now-100, now-1, [],
-                       ca2_cert, @rsa1024, OpenSSL::Digest::SHA1.new)
+                       ca2_cert, @rsa1024, sha1_or_approved)
 
     assert_equal(true, ca1_cert.verify(ca1_cert.public_key))   # self signed
     assert_equal(true, ca2_cert.verify(ca1_cert.public_key))   # issued by ca1

@@ -39,7 +39,7 @@ class TestSSL < TestCase
       ["subjectAltName","IP:127.0.0.1",false],
     ]
     @svr_cert = issue_cert(@svr, @svr_key, 4, exts, @ca_cert, @ca_key,
-                           not_before: now, not_after: now + 1800, digest: OpenSSL::Digest::SHA1.new)
+                           not_before: now, not_after: now + 1800, digest: sha1_or_approved)
     start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
       sock = TCPSocket.new("127.0.0.1", port)
       ssl = OpenSSL::SSL::SSLSocket.new(sock)
@@ -63,7 +63,7 @@ class TestSSL < TestCase
       [ "subjectAltName", "DNS:*.localdomain", false ],
     ]
     @svr_cert = issue_cert(@svr, @svr_key, 5, exts, @ca_cert, @ca_key,
-                           not_before: now, not_after: now + 1800, digest: OpenSSL::Digest::SHA1.new)
+                           not_before: now, not_after: now + 1800, digest: sha1_or_approved)
     start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) do |server, port|
       sock = TCPSocket.new("127.0.0.1", port)
       ssl = OpenSSL::SSL::SSLSocket.new(sock)

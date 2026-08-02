@@ -80,6 +80,11 @@ class TestCase
     skip('only for FIPS mode') unless fips?
   end
 
+  # for tests where the digest is incidental (fixture certs) rather than what is tested
+  def sha1_or_approved
+    fips? ? OpenSSL::Digest::SHA256.new : OpenSSL::Digest::SHA1.new
+  end
+
   private
 
   def debug(msg); puts msg if $VERBOSE end

@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Set;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
+import java.security.Provider;
 import java.security.PublicKey;
 import java.security.cert.CRLException;
 import java.security.cert.CertificateFactory;
@@ -617,7 +618,11 @@ public class X509CRL extends RubyObject {
             }
             */
 
-            ContentSigner signer = new JcaContentSignerBuilder( signatureAlgorithm ).build(privateKey);
+            final JcaContentSignerBuilder signerBuilder = new JcaContentSignerBuilder(signatureAlgorithm);
+            // pin the provider - the default helper signs on any registered provider
+            final Provider provider = SecurityHelper.getSecurityProvider();
+            if (provider != null) signerBuilder.setProvider(provider);
+            ContentSigner signer = signerBuilder.build(privateKey);
             this.crlHolder = generator.build( signer ); this.crl = null;
         }
         catch (IllegalStateException e) {

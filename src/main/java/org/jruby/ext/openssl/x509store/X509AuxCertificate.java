@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Set;
 
 import java.security.Principal;
+import java.security.Provider;
 import java.security.PublicKey;
 import java.security.NoSuchAlgorithmException;
 import java.security.InvalidKeyException;
@@ -305,7 +306,8 @@ public class X509AuxCertificate extends X509Certificate implements Cloneable {
     @Override
     public void verify(PublicKey key) throws CertificateException, NoSuchAlgorithmException,
         InvalidKeyException, NoSuchProviderException, SignatureException {
-        cert.verify(key);
+        // the wrapped certificate can be of any implementation
+        SecurityHelper.verify(cert, key);
     }
 
     @Override
@@ -313,6 +315,12 @@ public class X509AuxCertificate extends X509Certificate implements Cloneable {
         NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException,
         SignatureException {
         cert.verify(key,sigProvider);
+    }
+
+    @Override
+    public void verify(PublicKey key, Provider sigProvider) throws CertificateException,
+        NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+        cert.verify(key, sigProvider);
     }
 
     @Override

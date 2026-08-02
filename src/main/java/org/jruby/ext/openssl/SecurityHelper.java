@@ -42,6 +42,7 @@ import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509CRL;
+import java.security.cert.X509Certificate;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
@@ -548,6 +549,26 @@ public abstract class SecurityHelper {
     private static SSLContext getSSLContext(final String protocol, final Provider provider)
         throws NoSuchAlgorithmException {
         return SSLContext.getInstance(protocol, provider);
+    }
+
+    /**
+     * @implNote {@link X509Certificate#verify(PublicKey)} resolves the signature
+     * through JDK's default provider - certificates read from a JKS keystore stay
+     * {@code sun.security.x509.X509CertImpl} and would verify off-provider
+     */
+    public static void verify(final X509Certificate cert, final PublicKey publicKey)
+        throws CertificateException, NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+        final Provider provider = getSecurityProvider();
+        if (provider == null) {
+            try {
+                cert.verify(publicKey);
+            }
+            catch (NoSuchProviderException e) {
+                throw new SignatureException(e);
+            }
+            return;
+        }
+        cert.verify(publicKey, provider);
     }
 
     public static boolean verify(final X509CRL crl, final PublicKey publicKey)

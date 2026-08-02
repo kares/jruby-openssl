@@ -25,16 +25,17 @@ task :clean do
   sh("#{mvnw} clean")
 end
 
-task :build do
+task :build_release do
   source_date_epoch!
-  sh("#{mvnw} -Prelease -DupdateReleaseInfo=true #{_build_output_timestamp} clean package")
+  sh("#{mvnw} -Prelease -DupdateReleaseInfo=true #{_build_output_timestamp} package")
 end
 
-desc "Sanity-check the tree/version, then build a reproducible release gem"
+desc "Sanity-check tree/version, then build a reproducible release gem"
 task :release => :release_check do
   source_date_epoch! # pin to the release commit so the gem + jar use the same
   puts "SOURCE_DATE_EPOCH=#{ENV['SOURCE_DATE_EPOCH']} (#{Time.at(ENV['SOURCE_DATE_EPOCH'].to_i).utc})"
-  Rake::Task[:build].invoke
+  Rake::Task[:clean].invoke
+  Rake::Task[:build_release].invoke
   gem = Dir['target/*.gem', 'pkg/*.gem'].max_by { |f| File.mtime(f) }
   abort "release aborted - no .gem produced" unless gem
   puts "built #{gem}"
@@ -73,7 +74,7 @@ task :jar_release => :release_check do
   # deploy (gpg-sign + push): #{File.basename(mvnw)} deploy -Prelease,jar-release -D...
 end
 
-task :default => :build
+task :default => :jar
 
 file('lib/jopenssl.jar') { Rake::Task[:jar].invoke }
 

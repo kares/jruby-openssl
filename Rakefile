@@ -95,6 +95,26 @@ task :test => ['lib/jopenssl.jar', 'pkg/test-classes/org/jruby/ext/openssl/Secur
 require_relative 'tasks/vendor_tests'
 define_vendor_test_tasks # root + jopenssl_lib default to this tree
 
+require_relative 'tasks/provider_tests'
+namespace :test do
+  namespace :provider do
+    define_provider_test_task :bc_all,
+                              description: 'Run tests with BC providers registered through java.security',
+                              providers: [
+                                { name: 'BC', class: 'org.bouncycastle.jce.provider.BouncyCastleProvider' },
+                                { name: 'BCJSSE', class: 'org.bouncycastle.jsse.provider.BouncyCastleJsseProvider' }
+                              ],
+                              jars: -> { FileList['vendor/**/*.jar'].map { |path| File.expand_path(path) } }
+    define_provider_test_task :bc_wout_jsse,
+                              description: 'Run tests with only BC provider registered (without BC-JSSE)',
+                              providers: [
+                                { name: 'BC', class: 'org.bouncycastle.jce.provider.BouncyCastleProvider' },
+                              ],
+                              jdk_providers: ['SUN', 'SunJSSE', 'SunJCE', 'SunEC'],
+                              jars: -> { FileList['vendor/**/*.jar'].map { |path| File.expand_path(path) } }
+  end
+end
+
 namespace :integration do
   it_path = File.expand_path('integration', File.dirname(__FILE__))
   task :install do

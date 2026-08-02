@@ -470,6 +470,7 @@ class TestRSA < TestCase
   end
 
   def test_RSAPrivateKey
+    omit_on_fips '1024-bit RSA key fixture'
     rsa1024 = Fixtures.pkey("rsa1024")
     assert_not_equal nil, rsa1024.dmp1
     assert_not_equal nil, rsa1024.dmq1

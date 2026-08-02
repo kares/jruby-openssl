@@ -281,6 +281,7 @@ class TestPKey < TestCase
   end
 
   def test_generate_parameters_dh
+    omit_on_fips 'DH parameters below 2048 bits'
     pkey = OpenSSL::PKey.generate_parameters("DH", {
       "dh_paramgen_prime_len" => 512,
       "dh_paramgen_generator" => 5
@@ -329,6 +330,9 @@ class TestPKey < TestCase
   end
 
   def test_generate_key_dh_from_generated_parameters
+    # 512 bits is below the 2048-bit DH floor the module enforces
+    # (C OpenSSL refuses PKCS#3 parameter generation under FIPS)
+    omit_on_fips 'DH parameters below 2048 bits'
     # DH keys are generated from parameters in two steps
     params = OpenSSL::PKey.generate_parameters("DH", {
       "dh_paramgen_prime_len" => 512,

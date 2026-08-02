@@ -143,4 +143,16 @@ public abstract class PKeyShim {
         // BC returns ASN1BitString which in practice is always a DERBitString
         return (DERBitString) req.getSignature();
     }
+
+    /**
+     * Whether DH key generation and agreement go through the security provider.
+     */
+    public static boolean useDHProvider() {
+        return false;
+    }
+
+    public static void checkDHParameterSize(final int bits)
+        throws IllegalArgumentException {
+        // no constraint beyond what OpenSSL itself imposes
+    }
 }

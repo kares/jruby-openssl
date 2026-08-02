@@ -31,8 +31,10 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.math.BigInteger;
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -40,6 +42,7 @@ import java.util.HashMap;
 
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
+import javax.crypto.KeyAgreement;
 import javax.crypto.interfaces.DHPrivateKey;
 import javax.crypto.interfaces.DHPublicKey;
 import javax.crypto.spec.DHParameterSpec;
@@ -56,6 +59,7 @@ import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.ext.openssl.shim.PKeyShim;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.ObjectAllocator;
@@ -180,7 +184,7 @@ public class PKeyDH extends PKey {
         }
 
         PKeyDH pkey = new PKeyDH(runtime, (RubyClass) self);
-        pkey.generate(runtime, args[0], g);
+        pkey.generate(context, args[0], g);
         return pkey;
     }
 
@@ -221,7 +225,7 @@ public class PKeyDH extends PKey {
                     throw runtime.newIOErrorFromException(e);
                 }
             } else {
-                generate(runtime, arg0, argc == 2 ? RubyNumeric.num2int(args[1]) : 2); // g defaults to 2
+                generate(context, arg0, argc == 2 ? RubyNumeric.num2int(args[1]) : 2); // g defaults to 2
             }
         }
         return this;
@@ -256,21 +260,30 @@ public class PKeyDH extends PKey {
         if (publicKey != null) this.dh_y = publicKey.getY();
     }
 
-    private void generate(final Ruby runtime, final IRubyObject bits, final int gval) {
+    private void generate(final ThreadContext context, final IRubyObject bits, final int gval) {
         BigInteger p;
+        final int bitLength = RubyNumeric.num2int(bits);
         try {
-            p = generateP(RubyNumeric.num2int(bits), gval);
+            PKeyShim.checkDHParameterSize(bitLength);
+        }
+        catch (IllegalArgumentException e) { // DHError (not ArgumentError) to match OpenSSL
+            throw newDHError(context.runtime, e.getMessage());
+        }
+        try {
+            p = generateP(bitLength, gval);
         }
         catch (IllegalArgumentException e) {
-            throw runtime.newArgumentError(e.getMessage());
+            throw context.runtime.newArgumentError(e.getMessage());
         }
         BigInteger g = BigInteger.valueOf(gval);
-        BigInteger x = generateX(p);
-        BigInteger y = generateY(p, g, x);
         this.dh_p = p;
         this.dh_g = g;
-        this.dh_x = x; // private key
-        this.dh_y = y; // public key
+        if (PKeyShim.useDHProvider()) { // sets dh_x/dh_y (parameters the module rejects fail here)
+            generateKey(context, p, g);
+            return;
+        }
+        this.dh_x = generateX(p); // private key
+        this.dh_y = generateY(p, g, this.dh_x); // public key
     }
 
     public static BigInteger generateP(int bits, int g) {
@@ -283,6 +296,8 @@ public class PKeyDH extends PKey {
 
         if (bits < 2) throw new IllegalArgumentException("invalid bit length");
         if (g < 2) throw new IllegalArgumentException("invalid generator");
+        // PKey.generate_parameters lands here without a key (maps to PKeyError, like OpenSSL)
+        PKeyShim.checkDHParameterSize(bits);
 
         // generate safe prime meeting appropriate add/rem (mod) criteria
 
@@ -318,12 +333,51 @@ public class PKeyDH extends PKey {
     }
 
     public static BigInteger generateX(BigInteger p) {
-        // OpenSSL default l(imit) is p bits - 1 -- see [ossl]/crypto/dh/dh_key.c #generate_key
+        // OpenSSL default limit is p bits - 1 (in /crypto/dh/dh_key.c #generate_key)
         return generateX(p, p.bitLength() - 1);
     }
 
     public static BigInteger generateY(BigInteger p, BigInteger g, BigInteger x) {
         return g.modPow(x, p);
+    }
+
+
+    private void generateKey(final ThreadContext context, final BigInteger p, final BigInteger g) {
+        try {
+            final KeyPairGenerator generator = SecurityHelper.getKeyPairGenerator("DH");
+            generator.initialize(new DHParameterSpec(p, g), OpenSSL.getSecureRandom(context));
+            final KeyPair pair = generator.generateKeyPair();
+            this.dh_x = ((DHPrivateKey) pair.getPrivate()).getX();
+            this.dh_y = ((DHPublicKey) pair.getPublic()).getY();
+        }
+        catch (GeneralSecurityException e) { // e.g. parameters the module will not accept
+            throw newDHError(context.runtime, e.getMessage());
+        }
+        catch (Throwable e) {
+            OpenSSL.handlePotentialOperationError(context.runtime, e);
+        }
+    }
+
+    private static byte[] computeKey(final Ruby runtime,
+                                     final BigInteger y, final BigInteger x,
+                                     final BigInteger p, final BigInteger g) {
+        if (g == null) throw newDHError(runtime, "can't compute key - no generator");
+        try {
+            final KeyFactory keyFactory = getKeyFactory();
+            final PrivateKey privateKey = keyFactory.generatePrivate(new DHPrivateKeySpec(x, p, g));
+            final PublicKey publicKey = keyFactory.generatePublic(new DHPublicKeySpec(y, p, g));
+            final KeyAgreement agreement = SecurityHelper.getKeyAgreement("DH");
+            agreement.init(privateKey);
+            agreement.doPhase(publicKey, true);
+            // JCE pads the secret up to the modulus size, DH_compute_key strips leading zeros
+            return BN.toUnsignedBytes(new BigInteger(1, agreement.generateSecret()));
+        }
+        catch (GeneralSecurityException e) {
+            throw newDHError(runtime, e.getMessage());
+        }
+        catch (Throwable e) {
+            return OpenSSL.handlePotentialOperationError(runtime, e);
+        }
     }
 
     @JRubyMethod(name = "generate_key!")
@@ -333,8 +387,14 @@ public class PKeyDH extends PKey {
             throw newDHError(getRuntime(), "can't generate key");
         }
         if ((x = this.dh_x) == null) {
+            if (PKeyShim.useDHProvider()) {
+                generateKey(context, p, g);
+                return this;
+            }
             x = generateX(p);
         }
+        // NOTE: deriving public value from pre-set private key simply does `modPow`
+        // JCE has no API to do it (a key-pair generator picks its own private key)
         y = generateY(p, g, x);
         this.dh_x = x;
         this.dh_y = y;
@@ -354,7 +414,9 @@ public class PKeyDH extends PKey {
         if ((plen = p.bitLength()) == 0 || plen > OPENSSL_DH_MAX_MODULUS_BITS) {
             throw newDHError(getRuntime(), "can't compute key");
         }
-        return getRuntime().newString(new ByteList(computeKey(y, x, p), false));
+        final byte[] secret = PKeyShim.useDHProvider() ?
+                computeKey(getRuntime(), y, x, p, this.dh_g) : computeKey(y, x, p);
+        return getRuntime().newString(new ByteList(secret, false));
     }
 
     public static byte[] computeKey(BigInteger y, BigInteger x, BigInteger p) {
@@ -381,7 +443,8 @@ public class PKeyDH extends PKey {
         if (peerY == null) {
             throw newPKeyError(context.runtime, "EVP_PKEY_derive_set_peer");
         }
-        final byte[] secret = computeKey(peerY, x, p);
+        final byte[] secret = PKeyShim.useDHProvider() ?
+                computeKey(context.runtime, peerY, x, p, this.dh_g) : computeKey(peerY, x, p);
         return context.runtime.newString(new ByteList(secret, false));
     }
 

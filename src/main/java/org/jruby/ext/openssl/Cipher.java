@@ -1012,6 +1012,11 @@ public class Cipher extends RubyObject {
         this.padding = padding;
 
         final Algorithm alg = Algorithm.osslToJava(this.name, this.padding);
+
+        if (!CipherShim.isCipherAllowed(alg)) {
+            throw newCipherError(getRuntime(), "unsupported cipher algorithm (" + this.name + ")");
+        }
+
         cryptoBase = alg.base;
         cryptoVersion = alg.version;
         cryptoMode = alg.mode;

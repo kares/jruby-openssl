@@ -136,25 +136,21 @@ public class OCSPCertificateId extends RubyObject {
     }
     
     private IRubyObject initializeImpl(final Ruby runtime, BigInteger serial, X509Cert issuerCert, IRubyObject digest) {
-        
-        Digest rubyDigest = (Digest) digest;
-        ASN1ObjectIdentifier oid = ASN1.sym2Oid(runtime, rubyDigest.getName().toLowerCase());
-        AlgorithmIdentifier bcAlgId = new AlgorithmIdentifier(oid);
-        DigestCalculator calc;
+        ASN1ObjectIdentifier oid = ASN1.sym2Oid(runtime, ((Digest) digest).getName().toLowerCase());
+        final DigestCalculator calc;
         try {
-            final JcaDigestCalculatorProviderBuilder builder = new JcaDigestCalculatorProviderBuilder();
-            if (SecurityHelper.getSecurityProvider() != null) {
-                builder.setProvider(SecurityHelper.getSecurityProvider());
-            }
-            final DigestCalculatorProvider calculatorProvider = builder.build();
-            calc = calculatorProvider.get(bcAlgId);
+            DigestCalculatorProvider calculatorProvider = new JcaDigestCalculatorProviderBuilder()
+                    .setProvider(SecurityHelper.getSecurityProvider())
+                    .build();
+            calc = calculatorProvider.get(new AlgorithmIdentifier(oid));
         }
         catch (OperatorCreationException e) {
             throw newOCSPError(runtime, e);
         }
 
         try {
-            this.bcCertId = new CertificateID(calc, new X509CertificateHolder(issuerCert.getAuxCert().getEncoded()), serial).toASN1Primitive();
+            final byte[] issuerEncoded = issuerCert.getAuxCert().getEncoded();
+            this.bcCertId = new CertificateID(calc, new X509CertificateHolder(issuerEncoded), serial).toASN1Primitive();
         }
         catch (Exception e) {
             throw newOCSPError(runtime, e);

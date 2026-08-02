@@ -993,8 +993,6 @@ DO NOT MODIFY - GENERATED CODE
                         <include>org/jruby/ext/openssl/impl/Signed.java</include>
                         <include>org/jruby/ext/openssl/impl/SignerInfoWithPkey.java</include>
                         <include>org/jruby/ext/openssl/impl/TypeDiscriminating.java</include>
-                        <include>org/jruby/ext/openssl/impl/pem/MiscPEMGeneratorHelper.java</include>
-                        <include>org/jruby/ext/openssl/impl/pem/PEMUtilities.java</include>
                         <include>org/jruby/ext/openssl/log/DefaultLogger.java</include>
                         <include>org/jruby/ext/openssl/log/JULLogger.java</include>
                         <include>org/jruby/ext/openssl/log/Logger.java</include>
@@ -1006,7 +1004,6 @@ DO NOT MODIFY - GENERATED CODE
                         <include>org/jruby/ext/openssl/util/ByteArrayOutputStream.java</include>
                         <include>org/jruby/ext/openssl/util/Cache.java</include>
                         <include>org/jruby/ext/openssl/util/ExceptionUtil.java</include>
-                        <include>org/jruby/ext/openssl/util/PEMGenerator.java</include>
                         <include>org/jruby/ext/openssl/util/RubySupport.java</include>
                         <include>org/jruby/ext/openssl/x509store/CRL.java</include>
                         <include>org/jruby/ext/openssl/x509store/Certificate.java</include>

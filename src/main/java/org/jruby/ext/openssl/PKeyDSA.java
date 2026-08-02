@@ -37,6 +37,7 @@ import java.security.interfaces.DSAKey;
 import java.security.interfaces.DSAParams;
 import java.security.interfaces.DSAPrivateKey;
 import java.security.interfaces.DSAPublicKey;
+import java.security.spec.DSAParameterSpec;
 import java.security.spec.DSAPrivateKeySpec;
 import java.security.spec.DSAPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
@@ -164,6 +165,13 @@ public class PKeyDSA extends PKey {
         dsa.privateKey = (DSAPrivateKey) pair.getPrivate();
         dsa.publicKey = (DSAPublicKey) pair.getPublic();
         return dsa;
+    }
+
+    private static KeyPair generateKeyPair(final ThreadContext context, DSAParameterSpec spec)
+        throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
+        KeyPairGenerator gen = SecurityHelper.getKeyPairGenerator("DSA");
+        gen.initialize(spec, getSecureRandom(context));
+        return gen.generateKeyPair();
     }
 
     /*
@@ -663,13 +671,16 @@ public class PKeyDSA extends PKey {
             throw newDSAError(context.runtime, "can't generate key");
         }
 
-        BigInteger x;
-        do {
-            x = new BigInteger(q.bitLength(), getSecureRandom(context));
-        } while (x.signum() <= 0 || x.compareTo(q) >= 0);
+        final KeyPair pair;
+        try {
+            pair = generateKeyPair(context, new DSAParameterSpec(p, q, g));
+        }
+        catch (GeneralSecurityException e) {
+            throw newDSAError(context.runtime, e.getMessage());
+        }
 
-        this.dsa_x = x;
-        this.dsa_y = g.modPow(x, p);
+        this.dsa_x = ((DSAPrivateKey) pair.getPrivate()).getX();
+        this.dsa_y = ((DSAPublicKey) pair.getPublic()).getY();
         this.privateKey = null;
         this.publicKey = null;
         generateKeyInternal();

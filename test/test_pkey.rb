@@ -188,6 +188,7 @@ class TestPKey < TestCase
   end
 
   def test_generate_key_from_dsa_params
+    omit_on_fips 'DSA key generation is not FIPS-approved'
     original = Fixtures.pkey("dsa1024")
     dsa_params = OpenSSL::PKey::DSA.new
     dsa_params.set_pqg(original.p, original.q, original.g)

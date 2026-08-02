@@ -28,6 +28,7 @@
 package org.jruby.ext.openssl;
 
 import java.math.BigInteger;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.Random;
@@ -873,8 +874,17 @@ public class BN extends RubyObject {
         if ( ( rnd = BN.secureRandom ) != null ) {
             return rnd;
         }
-        // NOTE: will use (default) Sun's even if BC provider is set
-        return BN.secureRandom = new SecureRandom();
+
+        if (SecurityHelper.isFipsMode()) { // random bits (and primes) come from the module's DRBG
+            try {
+                return BN.secureRandom = SecurityHelper.getSecureRandom();
+            }
+            catch (NoSuchAlgorithmException e) {
+                throw new SecurityException("No FIPS secure random available", e);
+            }
+        }
+
+        return BN.secureRandom = new SecureRandom(); // use (default) even if BC provider is set
     }
 
     public static RaiseException newBNError(Ruby runtime, String message) {

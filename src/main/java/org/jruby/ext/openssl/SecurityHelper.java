@@ -53,6 +53,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.net.ssl.SSLContext;
 
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.ProviderShim;
 import org.jruby.util.SafePropertyAccessor;
 
 /**
@@ -78,7 +79,7 @@ public abstract class SecurityHelper {
     static volatile Provider jsseProvider;
 
     /**
-     * @implNote needs to be lazy; happen after {@link #setFipsMode(boolean)}
+     * @implNote needs to be lazy; happen after {@link #setFipsVariant(boolean)}
      * @return main (BC) security provider
      */
     public static Provider getSecurityProvider() {
@@ -93,7 +94,7 @@ public abstract class SecurityHelper {
     private static synchronized Provider initSecurityProvider() {
         Provider provider = securityProvider;
         if (provider == null && initSecurityProvider) {
-            final boolean fips = isFipsMode();
+            final boolean fips = isFipsVariant();
             final String providerName = fips ? BC_FIPS_PROVIDER_NAME : BC_PROVIDER_NAME;
             final String providerClass = fips ? BC_FIPS_PROVIDER_CLASS : BC_PROVIDER_CLASS;
             // reuse when provider already registered (e.g. via java.security configuration)
@@ -118,7 +119,7 @@ public abstract class SecurityHelper {
 
     public static synchronized void setSecurityProvider(final Provider provider) {
         // once resolved in FIPS mode the (validated) provider must not be swapped out
-        if (isFipsMode() && securityProvider != null) {
+        if (isFipsVariant() && securityProvider != null) {
             throw new SecurityException("can not replace security provider");
         }
         setSecurityProvider(provider, true);
@@ -136,7 +137,7 @@ public abstract class SecurityHelper {
     }
 
     /**
-     * @implNote needs to be lazy; happen after {@link #setFipsMode(boolean)}
+     * @implNote needs to be lazy; happen after {@link #setFipsVariant(boolean)}
      * @return (BC-JSSE) SSL SPI provider
      */
     public static Provider getJsseProvider() {
@@ -177,7 +178,7 @@ public abstract class SecurityHelper {
             final Provider cryptoProvider = getSecurityProvider();
             // default JDK providers lack algorithms BCJSSE's TLS 1.3 needs (e.g. X25519)
             if (cryptoProvider != null) {
-                if (isFipsMode()) { // fipsMode: true so BCJSSE operates with FIPS constraints
+                if (isFipsVariant()) { // fipsMode: true so BCJSSE operates with FIPS constraints
                     return providerClass.getConstructor(boolean.class, Provider.class)
                             .newInstance(true, cryptoProvider);
                 }
@@ -202,26 +203,45 @@ public abstract class SecurityHelper {
         return null;
     }
 
-    static final AtomicInteger FIPS_MODE = new AtomicInteger();
-    private static final int FIPS_MODE_TRUE = 1;
-    private static final int FIPS_MODE_FALSE = -1;
+    static final AtomicInteger FIPS_VARIANT = new AtomicInteger();
+    private static final int FIPS_VARIANT_TRUE = 1;
+    private static final int FIPS_VARIANT_FALSE = -1;
 
-    public static boolean isFipsMode() {
-        assert FIPS_MODE.get() != 0;
-        return FIPS_MODE.get() == FIPS_MODE_TRUE;
+    /**
+     * Which (gem) variant is loaded, decides where cryptographic operations are routed.
+     */
+    public static boolean isFipsVariant() {
+        assert FIPS_VARIANT.get() != 0;
+        return FIPS_VARIANT.get() == FIPS_VARIANT_TRUE;
     }
 
-    static void setFipsMode(final boolean fipsMode) {
-        final int fipsModeValue = fipsMode ? FIPS_MODE_TRUE : FIPS_MODE_FALSE;
-        final boolean latched = FIPS_MODE.compareAndSet(0, fipsModeValue);
-        if (!latched && FIPS_MODE.get() != fipsModeValue) {
-            throw new SecurityException("unexpected FIPS mode adjustment (" + fipsMode + ")");
+    @Deprecated
+    public static boolean isFipsMode() {
+        return isFipsVariant();
+    }
+
+    static void setFipsVariant(final boolean fipsVariant) {
+        final int fipsVariantValue = fipsVariant ? FIPS_VARIANT_TRUE : FIPS_VARIANT_FALSE;
+        final boolean latched = FIPS_VARIANT.compareAndSet(0, fipsVariantValue);
+        if (!latched && FIPS_VARIANT.get() != fipsVariantValue) {
+            throw new SecurityException("unexpected FIPS mode adjustment (" + fipsVariant + ")");
         }
-        // provider is resolved lazily against the mode; if it was already resolved
-        // (e.g. an early getSecurityProvider) setting FIPS would keep a non-FIPS provider
-        if (latched && fipsMode && !initSecurityProvider) {
+        // provider is resolved lazily, if already resolved (e.g. an early getSecurityProvider)
+        // setting FIPS would keep a non-FIPS provider
+        if (latched && fipsVariant && !initSecurityProvider) {
             throw new SecurityException("FIPS mode requested after the security provider was initialized");
         }
+    }
+
+    /**
+     * Whether FIPS is not merely available but <em>enforced</em>.
+     *
+     * @implNote asked crypto module on every call: approved-only has a per-thread component whenever its
+     * not switched on globally, so a captured answer belongs to whichever thread happened to load OpenSSL
+     */
+    static boolean isApprovedOnlyMode() {
+        // avoid isFipsVariant() - asking before variant latched has a defined answer (false)
+        return FIPS_VARIANT.get() == FIPS_VARIANT_TRUE && ProviderShim.isInApprovedOnlyMode();
     }
 
     static void checkAndRegisterProviderOnce() {
@@ -256,7 +276,7 @@ public abstract class SecurityHelper {
             if ( provider != null ) return getCertificateFactory(type, provider);
         }
         catch (CertificateException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debugStack("getCertificateFactory", e);
         }
         return CertificateFactory.getInstance(type);
@@ -273,7 +293,7 @@ public abstract class SecurityHelper {
             if (provider != null) return getKeyFactory(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getKeyFactory", e);
         }
         return KeyFactory.getInstance(algorithm);
@@ -290,7 +310,7 @@ public abstract class SecurityHelper {
             if (provider != null) return AlgorithmParameters.getInstance(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getAlgorithmParameters", e);
         }
         return AlgorithmParameters.getInstance(algorithm);
@@ -303,7 +323,7 @@ public abstract class SecurityHelper {
             if (provider != null) return getKeyPairGenerator(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getKeyPairGenerator", e);
         }
         return KeyPairGenerator.getInstance(algorithm);
@@ -338,7 +358,7 @@ public abstract class SecurityHelper {
             if (provider != null) return getMessageDigest(algorithm, provider);
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getMessageDigest", e);
         }
         return MessageDigest.getInstance(algorithm);
@@ -355,7 +375,7 @@ public abstract class SecurityHelper {
             if (secureRandom != null) return secureRandom;
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getSecureRandom", e);
         }
         return new SecureRandom();
@@ -367,7 +387,7 @@ public abstract class SecurityHelper {
             if (secureRandom != null) return secureRandom;
         }
         catch (NoSuchAlgorithmException e) {
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
             LOG.debug("getSecureRandomStrong", e);
         }
         return SecureRandom.getInstanceStrong();
@@ -389,7 +409,7 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
             LOG.debug("getCipher", e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         return Cipher.getInstance(transformation);
     }
@@ -406,7 +426,7 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException e) {
             LOG.debug("getSignature", e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         return Signature.getInstance(algorithm);
     }
@@ -419,7 +439,7 @@ public abstract class SecurityHelper {
     public static Mac getMac(final String algorithm) throws NoSuchAlgorithmException {
         final Provider provider = getSecurityProvider();
         if (provider != null) {
-            final Mac mac = getMac(algorithm, provider, !isFipsMode()); // FIPS: non-silent -> fail closed
+            final Mac mac = getMac(algorithm, provider, !isFipsVariant()); // FIPS: non-silent -> fail closed
             if (mac != null) return mac;
         }
         return Mac.getInstance(algorithm);
@@ -448,11 +468,11 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException e) {
             LOG.debug("getKeyGenerator", e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         catch (SecurityException e) {
             LOG.debugStack(e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         return KeyGenerator.getInstance(algorithm);
     }
@@ -469,11 +489,11 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException e) {
             LOG.debug("getKeyAgreement", e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         catch (SecurityException e) {
             LOG.debugStack(e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         return KeyAgreement.getInstance(algorithm);
     }
@@ -490,11 +510,11 @@ public abstract class SecurityHelper {
         }
         catch (NoSuchAlgorithmException e) {
             LOG.debug("getSecretKeyFactory", e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         catch (SecurityException e) {
             LOG.debugStack(e);
-            if (isFipsMode()) throw e;
+            if (isFipsVariant()) throw e;
         }
         return SecretKeyFactory.getInstance(algorithm);
     }
@@ -527,10 +547,10 @@ public abstract class SecurityHelper {
             }
             catch (NoSuchAlgorithmException e) {
                 LOG.debug("getSSLContext", e);
-                if (isFipsMode()) throw e;
+                if (isFipsVariant()) throw e;
             }
         }
-        if (isFipsMode()) return getProviderSSLContext("SSL".equals(protocol) ? "TLS" : protocol);
+        if (isFipsVariant()) return getProviderSSLContext("SSL".equals(protocol) ? "TLS" : protocol);
         return SSLContext.getInstance(protocol); // built-in (SunJSSE) provider
     }
 

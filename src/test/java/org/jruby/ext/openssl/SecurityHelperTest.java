@@ -23,7 +23,7 @@ public class SecurityHelperTest {
     @BeforeAll
     public static void reset() {
         resetProvidersState();
-        setFipsMode(false, true);
+        setFipsVariant(false, true);
     }
 
     @AfterAll
@@ -559,7 +559,7 @@ public class SecurityHelperTest {
 
     @Test
     public void getCipherFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider()); // stands in for BCFIPS rejecting the algorithm
             try {
@@ -568,12 +568,12 @@ public class SecurityHelperTest {
             }
             catch (NoSuchAlgorithmException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void getMessageDigestFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider());
             try {
@@ -582,12 +582,12 @@ public class SecurityHelperTest {
             }
             catch (NoSuchAlgorithmException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void getMacFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider());
             try {
@@ -596,7 +596,7 @@ public class SecurityHelperTest {
             }
             catch (NoSuchAlgorithmException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
@@ -609,7 +609,7 @@ public class SecurityHelperTest {
 
     @Test
     public void getKeyFactoryFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider());
             try {
@@ -618,12 +618,12 @@ public class SecurityHelperTest {
             }
             catch (NoSuchAlgorithmException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void getSecureRandomFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider());
             try {
@@ -632,12 +632,12 @@ public class SecurityHelperTest {
             }
             catch (NoSuchAlgorithmException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void getCertificateFactoryFailsClosedInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider());
             try {
@@ -646,19 +646,19 @@ public class SecurityHelperTest {
             }
             catch (CertificateException expected) { /* OK */ }
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void getKeyStoreFallsBackForUnsupportedTypeInFipsMode() throws Exception {
-        forceFipsMode(true);
+        forceFips(true);
         try {
             SecurityHelper.setSecurityProvider(new DummyProvider()); // lacks JKS
             // keystore type is a container format, not an approved algorithm - must still resolve
             // even under FIPS (BC-FIPS has no "JKS", needed for the default CA trust store)
             assertNotNull(SecurityHelper.getKeyStore("JKS"));
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
@@ -680,48 +680,48 @@ public class SecurityHelperTest {
     @Test
     public void setFipsModeRejectedAfterProviderInit() {
         resetProvidersState(); // initSecurityProvider = true, securityProvider = null
-        setFipsMode(false, true);
+        setFipsVariant(false, true);
         assertNotNull(SecurityHelper.getSecurityProvider()); // resolves (non-FIPS) BC
         assertFalse(SecurityHelper.initSecurityProvider);
-        SecurityHelper.FIPS_MODE.set(0); // simulate FIPS being latched only after init
+        SecurityHelper.FIPS_VARIANT.set(0); // simulate FIPS being latched only after init
         try {
-            assertThrows(SecurityException.class, () -> SecurityHelper.setFipsMode(true));
+            assertThrows(SecurityException.class, () -> SecurityHelper.setFipsVariant(true));
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void setSecurityProviderSealedInFipsMode() {
         SecurityHelper.setSecurityProvider(new DummyProvider()); // non-FIPS: establishes a provider
-        forceFipsMode(true);
+        forceFips(true);
         try {
             assertThrows(SecurityException.class,
                 () -> SecurityHelper.setSecurityProvider(new DummyProvider()));
         }
-        finally { forceFipsMode(false); }
+        finally { forceFips(false); }
     }
 
     @Test
     public void initRejectsImpostorProviderNamedBCFIPSInFipsMode() {
         Security.addProvider(new NamedProvider("BCFIPS")); // not the validated BC-FIPS class
         try {
-            forceFipsMode(true);
+            forceFips(true);
             SecurityHelper.securityProvider = null; // force the lazy init path
             SecurityHelper.initSecurityProvider = true;
             assertThrows(SecurityException.class, () -> SecurityHelper.getSecurityProvider());
         }
         finally {
             Security.removeProvider("BCFIPS");
-            forceFipsMode(false);
+            forceFips(false);
         }
     }
 
-    private static void forceFipsMode(final boolean fipsMode) {
-        setFipsMode(fipsMode, true);
+    private static void forceFips(final boolean fipsMode) {
+        setFipsVariant(fipsMode, true);
     }
 
-    public static void setFipsMode(final boolean fipsMode, final boolean reset) {
-        FipsTestSupport.setFipsMode(fipsMode, reset);
+    public static void setFipsVariant(final boolean fipsMode, final boolean reset) {
+        FipsTestSupport.setFipsVariant(fipsMode, reset);
     }
 
     private static Provider getProvider() {

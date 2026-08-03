@@ -19,7 +19,7 @@ public class NameTest {
 
     @BeforeAll
     public static void notFipsMode() {
-        FipsTestSupport.setFipsMode(false, true);
+        FipsTestSupport.setFipsVariant(false, true);
     }
 
     @Test

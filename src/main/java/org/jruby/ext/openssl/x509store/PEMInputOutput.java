@@ -1111,7 +1111,7 @@ public class PEMInputOutput {
         final SecureRandom rnd = random;
         if (rnd != null) return rnd;
 
-        if (SecurityHelper.isFipsMode()) {
+        if (SecurityHelper.isFipsVariant()) {
             try {
                 return random = SecurityHelper.getSecureRandom();
             } catch (NoSuchAlgorithmException e) {

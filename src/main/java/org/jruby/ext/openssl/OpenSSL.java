@@ -68,8 +68,8 @@ public class OpenSSL {
         doLoad(runtime, false);
     }
 
-    static void doLoad(final Ruby runtime, final boolean fips) {
-        SecurityHelper.setFipsMode(fips);
+    static void doLoad(final Ruby runtime, final boolean fipsGem) {
+        SecurityHelper.setFipsVariant(fipsGem);
         SecurityHelper.checkAndRegisterProviderOnce();
         LoggingSupport.silenceBouncyCastleLoggers();
 
@@ -134,8 +134,9 @@ public class OpenSSL {
         _OpenSSL.setConstant("OPENSSL_VERSION_NUMBER", runtime.newFixnum(OPENSSL_VERSION_NUMBER));
         // MRI 2.3 tests do: /\AOpenSSL +0\./ !~ OpenSSL::OPENSSL_LIBRARY_VERSION
         _OpenSSL.setConstant("OPENSSL_LIBRARY_VERSION", VERSION);
-        // indicating whether the OpenSSL library is FIPS-capable (obsolete and will be removed in the future)
-        _OpenSSL.setConstant("OPENSSL_FIPS", runtime.newBoolean(SecurityHelper.isFipsMode()));
+        // whether the library is FIPS-capable - not whether FIPS is being enforced, that
+        // is OpenSSL.fips_mode (C reports OPENSSL_FIPS true even with no FIPS provider up)
+        _OpenSSL.setConstant("OPENSSL_FIPS", runtime.newBoolean(SecurityHelper.isFipsVariant()));
     }
 
     static RubyClass _OpenSSLError(final Ruby runtime) {
@@ -208,20 +209,25 @@ public class OpenSSL {
 
     @JRubyMethod(name = "fips_mode", meta = true)
     public static IRubyObject get_fips_mode(ThreadContext context, IRubyObject self) {
-        return context.runtime.newBoolean(SecurityHelper.isFipsMode());
+        // OpenSSL returns whether FIPS is enforced (EVP_default_properties_is_fips_enabled)
+        // always a boolean - having FIPS module loaded but not enforcing reads as `false`
+        return context.runtime.newBoolean(SecurityHelper.isApprovedOnlyMode());
     }
 
     @JRubyMethod(name = "fips_mode=", meta = true)
     public static IRubyObject set_fips_mode(ThreadContext context, IRubyObject self, IRubyObject mode) {
         final Ruby runtime = context.runtime;
-        if (mode.isTrue() && !SecurityHelper.isFipsMode()) {
-            throw runtime.newNotImplementedError("FIPS mode requires jruby-openssl-fips gem");
+        if (mode.isTrue() && !SecurityHelper.isApprovedOnlyMode()) {
+            if (!SecurityHelper.isFipsVariant()) {
+                throw runtime.newNotImplementedError("FIPS mode not available for this gem");
+            }
+            // approved-only is read when the module starts up, there is no turning it on later
+            throw runtime.newNotImplementedError("FIPS mode can not be enabled at runtime" +
+                    " (use -Dorg.bouncycastle.fips.approved_only=true)");
         }
-        if (mode == runtime.getFalse() && SecurityHelper.isFipsMode()) {
+        // NOTE: unlike C we do not let FIPS be turned off
+        if (!mode.isTrue() && SecurityHelper.isApprovedOnlyMode()) {
             throw runtime.newSecurityError("FIPS mode can not be disabled at runtime");
-        }
-        if (mode.isNil() && SecurityHelper.isFipsMode()) {
-            LOG.warn(runtime, "FIPS mode enabled while requested fips_mode = nil");
         }
         return get_fips_mode(context, self);
     }
@@ -286,7 +292,7 @@ public class OpenSSL {
 
     static SecureRandom getSecureRandom(final ThreadContext context) throws NoSuchAlgorithmException {
         if (tryContextSecureRandom) {
-            if (SecurityHelper.isFipsMode()) { // in FIPS mode BC rejects non-approved RNGs
+            if (SecurityHelper.isFipsVariant()) { // in FIPS mode BC rejects non-approved RNGs
                 tryContextSecureRandom = false;
             } else {
                 SecureRandom random = getSecureRandomFrom(context);

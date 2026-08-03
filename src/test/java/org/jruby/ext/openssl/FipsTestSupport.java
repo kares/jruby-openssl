@@ -6,9 +6,8 @@ package org.jruby.ext.openssl;
  */
 public abstract class FipsTestSupport {
 
-    public static void setFipsMode(final boolean fipsMode, final boolean reset) {
-        if (reset) SecurityHelper.FIPS_MODE.set(0); // reset flag
-        SecurityHelper.setFipsMode(fipsMode);
+    public static void setFipsVariant(final boolean fipsMode, final boolean reset) {
+        if (reset) SecurityHelper.FIPS_VARIANT.set(0); // reset flag
+        SecurityHelper.setFipsVariant(fipsMode);
     }
-
 }

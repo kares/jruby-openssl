@@ -875,7 +875,7 @@ public class BN extends RubyObject {
             return rnd;
         }
 
-        if (SecurityHelper.isFipsMode()) { // random bits (and primes) come from the module's DRBG
+        if (SecurityHelper.isFipsVariant()) { // random bits (and primes) come from the module's DRBG
             try {
                 return BN.secureRandom = SecurityHelper.getSecureRandom();
             }

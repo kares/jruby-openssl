@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 public class CipherTest {
 
     @BeforeAll
-    public static void setFipsMode() {
-        SecurityHelper.setFipsMode(false);
+    public static void setNonFips() {
+        SecurityHelper.setFipsVariant(false);
     }
 
     @Test

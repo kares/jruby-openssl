@@ -1001,6 +1001,7 @@ DO NOT MODIFY - GENERATED CODE
                         <include>org/jruby/ext/openssl/shim/CipherShim.java</include>
                         <include>org/jruby/ext/openssl/shim/ErrorShim.java</include>
                         <include>org/jruby/ext/openssl/shim/PKeyShim.java</include>
+                        <include>org/jruby/ext/openssl/shim/ProviderShim.java</include>
                         <include>org/jruby/ext/openssl/util/ByteArrayOutputStream.java</include>
                         <include>org/jruby/ext/openssl/util/Cache.java</include>
                         <include>org/jruby/ext/openssl/util/ExceptionUtil.java</include>

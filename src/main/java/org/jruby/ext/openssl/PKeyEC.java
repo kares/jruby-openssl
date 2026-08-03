@@ -224,6 +224,8 @@ public final class PKeyEC extends PKey {
     }
 
     private static ECPoint convertPoint(org.bouncycastle.math.ec.ECPoint point) {
+        // the point at infinity has no affine coordinates (Point#infinity? compares identity)
+        if (point.isInfinity()) return ECPoint.POINT_INFINITY;
         point = point.normalize();
         return new ECPoint(point.getAffineXCoord().toBigInteger(), point.getAffineYCoord().toBigInteger());
     }
@@ -242,6 +244,11 @@ public final class PKeyEC extends PKey {
 
     private static ECCurve toBCCurve(final EllipticCurve curve) throws IllegalArgumentException {
         return toBCCurve(curve, null, null);
+    }
+
+    // point arithmetic needs the order (bc-fips multiplies through the curve's order)
+    private static ECCurve toBCCurve(final Group group) throws IllegalArgumentException {
+        return toBCCurve(group.getCurve(), group.getOrder(), group.getCofactor());
     }
 
     // FIPS ECCurve Fp/F2m require a non-null order (BC works fine with null)
@@ -1305,6 +1312,15 @@ public final class PKeyEC extends PKey {
             return curve != null ? curve : getParamSpec().getCurve();
         }
 
+        // order/cofactor are not part of EllipticCurve but bc-fips insists on having them
+        BigInteger getOrder() {
+            return order != null ? order : getParamSpec().getOrder();
+        }
+
+        BigInteger getCofactor() {
+            return BigInteger.valueOf(order != null ? cofactor : getParamSpec().getCofactor());
+        }
+
         int getBitLength() {
             return getCurve().getField().getFieldSize();
         }
@@ -1538,11 +1554,11 @@ public final class PKeyEC extends PKey {
             Group groupV = this.group;
             Point result;
 
-            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            ECCurve selfCurve = toBCCurve(groupV);
             pointSelf = toBCPoint(selfCurve, asECPoint());
 
             Point otherPoint = (Point) other;
-            ECCurve otherCurve = toBCCurve(otherPoint.group.getCurve());
+            ECCurve otherCurve = toBCCurve(otherPoint.group);
             pointOther = toBCPoint(otherCurve, otherPoint.asECPoint());
 
             pointResult = pointSelf.add(pointOther);
@@ -1567,7 +1583,7 @@ public final class PKeyEC extends PKey {
 
             Group groupV = this.group;
 
-            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            ECCurve selfCurve = toBCCurve(groupV);
             pointSelf = toBCPoint(selfCurve, asECPoint());
 
             BigInteger bn = getBigInteger(context, bn1);
@@ -1592,10 +1608,10 @@ public final class PKeyEC extends PKey {
 
             Group groupV = this.group;
 
-            ECCurve selfCurve = toBCCurve(groupV.getCurve());
+            ECCurve selfCurve = toBCCurve(groupV);
             pointSelf = toBCPoint(selfCurve, asECPoint());
 
-            ECCurve resultCurve = toBCCurve(groupV.getCurve());
+            ECCurve resultCurve = toBCCurve(groupV);
             pointResult = toBCPoint(resultCurve, ((Point) groupV.generator(context)).asECPoint());
 
             BigInteger bn = getBigInteger(context, bn1);

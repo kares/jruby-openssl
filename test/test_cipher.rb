@@ -21,11 +21,14 @@ class TestCipher < TestCase
 
     # NOTE: since 0.9.6 we allow the underlying JCE cipher algorithms
     # to work - although we won't report support for them in `ciphers`
-    OpenSSL::Cipher.new 'PBEWithSHA1AndRC2_40-CBC' # Sun JCE
-    #OpenSSL::Cipher.new 'RSA/ECB' # Sun JCE
-    OpenSSL::Cipher.new 'RSA/ECB/OAEPWITHSHA-512ANDMGF1PADDING' # Sun JCE
-    OpenSSL::Cipher.new 'RSA/ECB/OAEPWithSHA1AndMGF1Padding' # Sun JCE
-    OpenSSL::Cipher.new 'DESedeWrap/CBC/NOPADDING' # Sun JCE
+    if java.security.Security.getProvider('SunJCE')
+      OpenSSL::Cipher.new 'PBEWithSHA1AndRC2_40-CBC' # Sun JCE
+      #OpenSSL::Cipher.new 'RSA/ECB' # Sun JCE
+      OpenSSL::Cipher.new 'RSA/ECB/OAEPWITHSHA-512ANDMGF1PADDING' # Sun JCE
+      OpenSSL::Cipher.new 'RSA/ECB/OAEPWithSHA1AndMGF1Padding' # Sun JCE
+      OpenSSL::Cipher.new 'DESedeWrap/CBC/NOPADDING' # Sun JCE
+    end
+
     OpenSSL::Cipher.new 'XTEA/CBC/PKCS7Padding' # BC
     OpenSSL::Cipher.new 'Noekeon/CBC/ZeroBytePadding' # BC
   end if defined? JRUBY_VERSION

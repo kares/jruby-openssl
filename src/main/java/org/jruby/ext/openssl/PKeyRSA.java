@@ -45,6 +45,8 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.SignatureException;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
@@ -947,6 +949,9 @@ public class PKeyRSA extends PKey {
             verified = verifyWithPSS(rawVerify, publicKey, dataBytes, digestAlg, mgf1Alg, saltLen, sigBytes);
         } catch (IllegalArgumentException e) {
             verified = false;
+        } catch (GeneralSecurityException e) {
+            // could not verify - reporting false here is indistinguishable from a forgery
+            throw newRSAError(runtime, e.getMessage(), e);
         } catch (Exception e) {
             LOG.debugStack(runtime, null, e);
             return runtime.getNil();
@@ -1140,35 +1145,36 @@ public class PKeyRSA extends PKey {
     private static boolean verifyWithPSS(final boolean rawVerify, final RSAPublicKey pubKey,
                                          final byte[] inputBytes,
                                          final String digestAlg, final String mgf1Alg,
-                                         int saltLen, byte[] sigBytes) {
+                                         int saltLen, byte[] sigBytes) throws GeneralSecurityException {
         final String javaDigestAlg = getJcaDigestName(digestAlg);
         final String javaMgf1Alg = getJcaDigestName(mgf1Alg);
         // when content and MGF1 digests differ, JCA providers reject the params
         if (!rawVerify && javaDigestAlg.equals(javaMgf1Alg)) {
+            Signature verifier = SecurityHelper.getSignature("RSASSA-PSS");
+            verifier.setParameter(buildPSSParameterSpec(javaDigestAlg, javaMgf1Alg, saltLen));
+            verifier.initVerify(pubKey);
+            verifier.update(inputBytes);
             try {
-                Signature verifier = SecurityHelper.getSignature("RSASSA-PSS");
-                verifier.setParameter(buildPSSParameterSpec(javaDigestAlg, javaMgf1Alg, saltLen));
-                verifier.initVerify(pubKey);
-                verifier.update(inputBytes);
                 return verifier.verify(sigBytes);
             }
-            catch (GeneralSecurityException e) {
+            catch (SignatureException e) { // a malformed signature does not verify
                 return false;
             }
         }
 
+        final byte[] hash = rawVerify ? inputBytes : SecurityHelper.getMessageDigest(javaDigestAlg).digest(inputBytes);
+        javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
+        rsa.init(DECRYPT_MODE, pubKey);
+        final int emBits = pubKey.getModulus().bitLength() - 1;
+        final int emLen = (emBits + 7) / 8;
+        final byte[] em;
         try {
-            final byte[] hash = rawVerify ? inputBytes : SecurityHelper.getMessageDigest(javaDigestAlg).digest(inputBytes);
-            javax.crypto.Cipher rsa = SecurityHelper.getCipher("RSA/ECB/NoPadding");
-            rsa.init(DECRYPT_MODE, pubKey);
-            final int emBits = pubKey.getModulus().bitLength() - 1;
-            final int emLen = (emBits + 7) / 8;
-            byte[] em = normalizeEncodedMessage(rsa.doFinal(sigBytes), emLen);
-            return verifyRawPSS(hash, em, digestAlg, mgf1Alg, saltLen, emBits);
+            em = normalizeEncodedMessage(rsa.doFinal(sigBytes), emLen);
         }
-        catch (GeneralSecurityException e) {
+        catch (BadPaddingException | IllegalBlockSizeException e) { // not a signature block
             return false;
         }
+        return verifyRawPSS(hash, em, digestAlg, mgf1Alg, saltLen, emBits);
     }
 
     private byte[] signDataWithPSS(Ruby runtime, RubyString data, String digestAlg, String mgf1Alg, int saltLen)

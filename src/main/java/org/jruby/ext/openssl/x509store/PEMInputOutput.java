@@ -41,7 +41,6 @@ import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.cert.CRLException;
@@ -57,10 +56,8 @@ import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.spec.DSAPublicKeySpec;
-import java.security.spec.ECParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
@@ -74,19 +71,14 @@ import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.DHParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.spec.PBEParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.asn1.ASN1TaggedObject;
-import org.bouncycastle.asn1.pkcs.PKCS12PBEParams;
 import org.bouncycastle.asn1.pkcs.EncryptedPrivateKeyInfo;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Sequence;
@@ -101,10 +93,15 @@ import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.pkcs.RSAPrivateKey;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.DSAParameter;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cms.CMSException;
+import org.bouncycastle.operator.InputDecryptorProvider;
+import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.bouncycastle.pkcs.PKCSException;
+import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.cms.CMSSignedData;
@@ -113,6 +110,7 @@ import org.jruby.ext.openssl.Cipher.Algorithm;
 import org.jruby.ext.openssl.impl.ASN1Registry;
 import org.jruby.ext.openssl.impl.CipherSpec;
 import org.jruby.ext.openssl.impl.OpenSSLKDF;
+import org.jruby.ext.openssl.impl.PKey;
 import org.jruby.ext.openssl.impl.PKey.Type;
 import org.jruby.ext.openssl.impl.PKCS10Request;
 import org.jruby.ext.openssl.SecurityHelper;
@@ -347,15 +345,7 @@ public class PEMInputOutput {
                 try {
                     byte[] bytes = readBase64Bytes(reader, BEF_E + PEM_STRING_PKCS8);
                     EncryptedPrivateKeyInfo eIn = EncryptedPrivateKeyInfo.getInstance(bytes);
-                    org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo encInfo =
-                        new org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo(eIn);
-                    org.bouncycastle.operator.InputDecryptorProvider decryptor =
-                        new org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder()
-                            .setProvider(SecurityHelper.getSecurityProvider())
-                            .build(passwd);
-                    final PrivateKeyInfo keyInfo = encInfo.decryptPrivateKeyInfo(decryptor);
-                    final Type type = getPrivateKeyType(keyInfo.getPrivateKeyAlgorithm());
-                    return org.jruby.ext.openssl.impl.PKey.readPrivateKey(type, keyInfo);
+                    return readPrivateKeyPair(passwd, eIn);
                 }
                 catch (Exception e) {
                     throw mapReadException("problem creating private key: ", e);
@@ -384,22 +374,24 @@ public class PEMInputOutput {
         if (passwd != null) {
             try {
                 EncryptedPrivateKeyInfo eIn = EncryptedPrivateKeyInfo.getInstance(ASN1Primitive.fromByteArray(input));
-                if (eIn != null) {
-                    org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo encInfo =
-                        new org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo(eIn);
-                    org.bouncycastle.operator.InputDecryptorProvider decryptor =
-                        new org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder()
-                            .setProvider(SecurityHelper.getSecurityProvider())
-                            .build(passwd);
-                    final PrivateKeyInfo keyInfo = encInfo.decryptPrivateKeyInfo(decryptor);
-                    final Type type = getPrivateKeyType(keyInfo.getPrivateKeyAlgorithm());
-                    return org.jruby.ext.openssl.impl.PKey.readPrivateKey(type, keyInfo);
-                }
+                if (eIn != null) return readPrivateKeyPair(passwd, eIn);
             } catch (Exception e) {
                 throw new IOException("Could not decrypt PKCS#8 key: " + e.getMessage(), e);
             }
         }
         return null;
+    }
+
+    private static KeyPair readPrivateKeyPair(final char[] passwd, final EncryptedPrivateKeyInfo eIn)
+        throws PKCSException, IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+
+        PKCS8EncryptedPrivateKeyInfo encInfo = new PKCS8EncryptedPrivateKeyInfo(eIn);
+        InputDecryptorProvider decryptor = new JcePKCSPBEInputDecryptorProviderBuilder()
+                .setProvider(SecurityHelper.getSecurityProvider())
+                .build(passwd);
+        final PrivateKeyInfo keyInfo = encInfo.decryptPrivateKeyInfo(decryptor);
+        final Type type = getPrivateKeyType(keyInfo.getPrivateKeyAlgorithm());
+        return PKey.readPrivateKey(type, keyInfo);
     }
 
     private static IOException mapReadException(final String message, final Exception ex) {
@@ -613,7 +605,7 @@ public class PEMInputOutput {
                     return readPKCS7(reader,f, BEF_E + PEM_STRING_PKCS7);
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating PKCS7: " + e.toString(), e);
+                    throw new IOException("problem creating PKCS7: " + e, e);
                 }
             }
         }
@@ -637,7 +629,7 @@ public class PEMInputOutput {
                     return new X509AuxCertificate(readCertificate(reader,BEF_E+PEM_STRING_X509_OLD));
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 certificate: " + e, e);
                 }
             }
             else if ( line.indexOf(BEG_STRING_X509) != -1 ) {
@@ -645,7 +637,7 @@ public class PEMInputOutput {
                     return new X509AuxCertificate(readCertificate(reader,BEF_E+PEM_STRING_X509));
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 certificate: " + e, e);
                 }
             }
             else if ( line.indexOf(BEG_STRING_X509_TRUSTED) != -1 ) {
@@ -653,7 +645,7 @@ public class PEMInputOutput {
                     return new X509AuxCertificate(readCertificate(reader,BEF_E+PEM_STRING_X509_TRUSTED));
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 certificate: " + e, e);
                 }
             }
         }
@@ -677,7 +669,7 @@ public class PEMInputOutput {
                     return readAuxCertificate(reader, BEF_E + PEM_STRING_X509_OLD);
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 Aux certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 Aux certificate: " + e, e);
                 }
             }
             else if ( line.indexOf(BEG_STRING_X509) != -1 ) {
@@ -685,7 +677,7 @@ public class PEMInputOutput {
                     return readAuxCertificate(reader, BEF_E + PEM_STRING_X509);
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 Aux certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 Aux certificate: " + e, e);
                 }
             }
             else if ( line.indexOf(BEG_STRING_X509_TRUSTED) != -1 ) {
@@ -693,7 +685,7 @@ public class PEMInputOutput {
                     return readAuxCertificate(reader, BEF_E + PEM_STRING_X509_TRUSTED);
                 }
                 catch (Exception e) {
-                    throw new IOException("problem creating X509 Aux certificate: " + e.toString(), e);
+                    throw new IOException("problem creating X509 Aux certificate: " + e, e);
                 }
             }
         }
@@ -976,18 +968,22 @@ public class PEMInputOutput {
     public static void writeRSAPrivateKey(Writer _out, RSAPrivateCrtKey obj, CipherSpec cipher, char[] passwd) throws IOException {
         assert (obj != null);
         BufferedWriter out = makeBuffered(_out);
-        org.bouncycastle.asn1.pkcs.RSAPrivateKey keyStruct = new org.bouncycastle.asn1.pkcs.RSAPrivateKey(obj.getModulus(), obj.getPublicExponent(), obj.getPrivateExponent(), obj.getPrimeP(),
-                obj.getPrimeQ(), obj.getPrimeExponentP(), obj.getPrimeExponentQ(), obj.getCrtCoefficient());
+        RSAPrivateKey keyStruct = new RSAPrivateKey(
+                obj.getModulus(),
+                obj.getPublicExponent(),
+                obj.getPrivateExponent(),
+                obj.getPrimeP(),
+                obj.getPrimeQ(),
+                obj.getPrimeExponentP(),
+                obj.getPrimeExponentQ(),
+                obj.getCrtCoefficient()
+        );
 
         if (cipher != null && passwd != null) {
             writePemEncrypted(out, PEM_STRING_RSA, keyStruct.getEncoded(), cipher, passwd);
         } else {
             writePemPlain(out, PEM_STRING_RSA, keyStruct.getEncoded());
         }
-    }
-
-    public static void writeECPrivateKey(Writer _out, ECPrivateKey obj, CipherSpec cipher, char[] passwd) throws IOException {
-        writeECPrivateKey(_out, obj, null, null, cipher, passwd);
     }
 
     /**
@@ -1109,13 +1105,21 @@ public class PEMInputOutput {
         out.flush();
     }
 
-    private static SecureRandom random;
+    private static volatile SecureRandom random;
 
     private static SecureRandom secureRandom() {
-        if ( random == null ) {
-            random = new SecureRandom();
+        final SecureRandom rnd = random;
+        if (rnd != null) return rnd;
+
+        if (SecurityHelper.isFipsMode()) {
+            try {
+                return random = SecurityHelper.getSecureRandom();
+            } catch (NoSuchAlgorithmException e) {
+                throw new SecurityException("No FIPS secure random available", e);
+            }
         }
-        return random;
+
+        return random = new SecureRandom();
     }
 
     public static void writeDHParameters(Writer _out, DHParameterSpec params) throws IOException {

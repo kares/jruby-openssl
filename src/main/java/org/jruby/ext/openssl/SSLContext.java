@@ -28,6 +28,7 @@
 package org.jruby.ext.openssl;
 
 import java.net.Socket;
+import java.security.Provider;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -49,6 +50,7 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSessionContext;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -772,8 +774,21 @@ public class SSLContext extends RubyObject {
 
     private static SSLEngine dummySSLEngine(ThreadContext context, final String protocol) throws GeneralSecurityException {
         javax.net.ssl.SSLContext sslContext = SecurityHelper.getSSLContext(protocol);
-        sslContext.init(null, null, OpenSSL.getSecureRandom(context));
+        sslContext.init(null, defaultTrustManagers(sslContext), OpenSSL.getSecureRandom(context));
         return sslContext.createSSLEngine();
+    }
+
+    /**
+     * @implNote null trust managers have JSSE build its own from JDK default factory (SunJSSE)
+     */
+    private static TrustManager[] defaultTrustManagers(javax.net.ssl.SSLContext sslContext)
+        throws GeneralSecurityException {
+        final TrustManagerFactory factory = TrustManagerFactory.getInstance(
+                TrustManagerFactory.getDefaultAlgorithm(),
+                sslContext.getProvider()
+        );
+        factory.init((java.security.KeyStore) null); // JDK's default trust store
+        return factory.getTrustManagers();
     }
 
     final SSLEngine createSSLEngine(String peerHost, int peerPort) {

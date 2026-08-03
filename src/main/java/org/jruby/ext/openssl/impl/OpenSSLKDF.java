@@ -25,6 +25,8 @@ package org.jruby.ext.openssl.impl;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+
+import org.jruby.ext.openssl.SecurityHelper;
 import java.util.Arrays;
 
 /**
@@ -33,10 +35,14 @@ import java.util.Arrays;
  */
 public abstract class OpenSSLKDF {
 
-    public static byte[] evpBytesToKey(final char[] password, final byte[] salt, final int keyLength) {
+    /**
+     * @throws NoSuchAlgorithmException when MD5 is not available (under FIPS)
+     */
+    public static byte[] evpBytesToKey(final char[] password, final byte[] salt, final int keyLength)
+        throws NoSuchAlgorithmException {
         final byte[] passwordBytes = charsToBytes(password);
         try {
-            final MessageDigest md5 = MessageDigest.getInstance("MD5");
+            final MessageDigest md5 = SecurityHelper.getMessageDigest("MD5");
             final byte[] key = new byte[keyLength];
             byte[] digest = null;
             int offset = 0;
@@ -54,8 +60,6 @@ public abstract class OpenSSLKDF {
             }
 
             return key;
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("MD5 digest not available", e);
         } finally {
             Arrays.fill(passwordBytes, (byte) 0);
         }

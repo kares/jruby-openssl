@@ -178,7 +178,23 @@ class TestDSA < TestCase
     assert_equal pem, dsa512.export
   end
 
+  # above for RSA - except private_to_pem(...) is not supported for DSA keys
+  # so read back OpenSSL produced (PKCS#8, aes-128-cbc)
+  def test_DSAPrivateKey_encrypted_pkcs8
+    dsa2048 = Fixtures.pkey("dsa2048")
+    pass = "abcdef-long-enough-for-fips" # >= 112 bits of password
+
+    pem = Fixtures.read_file("pkey", "dsa2048_encrypted")
+    assert_match(/\A-----BEGIN ENCRYPTED PRIVATE KEY-----/, pem)
+
+    assert_same_dsa dsa2048, OpenSSL::PKey::DSA.new(pem, pass)
+    assert_raise(OpenSSL::PKey::DSAError) {
+      OpenSSL::PKey::DSA.new(pem, "wrong-but-long-enough-x")
+    }
+  end
+
   def test_DSAPrivateKey_encrypted
+    omit_on_fips 'traditional encrypted PEM derives its key with MD5'
     # key = abcdef
     dsa512 = Fixtures.pkey("dsa512")
     pem = <<~EOF

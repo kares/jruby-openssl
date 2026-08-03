@@ -1073,7 +1073,13 @@ public class PEMInputOutput {
         secureRandom().nextBytes(iv);
         final byte[] salt = new byte[8];
         System.arraycopy(iv, 0, salt, 0, 8);
-        byte[] key = OpenSSLKDF.evpBytesToKey(passwd, salt, cipherSpec.getKeyLenInBits() / 8);
+        final byte[] key;
+        try {
+            key = OpenSSLKDF.evpBytesToKey(passwd, salt, cipherSpec.getKeyLenInBits() / 8);
+        }
+        catch (NoSuchAlgorithmException e) { // no MD5 - this PEM format can not be written
+            throw new IOException("could not encrypt PEM: " + e.getMessage(), e);
+        }
         SecretKey secretKey = new SecretKeySpec(key, Algorithm.getAlgorithmBase(cipher));
         final byte[] encData;
         try {
@@ -1263,7 +1269,13 @@ public class PEMInputOutput {
         }
         byte[] salt = new byte[8];
         System.arraycopy(iv, 0, salt, 0, 8);
-        byte[] key = OpenSSLKDF.evpBytesToKey(passwd, salt, keyLen);
+        final byte[] key;
+        try {
+            key = OpenSSLKDF.evpBytesToKey(passwd, salt, keyLen);
+        }
+        catch (NoSuchAlgorithmException e) { // no MD5 - this PEM format can not be read
+            throw new IOException("could not decrypt PEM: " + e.getMessage(), e);
+        }
         SecretKey secretKey = new SecretKeySpec(key, realName);
         Cipher cipher = SecurityHelper.getCipher(realName);
         cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(iv));

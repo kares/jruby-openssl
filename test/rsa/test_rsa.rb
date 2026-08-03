@@ -521,7 +521,24 @@ class TestRSA < TestCase
     assert_same_rsa rsa1024, key
   end
 
+  # DEK-Info variant below derives its key with MD5 (can not run under FIPS)
+  # PKCS#8 (PBES2) covers same round-trip with a key and password FIPS accepts
+  def test_RSAPrivateKey_encrypted_pkcs8
+    rsa2048 = Fixtures.pkey("rsa2048")
+    pass = "abcdef\0\1-long-enough-for-fips" # >= 112 bits of password, NUL kept in
+    cipher = OpenSSL::Cipher.new("aes-128-cbc")
+
+    exported = rsa2048.private_to_pem(cipher, pass)
+    assert_match(/\A-----BEGIN ENCRYPTED PRIVATE KEY-----/, exported)
+
+    assert_same_rsa rsa2048, OpenSSL::PKey::RSA.new(exported, pass)
+    assert_same_rsa rsa2048, OpenSSL::PKey::RSA.new(exported) { pass }
+    # the wrong password has to be long as well, or bc-fips refuses it before trying
+    assert_pkey_error { OpenSSL::PKey::RSA.new(exported, "wrong-but-long-enough-x") }
+  end
+
   def test_RSAPrivateKey_encrypted
+    omit_on_fips 'traditional encrypted PEM derives its key with MD5'
     rsa1024 = Fixtures.pkey("rsa1024")
     # key = abcdef
     pem = <<-EOF

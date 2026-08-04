@@ -50,7 +50,6 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSessionContext;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509ExtendedTrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -534,7 +533,7 @@ public class SSLContext extends RubyObject {
     private RubyArray matchedCiphers(final ThreadContext context, final String ciphers) {
         final Ruby runtime = context.runtime;
         try {
-            final String[] supported = getSupportedCipherSuites(context, protocol);
+            final String[] supported = getSupportedCipherSuites(protocol);
             final Collection<CipherStrings.Def> cipherDefs =
                     CipherStrings.matchingCiphers(ciphers, supported, false);
 
@@ -767,28 +766,23 @@ public class SSLContext extends RubyObject {
         }
     }
 
-    private static String[] getSupportedCipherSuites(ThreadContext context, final String protocol)
+    private static String[] getSupportedCipherSuites(final String protocol)
         throws GeneralSecurityException {
-        return dummySSLEngine(context, protocol).getSupportedCipherSuites();
+        return dummySSLEngine(protocol).getSupportedCipherSuites();
     }
 
-    private static SSLEngine dummySSLEngine(ThreadContext context, final String protocol) throws GeneralSecurityException {
-        javax.net.ssl.SSLContext sslContext = SecurityHelper.getSSLContext(protocol);
-        sslContext.init(null, defaultTrustManagers(sslContext), OpenSSL.getSecureRandom(context));
-        return sslContext.createSSLEngine();
-    }
+    private static final TrustManager[] NO_TRUST_MANAGERS = new TrustManager[0];
 
     /**
-     * @implNote null trust managers have JSSE build its own from JDK default factory (SunJSSE)
+     * @implNote engine only reports supported cipher suites (never handshakes)
+     * passing null would have JSSE build defaults from the JDK factory (SunJSSE)
+     * and read the JDK trust store; an empty array keeps both off the table
      */
-    private static TrustManager[] defaultTrustManagers(javax.net.ssl.SSLContext sslContext)
+    private static SSLEngine dummySSLEngine(final String protocol)
         throws GeneralSecurityException {
-        final TrustManagerFactory factory = TrustManagerFactory.getInstance(
-                TrustManagerFactory.getDefaultAlgorithm(),
-                sslContext.getProvider()
-        );
-        factory.init((java.security.KeyStore) null); // JDK's default trust store
-        return factory.getTrustManagers();
+        javax.net.ssl.SSLContext sslContext = SecurityHelper.getSSLContext(protocol);
+        sslContext.init(null, NO_TRUST_MANAGERS, null);
+        return sslContext.createSSLEngine();
     }
 
     final SSLEngine createSSLEngine(String peerHost, int peerPort) {

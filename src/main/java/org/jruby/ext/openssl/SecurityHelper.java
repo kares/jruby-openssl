@@ -75,6 +75,7 @@ public abstract class SecurityHelper {
     static volatile Boolean registerProvider;
 
     static final String BC_JSSE_PROVIDER_CLASS = "org.bouncycastle.jsse.provider.BouncyCastleJsseProvider";
+    private static final String BC_JSSE_PROVIDER_NAME = "BCJSSE";
     static volatile boolean initJsseProvider = true;
     static volatile Provider jsseProvider;
 
@@ -161,7 +162,7 @@ public abstract class SecurityHelper {
                     LOG.info("reusing registered ssl provider: " + name);
                 }
             }
-            if (provider == null && "BCJSSE".equals(name)) {
+            if (provider == null && BC_JSSE_PROVIDER_NAME.equals(name)) {
                 provider = newBouncyCastleJsseProvider();
             } else if (provider == null && name != null) {
                 LOG.debug("unknown ssl provider name: " + name);
@@ -526,10 +527,10 @@ public abstract class SecurityHelper {
 
     private static final String sslProviderName;
     static {
-        String sslProvider = SafePropertyAccessor.getProperty("jruby.openssl.provider.ssl", "BCJSSE");
+        String sslProvider = SafePropertyAccessor.getProperty("jruby.openssl.provider.ssl", BC_JSSE_PROVIDER_NAME);
         switch (sslProvider.trim()) {
             case "BC": case "bc": case "bcjsse": case "BCJSSE": case "true":
-                sslProvider = "BCJSSE";
+                sslProvider = BC_JSSE_PROVIDER_NAME;
                 break;
             case "": case "false":
                 sslProvider = null; // usually SunJSSE (default) on OpenJDK
@@ -540,7 +541,7 @@ public abstract class SecurityHelper {
 
     public static SSLContext getSSLContext(final String protocol) throws NoSuchAlgorithmException {
         // prefer BC-JSSE for real TLS but fall back to JDK (SunJSSE) for "SSL" (SSLv23)
-        if (sslProviderName == "BCJSSE" && !"SSL".equals(protocol)) {
+        if (sslProviderName == BC_JSSE_PROVIDER_NAME && !"SSL".equals(protocol)) {
             try {
                 final Provider provider = getJsseProvider();
                 if (provider != null) return getSSLContext(protocol, provider);

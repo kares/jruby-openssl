@@ -40,7 +40,8 @@ def define_provider_test_task(name,
     end
 
     properties.clear if clear_security_properties
-    properties.merge(extra_security_properties) if extra_security_properties
+    # setProperty - Properties#merge maps to Hash#merge in JRuby (returns a copy)
+    extra_security_properties.each { |key, value| properties.setProperty(key, value) }
 
     specs.each_with_index { |spec, i| properties.setProperty("security.provider.#{offset + i + 1}", spec) }
 

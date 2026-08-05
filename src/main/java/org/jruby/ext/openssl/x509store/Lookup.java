@@ -27,6 +27,7 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl.x509store;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -162,6 +163,8 @@ public class Lookup {
     public int loadCertificateFile(final String file, final int type) throws IOException, CertificateException {
         if ( file == null ) return 1;
 
+        if (LOG.isDebug(runtime)) LOG.debug(runtime, "loadCertificateFile: " + file + " (" + type + ")");
+
         final Object[] cached = certCache.get(file);
 
         BufferedReader reader = null;
@@ -282,6 +285,8 @@ public class Lookup {
     public int loadCertificateOrCRLFile(final String file, final int type) throws IOException, CertificateException {
         if ( type != X509_FILETYPE_PEM ) return loadCertificateFile(file, type);
 
+        if (LOG.isDebug(runtime)) LOG.debug(runtime, "loadCertificateOrCRLFile: " + file + " (" + type + ")");
+
         final Object[] cached = certCache.get(file);
 
         BufferedReader reader = null;
@@ -334,12 +339,15 @@ public class Lookup {
     }
 
     public int loadDefaultJavaCACertsFile(String certsFile) throws IOException, GeneralSecurityException {
-        final FileInputStream fin = new FileInputStream(certsFile);
+
+        if (LOG.isDebug(runtime)) LOG.debug(runtime, "loadDefaultJavaCACertsFile: " + certsFile);
+
+        final BufferedInputStream fin = new BufferedInputStream(new FileInputStream(certsFile));
         int count = 0;
         try {
-            // hardcode the keystore type, as we expect cacerts to be a java keystore
-            // especially needed since Java 9 (getDefaultType on 11/13 is "pkcs12")
-            KeyStore keystore = SecurityHelper.getKeyStore("JKS");
+            // detect rather than use getDefaultType (a security property, not the file's format)
+            // JDK's implementation on purpose - BC's PKCS12 refuses the null password below
+            KeyStore keystore = KeyStore.getInstance(keyStoreType(fin));
 	        // null password - as the cacerts file isn't password protected
             keystore.load(fin, null);
             PKIXParameters params = new PKIXParameters(keystore);
@@ -353,6 +361,18 @@ public class Lookup {
             try { fin.close(); } catch (Exception ignored) {}
         }
         return count;
+    }
+
+    /**
+     * JKS starts with 0xFEEDFEED, JCEKS with 0xCECECECE, PKCS12 is DER (a SEQUENCE tag)
+     * JDK's cacerts is JKS up to 17 and PKCS12 since 18
+     * reading the latter as JKS only works while (JDK default) keystore.type.compat is true
+     */
+    private static String keyStoreType(final BufferedInputStream in) throws IOException {
+        in.mark(1);
+        final int tag = in.read();
+        in.reset();
+        return tag == 0x30 ? "PKCS12" : "JKS";
     }
 
     private InputStream wrapJRubyNormalizedInputStream(String file) throws IOException {

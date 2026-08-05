@@ -23,29 +23,39 @@
  */
 package org.jruby.ext.openssl;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.security.Provider;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Enumeration;
 import java.util.List;
 
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.pkcs.ContentInfo;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilder;
+import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilderProvider;
 import org.bouncycastle.pkcs.PKCS12PfxPdu;
 import org.bouncycastle.pkcs.PKCS12SafeBag;
 import org.bouncycastle.pkcs.PKCS12SafeBagFactory;
+import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
 import org.bouncycastle.operator.InputDecryptorProvider;
+import org.bouncycastle.operator.MacCalculator;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.PBEMacCalculatorProvider;
+import org.bouncycastle.pkcs.jcajce.JcePBMac1CalculatorProviderBuilder;
+import org.bouncycastle.pkcs.jcajce.JcePKCS12MacCalculatorBuilderProvider;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -72,14 +82,13 @@ import static org.jruby.ext.openssl.util.RubySupport.newString;
 public class PKCS12 extends RubyObject {
     private static final long serialVersionUID = 8087765252844713771L;
 
-    private static final ObjectAllocator ALLOCATOR = new ObjectAllocator() {
-        public IRubyObject allocate(Ruby runtime, RubyClass klass) {
-            return new PKCS12(runtime, klass);
-        }
-    };
+    private static final ObjectAllocator ALLOCATOR = (runtime, klass) -> new PKCS12(runtime, klass);
 
     private static final int KEY_EX = 0x10;
     private static final int KEY_SIG = 0x80;
+
+    // PKCSObjectIdentifiers.id_PBMAC1 (missing in BC-FIPS)
+    private static final ASN1ObjectIdentifier id_PBMAC1 = new ASN1ObjectIdentifier("1.2.840.113549.1.5.14");
 
     static void createPKCS12(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         final RubyClass _PKCS12 = OpenSSL.defineClassUnder("PKCS12", runtime.getObject(), ALLOCATOR);
@@ -131,13 +140,14 @@ public class PKCS12 extends RubyObject {
         final IRubyObject passArg = args.length > 1 ? args[1] : runtime.getNil();
         final char[] password = toPasswordChars(passArg);
         try {
-            final KeyStore store = SecurityHelper.getKeyStore("PKCS12");
-            store.load(new ByteArrayInputStream(storeBytes), password);
-            loadEntries(context, store, password);
+            loadBags(context, password);
         }
         catch (Exception e) {
             if (e instanceof RaiseException) throw (RaiseException) e;
             throw newPKCS12Error(runtime, e);
+        }
+        catch (Throwable e) { // unapproved MAC/KDF under FIPS
+            return OpenSSL.handlePotentialOperationError(runtime, e);
         }
         finally {
             clearChars(password);
@@ -220,79 +230,103 @@ public class PKCS12 extends RubyObject {
         }
     }
 
-    private void loadEntries(final ThreadContext context, final KeyStore store, final char[] password) throws Exception {
+    private void loadBags(final ThreadContext context, final char[] password) throws Exception {
         final Ruby runtime = context.runtime;
-        final Enumeration<String> aliases = store.aliases();
+        final Provider provider = SecurityHelper.getSecurityProvider();
+        final PKCS12PfxPdu pfx = new PKCS12PfxPdu(storeBytes);
 
-        while (aliases.hasMoreElements()) {
-            final String alias = aliases.nextElement();
-            if (!store.isKeyEntry(alias)) continue;
+        if (pfx.hasMac() && !pfx.isMacValid(macCalculatorBuilderProvider(provider), password)) {
+            throw newPKCS12Error(runtime, "PKCS12 MAC verification failed");
+        }
 
-            final Certificate javaCertificate = store.getCertificate(alias);
-            if (javaCertificate != null) {
-                certificate = X509Cert.wrap(context, javaCertificate);
-            }
+        final InputDecryptorProvider decryptor = new JcePKCSPBEInputDecryptorProviderBuilder()
+            .setProvider(provider).build(password);
 
-            final Key javaKey = store.getKey(alias, password);
-            if (javaKey != null) {
-                key = readPKey(context, javaKey.getEncoded());
-            }
+        PrivateKeyInfo privateKey = null;
+        byte[] keyId = null;
+        final ArrayList<PKCS12SafeBag> certBags = new ArrayList<>();
 
-            final RubyArray chain = runtime.newArray();
-            final Certificate[] javaChain = store.getCertificateChain(alias);
-            if (javaChain != null) {
-                for (Certificate chainCert : javaChain) {
-                    if (javaCertificate != null && sameCertificate(javaCertificate, chainCert)) continue;
-                    chain.add(X509Cert.wrap(context, chainCert));
+        for (ContentInfo info : pfx.getContentInfos()) {
+            final PKCS12SafeBagFactory factory =
+                PKCSObjectIdentifiers.encryptedData.equals(info.getContentType()) ?
+                    new PKCS12SafeBagFactory(info, decryptor) : new PKCS12SafeBagFactory(info);
+
+            for (PKCS12SafeBag bag : factory.getSafeBags()) {
+                final ASN1ObjectIdentifier type = bag.getType();
+                if (PKCSObjectIdentifiers.certBag.equals(type)) {
+                    certBags.add(bag);
+                }
+                else if (privateKey == null) {
+                    if (PKCSObjectIdentifiers.pkcs8ShroudedKeyBag.equals(type)) {
+                        privateKey = ((PKCS8EncryptedPrivateKeyInfo) bag.getBagValue()).decryptPrivateKeyInfo(decryptor);
+                    }
+                    else if (PKCSObjectIdentifiers.keyBag.equals(type)) {
+                        privateKey = (PrivateKeyInfo) bag.getBagValue();
+                    }
+                    else continue;
+                    keyId = localKeyId(bag);
                 }
             }
-            caCerts = chain;
-            return;
         }
 
-        RubyArray certs = runtime.newArray();
-        final Enumeration<String> certAliases = store.aliases();
-        while (certAliases.hasMoreElements()) {
-            final String alias = certAliases.nextElement();
-            if (!store.isCertificateEntry(alias)) continue;
+        if (privateKey != null) key = readPKey(context, privateKey.getEncoded());
 
-            final Certificate cert = store.getCertificate(alias);
-            if (cert != null) certs.add(X509Cert.wrap(context, cert));
+        final int leaf = leafIndex(certBags, keyId, privateKey != null);
+        final RubyArray<X509Cert> chain = runtime.newArray();
+        for (int i = 0; i < certBags.size(); i++) {
+            final X509CertificateHolder holder = (X509CertificateHolder) certBags.get(i).getBagValue();
+            final X509Cert cert = X509Cert.wrap(context, holder.getEncoded());
+            if (i == leaf) certificate = cert;
+            else chain.append(cert);
         }
-
-        if (certs.isEmpty() && storeBytes != null) {
-            certs = readCertificateBags(context, password);
-        }
-        caCerts = certs;
+        caCerts = chain;
     }
 
-    private RubyArray readCertificateBags(final ThreadContext context, final char[] password) throws Exception {
-        final Ruby runtime = context.runtime;
-        final RubyArray certs = runtime.newArray();
-        final PKCS12PfxPdu pfx = new PKCS12PfxPdu(storeBytes);
-        final InputDecryptorProvider decryptor = new JcePKCSPBEInputDecryptorProviderBuilder()
-            .setProvider(SecurityHelper.getSecurityProvider()).build(password);
-
-        final ContentInfo[] infos = pfx.getContentInfos();
-        for (ContentInfo info : infos) {
-            final PKCS12SafeBagFactory factory;
-            if (PKCSObjectIdentifiers.encryptedData.equals(info.getContentType())) {
-                factory = new PKCS12SafeBagFactory(info, decryptor);
-            }
-            else {
-                factory = new PKCS12SafeBagFactory(info);
-            }
-
-            final PKCS12SafeBag[] bags = factory.getSafeBags();
-            for (PKCS12SafeBag bag : bags) {
-                if (!PKCSObjectIdentifiers.certBag.equals(bag.getType())) continue;
-
-                final X509CertificateHolder holder = (X509CertificateHolder) bag.getBagValue();
-                certs.add(X509Cert.wrap(context, holder.getEncoded()));
+    // certificate belonging to the key - by localKeyId, else the first one (leaf is written first)
+    private static int leafIndex(final List<PKCS12SafeBag> certBags, final byte[] keyId, final boolean hasKey) {
+        if (!hasKey || certBags.isEmpty()) return -1;
+        if (keyId != null) {
+            for (int i = 0; i < certBags.size(); i++) {
+                if (Arrays.equals(keyId, localKeyId(certBags.get(i)))) return i;
             }
         }
+        return 0;
+    }
 
-        return certs;
+    private static byte[] localKeyId(final PKCS12SafeBag bag) {
+        final Attribute[] attributes = bag.getAttributes();
+        if (attributes == null) return null;
+        for (Attribute attribute : attributes) {
+            if (PKCS12SafeBag.localKeyIdAttribute.equals(attribute.getAttrType())) {
+                return ASN1OctetString.getInstance(attribute.getAttributeValues()[0]).getOctets();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * PBMAC1 (RFC 9579) is what OpenSSL 3 writes under FIPS
+     * PKCS12 provider only knows the classic (PKCS12KDF) MAC, which is not approved
+     */
+    private static PKCS12MacCalculatorBuilderProvider macCalculatorBuilderProvider(final Provider provider) {
+        final PKCS12MacCalculatorBuilderProvider pkcs12Calculator =
+            new JcePKCS12MacCalculatorBuilderProvider().setProvider(provider);
+        final PBEMacCalculatorProvider pbMac1Calculator =
+            new JcePBMac1CalculatorProviderBuilder().setProvider(provider).build();
+
+        return algorithmId -> {
+            if (!id_PBMAC1.equals(algorithmId.getAlgorithm())) {
+                return pkcs12Calculator.get(algorithmId);
+            }
+            return new PKCS12MacCalculatorBuilder() {
+                public MacCalculator build(char[] password) throws OperatorCreationException {
+                    return pbMac1Calculator.get(algorithmId, password);
+                }
+                public AlgorithmIdentifier getDigestAlgorithmIdentifier() {
+                    return algorithmId;
+                }
+            };
+        };
     }
 
     private static IRubyObject readPKey(final ThreadContext context, final byte[] encoded) {
@@ -321,17 +355,6 @@ public class PKCS12 extends RubyObject {
 
     private static String aliasName(final IRubyObject name) {
         return name.isNil() ? "" : name.convertToString().asJavaString();
-    }
-
-    private static boolean sameCertificate(final Certificate cert1, final Certificate cert2)
-        throws CertificateEncodingException { // Certificate#equals swallows exception
-        final byte[] encoded1 = cert1.getEncoded();
-        final byte[] encoded2 = cert2.getEncoded();
-        if (encoded1.length != encoded2.length) return false;
-        for (int i = 0; i < encoded1.length; i++) {
-            if (encoded1[i] != encoded2[i]) return false;
-        }
-        return true;
     }
 
     private static void validateCreateOptions(final Ruby runtime, final IRubyObject[] args) {

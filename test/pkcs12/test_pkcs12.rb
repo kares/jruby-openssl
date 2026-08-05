@@ -14,6 +14,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_create_and_parse_with_password
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create("secret", "myalias", @key, @cert)
     assert p12.to_der.bytesize > 0
 
@@ -23,6 +24,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_create_and_parse_with_empty_password
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create("", "myalias", @key, @cert)
     parsed = OpenSSL::PKCS12.new(p12.to_der, "")
     assert_instance_of OpenSSL::PKey::RSA, parsed.key
@@ -30,6 +32,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_create_and_parse_with_nil_password
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create(nil, "myalias", @key, @cert)
     parsed = OpenSSL::PKCS12.new(p12.to_der)
     assert_instance_of OpenSSL::PKey::RSA, parsed.key
@@ -37,6 +40,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_parse_with_wrong_password_raises
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create("right", "myalias", @key, @cert)
     assert_raise(OpenSSL::PKCS12::PKCS12Error) do
       OpenSSL::PKCS12.new(p12.to_der, "wrong")
@@ -44,6 +48,7 @@ class TestPKCS12 < TestCase
   end
 
   def test_create_and_parse_with_ca_certs
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = issue_cert(cn: "CA", key: ca_key)
     leaf_cert = issue_cert(cn: "leaf", issuer: ca_cert, issuer_key: ca_key)
@@ -55,7 +60,29 @@ class TestPKCS12 < TestCase
     assert_equal ca_cert.subject.to_s, parsed.ca_certs.first.subject.to_s
   end
 
+  def test_parse_returns_only_selected_key_chain
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
+    p12 = OpenSSL::PKCS12.create("secret", "myalias", @key, @cert)
+    password = java.lang.String.new("secret").toCharArray
+    store = java.security.KeyStore.getInstance("PKCS12")
+    store.load(java.io.ByteArrayInputStream.new(p12.to_der.to_java_bytes), password)
+
+    factory = java.security.cert.CertificateFactory.getInstance("X.509")
+    unrelated = factory.generateCertificate(java.io.ByteArrayInputStream.new(
+      issue_cert(cn: "unrelated", key: OpenSSL::PKey::RSA.new(2048)).to_der.to_java_bytes
+    ))
+    store.setCertificateEntry("unrelated", unrelated)
+
+    output = java.io.ByteArrayOutputStream.new
+    store.store(output, password)
+    parsed = OpenSSL::PKCS12.new(output.toByteArray, "secret")
+
+    assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
+    assert_equal [], Array(parsed.ca_certs)
+  end
+
   def test_create_accepts_mri_optional_pbe_args
+    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create(
       "secret", "myalias", @key, @cert, nil, DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS
     )
@@ -121,6 +148,95 @@ class TestPKCS12 < TestCase
     assert_equal p12.to_der, p12.dup.to_der
   end
 
+
+  # OpenSSL writes a PBMAC1 (RFC 9579) MAC instead of the PKCS12KDF one under FIPS
+  # created with: openssl pkcs12 -export -macsaltlen 16 (password below)
+  PBMAC1_P12 = <<~EOF.unpack1("m")
+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
+  EOF
+
+  PBMAC1_PASSWORD = "a-sufficiently-long-secret"
+
+  def test_new_with_pbmac1_mac
+    p12 = OpenSSL::PKCS12.new(PBMAC1_P12, PBMAC1_PASSWORD)
+    assert_instance_of OpenSSL::PKey::RSA, p12.key
+    assert_equal "/CN=pbmac1-fixture", p12.certificate.subject.to_s
+    assert_equal [], Array(p12.ca_certs)
+  end
+
+  def test_new_with_pbmac1_mac_rejects_wrong_password
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) do
+      OpenSSL::PKCS12.new(PBMAC1_P12, "wrong-but-long-enough-password")
+    end
+  end
+
+  def test_new_rejects_tampered_content
+    tampered = PBMAC1_P12.dup
+    tampered.setbyte(600, tampered.getbyte(600) ^ 0xFF)
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) do
+      OpenSSL::PKCS12.new(tampered, PBMAC1_PASSWORD)
+    end
+  end
+
   def test_new_with_no_keys
     omit_on_fips 'fixture uses legacy PKCS12 PBE-SHA1-3DES'
     str = <<~EOF.unpack1("m")
@@ -170,6 +286,7 @@ AA==
   end
 
   def test_new_with_no_certs
+    omit_on_fips 'fixture uses legacy PKCS12 PBE-SHA1-3DES'
     str = <<~EOF.unpack1("m")
 MIIJ7wIBAzCCCbUGCSqGSIb3DQEHAaCCCaYEggmiMIIJnjCCCZoGCSqGSIb3
 DQEHAaCCCYsEggmHMIIJgzCCCX8GCyqGSIb3DQEMCgECoIIJbjCCCWowHAYK

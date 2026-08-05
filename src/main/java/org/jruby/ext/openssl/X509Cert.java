@@ -185,6 +185,10 @@ public class X509Cert extends RubyObject {
         return cert;
     }
 
+    static X509Cert wrap(final ThreadContext context, org.bouncycastle.asn1.x509.Certificate cert) throws IOException {
+        return wrap(context, cert.getEncoded());
+    }
+
     @JRubyMethod(name="initialize", optional = 1, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(final ThreadContext context, final IRubyObject[] args, final Block unusedBlock) {
 

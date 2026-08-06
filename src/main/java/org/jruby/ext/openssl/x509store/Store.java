@@ -43,6 +43,7 @@ import javax.security.auth.x500.X500Principal;
 
 import org.jruby.Ruby;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.util.ResourceException;
 
 /**
  * c: X509_STORE
@@ -327,12 +328,7 @@ public class Store implements X509TrustManager {
         catch (FileNotFoundException e) {
             // set_default_paths ignores FileNotFound
         }
-        catch (IOException e) {
-            // this is for older jrubies as they do not have a
-            // org.jruby.util.ResourceException.NotFound
-            if (!e.getClass().getSimpleName().equals("NotFound")) {
-                throw e;
-            }
+        catch (ResourceException.NotFound e) {
             LOG.debugStack(runtime, "setDefaultPaths add cert file lookup", e);
         }
 
@@ -344,10 +340,7 @@ public class Store implements X509TrustManager {
         catch (FileNotFoundException e) {
             // set_default_paths ignores FileNotFound
         }
-        catch (IOException e) {
-            if (!e.getClass().getSimpleName().equals("NotFound")) {
-                throw e;
-            }
+        catch (ResourceException.NotFound e) {
             LOG.debugStack(runtime, "setDefaultPaths add hash dir lookup", e);
         }
 

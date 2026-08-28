@@ -3,8 +3,8 @@ require File.expand_path('../test_helper', File.dirname(__FILE__))
 
 class TestPKCS12 < TestCase
 
-  DEFAULT_PBE_PKEYS = "PBE-SHA1-3DES"
-  DEFAULT_PBE_CERTS = "PBE-SHA1-3DES"
+  DEFAULT_PBE_PKEYS = "AES-256-CBC"
+  DEFAULT_PBE_CERTS = "AES-256-CBC"
 
   # BC-FIPS requires PBKDF2 passwords of at least 112 bits (SP 800-132),
   # C OpenSSL does not enforce a password length - divergence
@@ -48,6 +48,18 @@ class TestPKCS12 < TestCase
     }.each do |cipher, oid|
       p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert, nil, cipher, cipher)
       assert_equal 2, find_algorithms(p12.to_der, oid).size, cipher
+    end
+  end
+
+  def test_create_honors_legacy_pbe_options
+    omit_on_fips 'legacy PKCS12 PBE is not approved'
+
+    {
+      "PBE-SHA1-3DES" => "1.2.840.113549.1.12.1.3",
+      "PBE-SHA1-RC2-40" => "1.2.840.113549.1.12.1.6"
+    }.each do |pbe, oid|
+      p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert, nil, pbe, pbe)
+      assert_equal 2, find_algorithms(p12.to_der, oid).size, pbe
     end
   end
 

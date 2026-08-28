@@ -232,7 +232,7 @@ public class PKCS12 extends RubyObject {
 
             final Provider provider = SecurityHelper.getSecurityProvider();
             final String alias = aliasName(nameArg);
-            // OpenSSL uses a SHA-1 digest; SHA-256 keeps localKeyId approved under FIPS
+            // localKeyId is opaque - OpenSSL associates key/cert by public key not by (SHA-1) digest
             final byte[] keyId = SecurityHelper.getMessageDigest("SHA-256").digest(chain[0].getEncoded());
 
             final PKCS12PfxPduBuilder pfx = new PKCS12PfxPduBuilder();
@@ -246,11 +246,11 @@ public class PKCS12 extends RubyObject {
                 }
                 certBags[i] = certBag.build();
             }
-            pfx.addEncryptedData(pbes2Encryptor(provider, password, pbeCipherOID(args, 6), iterationCount(args, 7)), certBags);
+            final int pbeIterCount = iterationCount(args, 7);
+            pfx.addEncryptedData(pbeEncryptor(provider, password, args, 6, pbeIterCount), certBags);
 
             final PKCS12SafeBagBuilder keyBag =
-                new JcaPKCS12SafeBagBuilder(privateKey,
-                    pbes2Encryptor(provider, password, pbeCipherOID(args, 5), iterationCount(args, 7)));
+                new JcaPKCS12SafeBagBuilder(privateKey, pbeEncryptor(provider, password, args, 5, pbeIterCount));
             keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName, new DERBMPString(alias));
             keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_localKeyId, new DEROctetString(keyId));
             pfx.addData(keyBag.build());
@@ -469,7 +469,22 @@ public class PKCS12 extends RubyObject {
         };
     }
 
-    // args[5] is the key PBE, args[6] the cert PBE (only AES-CBC is supported)
+    // args[5] is the key PBE, args[6] the cert PBE
+    private static OutputEncryptor pbeEncryptor(final Provider provider,
+                                                final char[] password,
+                                                final IRubyObject[] args,
+                                                final int index,
+                                                final int iterationCount)
+        throws OperatorCreationException {
+
+        if (args.length > index && !args[index].isNil()) {
+            final String name = args[index].convertToString().asJavaString();
+            final ASN1ObjectIdentifier legacyPbe = legacyPbeOID(name);
+            if (legacyPbe != null) return legacyPbeEncryptor(provider, password, legacyPbe, iterationCount);
+        }
+        return pbes2Encryptor(provider, password, pbeCipherOID(args, index), iterationCount);
+    }
+
     private static ASN1ObjectIdentifier pbeCipherOID(final IRubyObject[] args, final int index) {
         if (args.length > index && !args[index].isNil()) {
             final String name = args[index].convertToString().asJavaString();
@@ -477,6 +492,24 @@ public class PKCS12 extends RubyObject {
             if ("AES-192-CBC".equals(name)) return NISTObjectIdentifiers.id_aes192_CBC;
         }
         return NISTObjectIdentifiers.id_aes256_CBC; // OpenSSL's default
+    }
+
+    private static ASN1ObjectIdentifier legacyPbeOID(final String name) {
+        if ("PBE-SHA1-3DES".equals(name)) return PKCSObjectIdentifiers.pbeWithSHAAnd3_KeyTripleDES_CBC;
+        if ("PBE-SHA1-RC2-40".equals(name)) return PKCSObjectIdentifiers.pbeWithSHAAnd40BitRC2_CBC;
+        return null;
+    }
+
+    private static OutputEncryptor legacyPbeEncryptor(final Provider provider,
+                                                       final char[] password,
+                                                       final ASN1ObjectIdentifier algorithm,
+                                                       final int iterationCount)
+        throws OperatorCreationException {
+
+        final JcePKCSPBEOutputEncryptorBuilder builder =
+            new JcePKCSPBEOutputEncryptorBuilder(algorithm).setIterationCount(iterationCount);
+        if (provider != null) builder.setProvider(provider);
+        return builder.build(password);
     }
 
     private static int iterationCount(final IRubyObject[] args, final int index) {
@@ -513,8 +546,8 @@ public class PKCS12 extends RubyObject {
     }
 
     private static void validateCreateOptions(final Ruby runtime, final IRubyObject[] args) {
-        if (args.length > 5 && !args[5].isNil()) validatePBE(runtime, args[5]);
-        if (args.length > 6 && !args[6].isNil()) validatePBE(runtime, args[6]);
+        if (args.length > 5 && !args[5].isNil()) pbeValidate(runtime, args[5]);
+        if (args.length > 6 && !args[6].isNil()) pbeValidate(runtime, args[6]);
         if (args.length > 7 && !args[7].isNil()) RubyNumeric.num2int(args[7]);
         if (args.length > 8 && !args[8].isNil()) RubyNumeric.num2int(args[8]);
         if (args.length > 9 && !args[9].isNil()) {
@@ -525,11 +558,13 @@ public class PKCS12 extends RubyObject {
         }
     }
 
-    private static void validatePBE(final Ruby runtime, final IRubyObject pbe) {
+    private static void pbeValidate(final Ruby runtime, final IRubyObject pbe) {
         final String name = pbe.convertToString().asJavaString();
-        // legacy names are accepted but written as AES-256-CBC (approved, OpenSSL 3 default)
-        if ("PBE-SHA1-3DES".equals(name) || "PBE-SHA1-RC2-40".equals(name)
-            || "AES-128-CBC".equals(name) || "AES-192-CBC".equals(name) || "AES-256-CBC".equals(name)) return;
+        if (legacyPbeOID(name) != null) {
+            if (!SecurityHelper.isFipsVariant()) return;
+            throw runtime.newArgumentError("PBE algorithm " + pbe.inspect() + " is not available"); // in FIPS mode
+        }
+        if ("AES-128-CBC".equals(name) || "AES-192-CBC".equals(name) || "AES-256-CBC".equals(name)) return;
         throw runtime.newArgumentError("Unknown PBE algorithm " + pbe.inspect());
     }
 

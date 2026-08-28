@@ -6,6 +6,11 @@ class TestPKCS12 < TestCase
   DEFAULT_PBE_PKEYS = "PBE-SHA1-3DES"
   DEFAULT_PBE_CERTS = "PBE-SHA1-3DES"
 
+  # BC-FIPS requires PBKDF2 passwords of at least 112 bits (SP 800-132),
+  # C OpenSSL does not enforce a password length - divergence
+  PASSWORD = "a-sufficiently-long-secret"
+  WRONG_PASSWORD = "wrong-but-sufficiently-long"
+
   def setup
     super
 
@@ -14,84 +19,66 @@ class TestPKCS12 < TestCase
   end
 
   def test_create_and_parse_with_password
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
-    p12 = OpenSSL::PKCS12.create("secret", "myalias", @key, @cert)
+    p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert)
     assert p12.to_der.bytesize > 0
 
-    parsed = OpenSSL::PKCS12.new(p12.to_der, "secret")
+    parsed = OpenSSL::PKCS12.new(p12.to_der, PASSWORD)
     assert_instance_of OpenSSL::PKey::RSA, parsed.key
     assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
   end
 
-  def test_create_and_parse_with_empty_password
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
-    p12 = OpenSSL::PKCS12.create("", "myalias", @key, @cert)
-    parsed = OpenSSL::PKCS12.new(p12.to_der, "")
-    assert_instance_of OpenSSL::PKey::RSA, parsed.key
-    assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
+  # BC's PBKDF2 rejects empty passwords, OpenSSL allows them (divergence)
+  def test_create_with_empty_password_raises
+    assert_raise(OpenSSL::PKCS12::PKCS12Error, SecurityError) do
+      OpenSSL::PKCS12.create("", "myalias", @key, @cert)
+    end
   end
 
-  def test_create_and_parse_with_nil_password
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
-    p12 = OpenSSL::PKCS12.create(nil, "myalias", @key, @cert)
-    parsed = OpenSSL::PKCS12.new(p12.to_der)
-    assert_instance_of OpenSSL::PKey::RSA, parsed.key
-    assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
+  def test_create_with_nil_password_raises
+    assert_raise(OpenSSL::PKCS12::PKCS12Error, SecurityError) do
+      OpenSSL::PKCS12.create(nil, "myalias", @key, @cert)
+    end
   end
 
   def test_parse_with_wrong_password_raises
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
-    p12 = OpenSSL::PKCS12.create("right", "myalias", @key, @cert)
+    p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert)
     assert_raise(OpenSSL::PKCS12::PKCS12Error) do
-      OpenSSL::PKCS12.new(p12.to_der, "wrong")
+      OpenSSL::PKCS12.new(p12.to_der, WRONG_PASSWORD)
     end
   end
 
   def test_create_and_parse_with_ca_certs
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     ca_key = OpenSSL::PKey::RSA.new(2048)
     ca_cert = issue_cert(cn: "CA", key: ca_key)
     leaf_cert = issue_cert(cn: "leaf", issuer: ca_cert, issuer_key: ca_key)
 
-    p12 = OpenSSL::PKCS12.create("pass", "myalias", @key, leaf_cert, [ca_cert])
-    parsed = OpenSSL::PKCS12.new(p12.to_der, "pass")
+    p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, leaf_cert, [ca_cert])
+    parsed = OpenSSL::PKCS12.new(p12.to_der, PASSWORD)
     assert_equal leaf_cert.subject.to_s, parsed.certificate.subject.to_s
     assert_equal 1, parsed.ca_certs.size
     assert_equal ca_cert.subject.to_s, parsed.ca_certs.first.subject.to_s
   end
 
   def test_parse_returns_only_selected_key_chain
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
-    p12 = OpenSSL::PKCS12.create("secret", "myalias", @key, @cert)
-    password = java.lang.String.new("secret").toCharArray
-    store = java.security.KeyStore.getInstance("PKCS12")
-    store.load(java.io.ByteArrayInputStream.new(p12.to_der.to_java_bytes), password)
+    unrelated_cert = issue_cert(cn: "unrelated", key: OpenSSL::PKey::RSA.new(2048))
 
-    factory = java.security.cert.CertificateFactory.getInstance("X.509")
-    unrelated = factory.generateCertificate(java.io.ByteArrayInputStream.new(
-      issue_cert(cn: "unrelated", key: OpenSSL::PKey::RSA.new(2048)).to_der.to_java_bytes
-    ))
-    store.setCertificateEntry("unrelated", unrelated)
-
-    output = java.io.ByteArrayOutputStream.new
-    store.store(output, password)
-    parsed = OpenSSL::PKCS12.new(output.toByteArray, "secret")
+    p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert, [unrelated_cert])
+    parsed = OpenSSL::PKCS12.new(p12.to_der, PASSWORD)
 
     assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
     assert_equal [], Array(parsed.ca_certs)
   end
 
   def test_create_accepts_mri_optional_pbe_args
-    omit_on_fips 'PKCS12.create writes a PKCS12KDF MAC, unapproved on read-back'
     p12 = OpenSSL::PKCS12.create(
-      "secret", "myalias", @key, @cert, nil, DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS
+      PASSWORD, "myalias", @key, @cert, nil, DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS
     )
 
     assert_equal @cert, p12.certificate
     assert_equal @key.to_der, p12.key.to_der
     assert_nil p12.ca_certs
 
-    parsed = OpenSSL::PKCS12.new(p12.to_der, "secret")
+    parsed = OpenSSL::PKCS12.new(p12.to_der, PASSWORD)
     assert_equal @key.to_der, parsed.key.to_der
     assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
     assert_equal [], Array(parsed.ca_certs)
@@ -99,50 +86,50 @@ class TestPKCS12 < TestCase
 
   def test_create_rejects_unknown_pbe_algorithm
     assert_raise(ArgumentError) do
-      OpenSSL::PKCS12.create("secret", "myalias", @key, @cert, [], "foo")
+      OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert, [], "foo")
     end
   end
 
   def test_create_checks_key_iteration_type
     OpenSSL::PKCS12.create(
-      "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, 2048
+      PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, 2048
     )
 
     assert_raise(TypeError) do
       OpenSSL::PKCS12.create(
-        "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, "omg"
+        PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, "omg"
       )
     end
   end
 
   def test_create_checks_mac_iteration_type
     OpenSSL::PKCS12.create(
-      "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, 2048
+      PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, 2048
     )
 
     assert_raise(TypeError) do
       OpenSSL::PKCS12.create(
-        "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, "omg"
+        PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, "omg"
       )
     end
   end
 
   def test_create_checks_keytype
     OpenSSL::PKCS12.create(
-      "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS,
+      PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS,
       nil, nil, OpenSSL::PKCS12::KEY_SIG
     )
 
     assert_raise(ArgumentError) do
       OpenSSL::PKCS12.create(
-        "secret", "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, nil, 2048
+        PASSWORD, "myalias", @key, @cert, [], DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS, nil, nil, 2048
       )
     end
   end
 
   def test_dup_preserves_der
     p12 = OpenSSL::PKCS12.create(
-      "secret", "myalias", @key, @cert, nil, DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS
+      PASSWORD, "myalias", @key, @cert, nil, DEFAULT_PBE_PKEYS, DEFAULT_PBE_CERTS
     )
 
     assert_equal p12.to_der, p12.dup.to_der

@@ -28,17 +28,23 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.PublicKey;
 import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.DERBMPString;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.pkcs.ContentInfo;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -46,19 +52,27 @@ import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilder;
-import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilderProvider;
-import org.bouncycastle.pkcs.PKCS12PfxPdu;
-import org.bouncycastle.pkcs.PKCS12SafeBag;
-import org.bouncycastle.pkcs.PKCS12SafeBagFactory;
-import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.bouncycastle.crypto.util.PBKDF2Config;
 import org.bouncycastle.operator.InputDecryptorProvider;
 import org.bouncycastle.operator.MacCalculator;
 import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.OutputEncryptor;
 import org.bouncycastle.operator.PBEMacCalculatorProvider;
+import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilder;
+import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilderProvider;
+import org.bouncycastle.pkcs.PKCS12PfxPdu;
+import org.bouncycastle.pkcs.PKCS12PfxPduBuilder;
+import org.bouncycastle.pkcs.PKCS12SafeBag;
+import org.bouncycastle.pkcs.PKCS12SafeBagBuilder;
+import org.bouncycastle.pkcs.PKCS12SafeBagFactory;
+import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.bouncycastle.pkcs.jcajce.JcaPKCS12SafeBagBuilder;
+import org.bouncycastle.pkcs.jcajce.JcePBMac1CalculatorBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePBMac1CalculatorProviderBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePKCS12MacCalculatorBuilderProvider;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder;
+import org.bouncycastle.pkcs.jcajce.JcePKCSPBEOutputEncryptorBuilder;
+
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyClass;
@@ -69,7 +83,6 @@ import org.jruby.RubyString;
 import org.jruby.anno.JRubyClass;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
-import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
 import org.jruby.runtime.ObjectAllocator;
@@ -92,6 +105,10 @@ public class PKCS12 extends RubyObject {
 
     // PKCSObjectIdentifiers.id_PBMAC1 (missing in BC-FIPS)
     private static final ASN1ObjectIdentifier id_PBMAC1 = new ASN1ObjectIdentifier("1.2.840.113549.1.5.14");
+
+    // OpenSSL's PKCS12 defaults: PKCS12_DEFAULT_ITER / PKCS12_SALT_LEN
+    private static final int PBE_DEFAULT_ITER = 2048;
+    private static final int PBE_SALT_LEN = 16;
 
     static void createPKCS12(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         final RubyClass _PKCS12 = OpenSSL.defineClassUnder("PKCS12", runtime.getObject(), ALLOCATOR);
@@ -212,13 +229,32 @@ public class PKCS12 extends RubyObject {
 
             final RubyArray<X509Cert> caCerts = caArg.isNil() ? null : caArg.convertToArray();
             final Certificate[] chain = buildCertificateChain(runtime, (X509Cert) certArg, caCerts);
-            final KeyStore store = SecurityHelper.getKeyStore("PKCS12");
-            store.load(null, null);
-            store.setKeyEntry(aliasName(nameArg), privateKey, password, chain);
 
-            final ByteArrayOutputStream out = new ByteArrayOutputStream();
-            store.store(out, password);
-            storeBytes = out.toByteArray();
+            final Provider provider = SecurityHelper.getSecurityProvider();
+            final String alias = aliasName(nameArg);
+            // OpenSSL uses a SHA-1 digest; SHA-256 keeps localKeyId approved under FIPS
+            final byte[] keyId = SecurityHelper.getMessageDigest("SHA-256").digest(chain[0].getEncoded());
+
+            final PKCS12PfxPduBuilder pfx = new PKCS12PfxPduBuilder();
+
+            final PKCS12SafeBag[] certBags = new PKCS12SafeBag[chain.length];
+            for (int i = 0; i < chain.length; i++) {
+                final PKCS12SafeBagBuilder certBag = new JcaPKCS12SafeBagBuilder((X509Certificate) chain[i]);
+                if (i == 0) { // leaf - associates the certificate with the key bag
+                    certBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName, new DERBMPString(alias));
+                    certBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_localKeyId, new DEROctetString(keyId));
+                }
+                certBags[i] = certBag.build();
+            }
+            pfx.addEncryptedData(pbes2Encryptor(provider, password, pbeCipherOID(args, 6)), certBags);
+
+            final PKCS12SafeBagBuilder keyBag =
+                new JcaPKCS12SafeBagBuilder(privateKey, pbes2Encryptor(provider, password, pbeCipherOID(args, 5)));
+            keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName, new DERBMPString(alias));
+            keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_localKeyId, new DEROctetString(keyId));
+            pfx.addData(keyBag.build());
+
+            storeBytes = pfx.build(pbMac1MacCalculatorBuilder(provider), password).getEncoded();
 
             this.key = keyArg;
             this.certificate = certArg;
@@ -227,6 +263,9 @@ public class PKCS12 extends RubyObject {
         catch (Exception e) {
             if (e instanceof RaiseException) throw (RaiseException) e;
             throw newPKCS12Error(runtime, e);
+        }
+        catch (Throwable e) { // unapproved MAC/KDF
+            OpenSSL.handlePotentialOperationError(runtime, e);
         }
         finally {
             clearChars(password);
@@ -381,6 +420,62 @@ public class PKCS12 extends RubyObject {
         };
     }
 
+    // PBES2 with PBKDF2 (HMAC-SHA256) - what OpenSSL uses to protect key/cert bags
+    private static OutputEncryptor pbes2Encryptor(final Provider provider,
+                                                  final char[] password,
+                                                  final ASN1ObjectIdentifier cipherOid)
+        throws OperatorCreationException {
+
+        final PBKDF2Config kdf = new PBKDF2Config.Builder()
+            .withIterationCount(PBE_DEFAULT_ITER)
+            .withSaltLength(PBE_SALT_LEN)
+            .withPRF(PBKDF2Config.PRF_SHA256)
+            .build();
+
+        final JcePKCSPBEOutputEncryptorBuilder builder =
+            new JcePKCSPBEOutputEncryptorBuilder(kdf, cipherOid);
+        if (provider != null) builder.setProvider(provider);
+        return builder.build(password);
+    }
+
+    // PBMAC1 (RFC 9579) MAC calculator ~ OpenSSL (under FIPS)
+    private static PKCS12MacCalculatorBuilder pbMac1MacCalculatorBuilder(final Provider provider) {
+        return new PKCS12MacCalculatorBuilder() {
+            private MacCalculator macCalculator;
+
+            public MacCalculator build(final char[] password) throws OperatorCreationException {
+                final JcePBMac1CalculatorBuilder builder =
+                    new JcePBMac1CalculatorBuilder("HMACSHA256", 256)
+                        .setIterationCount(PBE_DEFAULT_ITER)
+                        .setSaltLength(PBE_SALT_LEN);
+                if (provider != null) builder.setProvider(provider);
+                return macCalculator = builder.build(password);
+            }
+
+            public AlgorithmIdentifier getDigestAlgorithmIdentifier() {
+                // BC writes id_PBES2 as the PBMAC1 keyDerivationFunc, OpenSSL requires id_PBKDF2
+                final AlgorithmIdentifier mac = macCalculator.getAlgorithmIdentifier();
+                final ASN1Sequence params = ASN1Sequence.getInstance(mac.getParameters());
+                final AlgorithmIdentifier kdf = AlgorithmIdentifier.getInstance(params.getObjectAt(0));
+                final AlgorithmIdentifier macAlg = AlgorithmIdentifier.getInstance(params.getObjectAt(1));
+                final AlgorithmIdentifier fixedKdf =
+                    new AlgorithmIdentifier(PKCSObjectIdentifiers.id_PBKDF2, kdf.getParameters());
+                return new AlgorithmIdentifier(mac.getAlgorithm(),
+                    new DERSequence(new ASN1Encodable[] { fixedKdf, macAlg }));
+            }
+        };
+    }
+
+    // args[5] is the key PBE, args[6] the cert PBE (only AES-CBC is supported)
+    private static ASN1ObjectIdentifier pbeCipherOID(final IRubyObject[] args, final int index) {
+        if (args.length > index && !args[index].isNil()) {
+            final String name = args[index].convertToString().asJavaString();
+            if ("AES-128-CBC".equals(name)) return NISTObjectIdentifiers.id_aes128_CBC;
+            if ("AES-192-CBC".equals(name)) return NISTObjectIdentifiers.id_aes192_CBC;
+        }
+        return NISTObjectIdentifiers.id_aes256_CBC; // OpenSSL's default
+    }
+
     private static IRubyObject readPKey(final ThreadContext context, final byte[] encoded) {
         final Ruby runtime = context.runtime;
         return PKey.PKeyModule.read(context, PKey._PKey(runtime), newString(runtime, encoded));
@@ -423,7 +518,9 @@ public class PKCS12 extends RubyObject {
 
     private static void validatePBE(final Ruby runtime, final IRubyObject pbe) {
         final String name = pbe.convertToString().asJavaString();
-        if ("PBE-SHA1-3DES".equals(name) || "PBE-SHA1-RC2-40".equals(name)) return;
+        // legacy names are accepted but written as AES-256-CBC (approved, OpenSSL 3 default)
+        if ("PBE-SHA1-3DES".equals(name) || "PBE-SHA1-RC2-40".equals(name)
+            || "AES-128-CBC".equals(name) || "AES-192-CBC".equals(name) || "AES-256-CBC".equals(name)) return;
         throw runtime.newArgumentError("Unknown PBE algorithm " + pbe.inspect());
     }
 

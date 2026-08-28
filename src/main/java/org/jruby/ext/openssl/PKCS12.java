@@ -246,15 +246,16 @@ public class PKCS12 extends RubyObject {
                 }
                 certBags[i] = certBag.build();
             }
-            pfx.addEncryptedData(pbes2Encryptor(provider, password, pbeCipherOID(args, 6)), certBags);
+            pfx.addEncryptedData(pbes2Encryptor(provider, password, pbeCipherOID(args, 6), iterationCount(args, 7)), certBags);
 
             final PKCS12SafeBagBuilder keyBag =
-                new JcaPKCS12SafeBagBuilder(privateKey, pbes2Encryptor(provider, password, pbeCipherOID(args, 5)));
+                new JcaPKCS12SafeBagBuilder(privateKey,
+                    pbes2Encryptor(provider, password, pbeCipherOID(args, 5), iterationCount(args, 7)));
             keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_friendlyName, new DERBMPString(alias));
             keyBag.addBagAttribute(PKCSObjectIdentifiers.pkcs_9_at_localKeyId, new DEROctetString(keyId));
             pfx.addData(keyBag.build());
 
-            storeBytes = pfx.build(pbMac1MacCalculatorBuilder(provider), password).getEncoded();
+            storeBytes = pfx.build(pbMac1MacCalculatorBuilder(provider, iterationCount(args, 8)), password).getEncoded();
 
             this.key = keyArg;
             this.certificate = certArg;
@@ -423,11 +424,12 @@ public class PKCS12 extends RubyObject {
     // PBES2 with PBKDF2 (HMAC-SHA256) - what OpenSSL uses to protect key/cert bags
     private static OutputEncryptor pbes2Encryptor(final Provider provider,
                                                   final char[] password,
-                                                  final ASN1ObjectIdentifier cipherOid)
+                                                  final ASN1ObjectIdentifier cipherOid,
+                                                  final int iterationCount)
         throws OperatorCreationException {
 
         final PBKDF2Config kdf = new PBKDF2Config.Builder()
-            .withIterationCount(PBE_DEFAULT_ITER)
+            .withIterationCount(iterationCount)
             .withSaltLength(PBE_SALT_LEN)
             .withPRF(PBKDF2Config.PRF_SHA256)
             .build();
@@ -439,14 +441,15 @@ public class PKCS12 extends RubyObject {
     }
 
     // PBMAC1 (RFC 9579) MAC calculator ~ OpenSSL (under FIPS)
-    private static PKCS12MacCalculatorBuilder pbMac1MacCalculatorBuilder(final Provider provider) {
+    private static PKCS12MacCalculatorBuilder pbMac1MacCalculatorBuilder(final Provider provider,
+                                                                          final int iterationCount) {
         return new PKCS12MacCalculatorBuilder() {
             private MacCalculator macCalculator;
 
             public MacCalculator build(final char[] password) throws OperatorCreationException {
                 final JcePBMac1CalculatorBuilder builder =
                     new JcePBMac1CalculatorBuilder("HMACSHA256", 256)
-                        .setIterationCount(PBE_DEFAULT_ITER)
+                        .setIterationCount(iterationCount)
                         .setSaltLength(PBE_SALT_LEN);
                 if (provider != null) builder.setProvider(provider);
                 return macCalculator = builder.build(password);
@@ -474,6 +477,12 @@ public class PKCS12 extends RubyObject {
             if ("AES-192-CBC".equals(name)) return NISTObjectIdentifiers.id_aes192_CBC;
         }
         return NISTObjectIdentifiers.id_aes256_CBC; // OpenSSL's default
+    }
+
+    private static int iterationCount(final IRubyObject[] args, final int index) {
+        if (args.length <= index || args[index].isNil()) return PBE_DEFAULT_ITER;
+        final int iterationCount = RubyNumeric.num2int(args[index]);
+        return iterationCount == 0 ? PBE_DEFAULT_ITER : iterationCount;
     }
 
     private static IRubyObject readPKey(final ThreadContext context, final byte[] encoded) {

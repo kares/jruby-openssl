@@ -27,6 +27,39 @@ class TestPKCS12 < TestCase
     assert_equal @cert.subject.to_s, parsed.certificate.subject.to_s
   end
 
+  def test_create_honors_iteration_counts
+    p12 = OpenSSL::PKCS12.create(
+      PASSWORD, "myalias", @key, @cert, nil, nil, nil, 1234, 2345
+    )
+    pbkdf2 = find_algorithms(p12.to_der, "1.2.840.113549.1.5.12")
+
+    assert_equal [1234, 1234, 2345], pbkdf2.map { |algorithm| algorithm.value[1].value[1].value.to_i }.sort
+
+    pbmac1 = find_algorithms(p12.to_der, "1.2.840.113549.1.5.14").first
+    mac_kdf = pbmac1.value[1].value.first
+    assert_equal 2345, mac_kdf.value[1].value[1].value.to_i
+  end
+
+  def test_create_honors_aes_pbe_options
+    {
+      "AES-128-CBC" => "2.16.840.1.101.3.4.1.2",
+      "AES-192-CBC" => "2.16.840.1.101.3.4.1.22",
+      "AES-256-CBC" => "2.16.840.1.101.3.4.1.42"
+    }.each do |cipher, oid|
+      p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert, nil, cipher, cipher)
+      assert_equal 2, find_algorithms(p12.to_der, oid).size, cipher
+    end
+  end
+
+  def test_create_rejects_tampered_content
+    p12 = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert)
+    tampered = p12.to_der.dup
+    tampered.setbyte(600, tampered.getbyte(600) ^ 0xFF)
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) do
+      OpenSSL::PKCS12.new(tampered, PASSWORD)
+    end
+  end
+
   # BC's PBKDF2 rejects empty passwords, OpenSSL allows them (divergence)
   def test_create_with_empty_password_raises
     assert_raise(OpenSSL::PKCS12::PKCS12Error, SecurityError) do
@@ -341,6 +374,27 @@ BC8fv38mue8LZVcbHQQIUNrWKEnskCoCAggA
   end
 
   private
+
+  # PKCS12 nests the safe bags inside OCTET STRINGs, so walk them recursively;
+  # ciphertext blobs are not valid ASN.1 and are skipped
+  def find_algorithms(der, oid)
+    algorithms = []
+    visit = lambda do |node|
+      if node.is_a?(OpenSSL::ASN1::Sequence) && node.value.first.is_a?(OpenSSL::ASN1::ObjectId)
+        algorithms << node if node.value.first.oid == oid
+      end
+      if node.value.is_a?(Array)
+        node.value.each { |child| visit.call(child) }
+      elsif node.is_a?(OpenSSL::ASN1::OctetString)
+        begin
+          visit.call(OpenSSL::ASN1.decode(node.value))
+        rescue OpenSSL::ASN1::ASN1Error
+        end
+      end
+    end
+    visit.call(OpenSSL::ASN1.decode(der))
+    algorithms
+  end
 
   def issue_cert(cn: "test", key: nil, issuer: nil, issuer_key: nil)
     key ||= @key

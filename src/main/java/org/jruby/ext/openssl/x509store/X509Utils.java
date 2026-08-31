@@ -27,7 +27,6 @@
  ***** END LICENSE BLOCK *****/
 package org.jruby.ext.openssl.x509store;
 
-
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -307,15 +306,15 @@ public abstract class X509Utils {
     public static final String X509_PRIVATE_DIR;
 
     static {
-        // roughly following the ideas from https://www.happyassassin.net/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
+        // roughly following the ideas from
+        // https://www.happyassassin.net/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
         // and falling back to trust store from java to be on the save side
 
         // TODO usability in limited environments should be tested/reviewed
         final String JAVA_HOME = SafePropertyAccessor.getProperty("java.home", "");
 
-        // if the default files/dirs exist we use them. with this a switch
-        // from MRI to JRuby produces the same results. otherwise we use the
-        // certs from JAVA_HOME.
+        // if the default files/dirs exist we use them. with this a switch from MRI to JRuby produces the same results
+        // otherwise we use the certs from JAVA_HOME
         final String LINUX_CERT_AREA = "/etc/ssl";
         final String MACOS_CERT_AREA = "/System/Library/OpenSSL";
 
@@ -351,7 +350,12 @@ public abstract class X509Utils {
         X509_CERT_DIR = certDir;
         X509_PRIVATE_DIR = privateDir;
 
-        if (maybePkiCertFile != null && new File(maybePkiCertFile).exists()) {
+        final String trustStore = SafePropertyAccessor.getProperty("javax.net.ssl.trustStore");
+
+        if (trustStore != null && !trustStore.isEmpty() && !"NONE".equals(trustStore)) {
+            X509_CERT_FILE = trustStore;
+        }
+        else if (maybePkiCertFile != null && new File(maybePkiCertFile).exists()) {
             X509_CERT_FILE = maybePkiCertFile;
         }
         else if (maybeCertFile != null && new File(maybeCertFile).exists()) {

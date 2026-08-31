@@ -349,6 +349,20 @@ public abstract class SecurityHelper {
         return KeyStore.getInstance(type);
     }
 
+    public static KeyStore getKeyStore(final String type, final String providerName)
+        throws KeyStoreException, NoSuchProviderException {
+        try {
+            final Provider provider = getSecurityProvider();
+            if (provider != null && providerName.equals(provider.getName())) {
+                return getKeyStore(type, provider);
+            }
+        }
+        catch (KeyStoreException e) {
+            LOG.debug("getKeyStore", e);
+        }
+        return KeyStore.getInstance(type, providerName);
+    }
+
     static KeyStore getKeyStore(final String type, final Provider provider) throws KeyStoreException {
         return KeyStore.getInstance(type, provider);
     }

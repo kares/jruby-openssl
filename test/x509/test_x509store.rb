@@ -9,6 +9,8 @@ class TestX509Store < TestCase
     @cert = OpenSSL::X509::Certificate.new(cert)
     @ca_cert = File.expand_path('../ca.crt', __FILE__) # File.expand_path('../demoCA/cacert.pem', __FILE__)
     @javastore = File.expand_path('../javastore.ts', __FILE__)
+    @jks_store = File.expand_path('../javastore.jks', __FILE__)
+    @pkcs12_store = File.expand_path('../javastore.p12', __FILE__)
     @pem = File.expand_path('../Entrust.net_Premium_2048_Secure_Server_CA.pem', __FILE__) # validity: 1999 - 2029
   end
 
@@ -22,7 +24,7 @@ class TestX509Store < TestCase
     ENV['SSL_CERT_FILE'] = nil
     store = OpenSSL::X509::Store.new
     store.set_default_paths
-    assert ! store.verify(@cert)
+    assert !store.verify(@cert) unless explicit_java_trust_store?
 
     ENV['SSL_CERT_FILE'] = @ca_cert
     store = OpenSSL::X509::Store.new
@@ -38,6 +40,7 @@ class TestX509Store < TestCase
 
   def test_store_location_with_java_truststore
     skip unless defined? JRUBY_VERSION
+    skip 'JKS keystore is unavailable' unless java_keystore_available?('JKS')
     ENV['SSL_CERT_FILE'] = @javastore
     store = OpenSSL::X509::Store.new
     assert ! store.verify(@cert)
@@ -48,6 +51,18 @@ class TestX509Store < TestCase
 
     verified = store.verify(@cert)
     assert verified, "JKS verification failed: #{store.inspect}"
+  end
+
+  def test_store_location_with_jks_keystore_auto_detection
+    skip unless defined? JRUBY_VERSION
+    skip 'JKS keystore is unavailable' unless java_keystore_available?('JKS')
+    assert_store_location_with_java_keystore @jks_store, 'PKCS12'
+  end
+
+  def test_store_location_with_pkcs12_keystore_auto_detection
+    skip unless defined? JRUBY_VERSION
+    skip 'PKCS12 keystore is unavailable' unless java_keystore_available?('PKCS12')
+    assert_store_location_with_java_keystore @pkcs12_store, 'JKS'
   end
 
   def test_use_gibberish_cert_file
@@ -88,10 +103,18 @@ class TestX509Store < TestCase
   private :default_cert_file_pem_certs
 
   def default_cert_file_java_certs
-    keystore = java.security.KeyStore.getInstance('JKS')
-    input = java.io.FileInputStream.new(OpenSSL::X509::DEFAULT_CERT_FILE)
+    cert_file = OpenSSL::X509::DEFAULT_CERT_FILE
+    if cert_file == ENV_JAVA['javax.net.ssl.trustStore']
+      type = ENV_JAVA['javax.net.ssl.trustStoreType'] || java.security.KeyStore.getDefaultType
+      password = ENV_JAVA['javax.net.ssl.trustStorePassword']
+      provider = ENV_JAVA['javax.net.ssl.trustStoreProvider']
+    else
+      type = self.class.java_version.last.to_i >= 18 ? 'PKCS12' : 'JKS'
+    end
+    keystore = java.security.KeyStore.getInstance(type, provider || 'SUN')
+    input = java.io.FileInputStream.new(cert_file)
     begin
-      keystore.load(input, nil)
+      keystore.load(input, password && password.to_java.toCharArray)
     ensure
       input.close
     end
@@ -104,6 +127,37 @@ class TestX509Store < TestCase
     certs
   end
   private :default_cert_file_java_certs
+
+  def explicit_java_trust_store?
+    defined?(JRUBY_VERSION) && ENV_JAVA['javax.net.ssl.trustStore']
+  end
+  private :explicit_java_trust_store?
+
+  def java_keystore_available?(type)
+    java.security.KeyStore.getInstance(type)
+    true
+  rescue java.security.KeyStoreException
+    false
+  end
+  private :java_keystore_available?
+
+  def assert_store_location_with_java_keystore(path, default_type)
+    security = java.security.Security
+    original_type = security.getProperty('keystore.type')
+    original_compat = security.getProperty('keystore.type.compat')
+    security.setProperty('keystore.type', default_type)
+    security.setProperty('keystore.type.compat', 'false')
+
+    ENV['SSL_CERT_FILE'] = path
+    store = OpenSSL::X509::Store.new
+    assert !store.verify(@cert)
+    store.set_default_paths
+    assert store.verify(@cert), "keystore verification failed: #{store.inspect}"
+  ensure
+    security.setProperty('keystore.type', original_type) if original_type
+    security.setProperty('keystore.type.compat', original_compat) if original_compat
+  end
+  private :assert_store_location_with_java_keystore
 
   def test_add_file_to_store_with_custom_cert_file
     ENV['SSL_CERT_FILE'] = @ca_cert
@@ -550,9 +604,8 @@ class TestX509Store < TestCase
     assert_equal(false, store.verify(ee4_cert))
     assert_equal(OpenSSL::X509::V_ERR_CERT_HAS_EXPIRED, store.error)
 
-    # the underlying X509 struct caches the result of the last
-    # verification for signature and not-before. so the following code
-    # rebuilds new objects to avoid site effect.
+    # the underlying X509 struct caches the result of the last verification for signature and not-before
+    # so the following code rebuilds new objects to avoid site effect
     store.time = Time.now - 4000
     assert_equal(false, store.verify(OpenSSL::X509::Certificate.new(ca2_cert)))
     assert_equal(OpenSSL::X509::V_ERR_CERT_NOT_YET_VALID, store.error)

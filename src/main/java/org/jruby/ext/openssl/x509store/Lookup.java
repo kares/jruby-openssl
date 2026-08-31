@@ -37,6 +37,7 @@ import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.Provider;
 import java.security.cert.CRL;
 import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
@@ -338,18 +339,35 @@ public class Lookup {
         }
     }
 
-    public int loadDefaultJavaCACertsFile(String certsFile) throws IOException, GeneralSecurityException {
+    public int loadDefaultJavaKeystoreFile(String certsFile) throws IOException, GeneralSecurityException {
 
-        if (LOG.isDebug(runtime)) LOG.debug(runtime, "loadDefaultJavaCACertsFile: " + certsFile);
+        if (LOG.isDebug(runtime)) LOG.debug(runtime, "loadDefaultJavaKeystoreFile: " + certsFile);
 
         final BufferedInputStream fin = new BufferedInputStream(new FileInputStream(certsFile));
         int count = 0;
         try {
-            // detect rather than use getDefaultType (a security property, not the file's format)
-            // JDK's implementation on purpose - BC's PKCS12 refuses the null password below
-            KeyStore keystore = KeyStore.getInstance(keyStoreType(fin));
-	        // null password - as the cacerts file isn't password protected
-            keystore.load(fin, null);
+            final String type, provider, password;
+            if (certsFile.equals(SafePropertyAccessor.getProperty("javax.net.ssl.trustStore"))) {
+                type = SafePropertyAccessor.getProperty("javax.net.ssl.trustStoreType", KeyStore.getDefaultType());
+                provider = SafePropertyAccessor.getProperty("javax.net.ssl.trustStoreProvider");
+                password = SafePropertyAccessor.getProperty("javax.net.ssl.trustStorePassword");
+            } else {
+                type = getKeyStoreType(fin);
+                provider = null;
+                password = null;
+            }
+
+            // JDK's implementation on purpose (unless provider present)
+            // BC's PKCS12 refuses the null password (cacerts isn't password protected)
+            KeyStore keystore;
+            if (provider != null) {
+                keystore = SecurityHelper.getKeyStore(type, provider);
+            } else if ("BCFKS".equalsIgnoreCase(type)) {
+                keystore = SecurityHelper.getKeyStore(type);
+            } else {
+                keystore = KeyStore.getInstance(type);
+            }
+            keystore.load(fin, password == null ? null : password.toCharArray());
             PKIXParameters params = new PKIXParameters(keystore);
             for ( TrustAnchor trustAnchor : params.getTrustAnchors() ) {
                 X509Certificate certificate = trustAnchor.getTrustedCert();
@@ -368,11 +386,15 @@ public class Lookup {
      * JDK's cacerts is JKS up to 17 and PKCS12 since 18
      * reading the latter as JKS only works while (JDK default) keystore.type.compat is true
      */
-    private static String keyStoreType(final BufferedInputStream in) throws IOException {
-        in.mark(1);
-        final int tag = in.read();
-        in.reset();
-        return tag == 0x30 ? "PKCS12" : "JKS";
+    private static String getKeyStoreType(final BufferedInputStream in) throws IOException {
+        final String keyStoreType = KeyStore.getDefaultType(); // respect keystore.type=BCFKS
+        if ("PKCS12".equalsIgnoreCase(keyStoreType) || "JKS".equalsIgnoreCase(keyStoreType)) {
+            in.mark(1);
+            final int tag = in.read();
+            in.reset();
+            return tag == 0x30 ? "PKCS12" : "JKS";
+        }
+        return keyStoreType;
     }
 
     private InputStream wrapJRubyNormalizedInputStream(String file) throws IOException {
@@ -503,7 +525,7 @@ public class Lookup {
                     if (file.matches(".*\\.(crt|cer|pem)$")) {
                         ok = ctx.loadCertificateOrCRLFile(file, X509_FILETYPE_PEM) != 0 ? 1 : 0;
                     } else {
-                        ok = (ctx.loadDefaultJavaCACertsFile(file) != 0) ? 1: 0;
+                        ok = (ctx.loadDefaultJavaKeystoreFile(file) != 0) ? 1: 0;
                     }
                     // we ignore errors on loading default paths the same way MRI does it
                 } else {

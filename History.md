@@ -1,3 +1,46 @@
+## 0.19.1
+
+X25519/X448 key support and DH key reading, and a (final) round of provider 
+routing driven by the FIPS variant
+
+- [feat] X25519/X448 type `PKey` support
+  `PKey.read`, `generate_key` and `new_raw_private/public_key` now handle XDH
+- [feat] read DH keys (not just DH parameters)
+  PKCS#8 and SubjectPublicKeyInfo DH keys previously failed to parse
+- [compat] read DH parameters via `OpenSSL::PKey.read`
+- [compat] ASN.1 objects for the RFC 8410 curves
+  `ASN1::ObjectId` could not resolve X25519/X448/ED25519/ED448 by name or OID
+- [compat] `PKey#inspect` reporting `oid` and `type_name`
+- [compat] define `OP_NO_RENEGOTIATION` constant
+- [fix] read back DER written by `PKey#to_der`
+  `PKey.read` only tried PKCS#8 on DER input
+- [fix] raise `PKeyError` for unsupported public key algorithm
+- [fix] raise `SSLError` on handshake failure in connect (#204)
+  JSSE may abort handshake with a plain exception when no protocol is enabled
+- [compat] read and write PKCS12 through Bouncy Castle
+  supports OpenSSL 3 PBES2/PBKDF2 encryption and PBMAC1 MACs without JDK KeyStore
+- [compat] honor `PKCS12.create` PBE and iteration arguments
+  regular mode writes requested legacy PBE algorithms (FIPS rejects unapproved)
+- [feat] honor configured Java trust store properties
+  load explicit `javax.net.ssl.trustStore` using the configured `trustStoreType`,
+  `trustStoreProvider` and `trustStorePassword`
+- [deps] bump bcprov artifact to latest patch (1.85.2)
+
+### Provider Routing
+
+Operations that resolved through JDK security now go to the configured provider.
+
+- [fips] pin provider when signing certificates and CRLs
+- [fips] use provider when verifying certificates
+  `X509Certificate#verify(PublicKey)` goes to the JDK default and a certificate
+  read from a JKS keystore stays a `sun.security.x509.X509CertImpl`
+- [fips] generate DSA keys through provider
+  `generate_key!` derived private exponent by hand instead of asking for a key pair
+- [fips] keep cipher policy + OCSP digests on provider
+- [fips] report **fips_mode** based on approved-only
+  `OpenSSL.fips_mode` now reports whether FIPS is being *enforced*, as C does;
+  `OPENSSL_FIPS` reports whether the build is FIPS-*capable*
+
 ## 0.19.0
 
 FIPS support, distributed as a **separate, dual GPL/commercial artifact**.

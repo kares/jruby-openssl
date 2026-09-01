@@ -26,9 +26,10 @@ def define_provider_test_task(name,
 
     # { "security.provider.N" => value } -
     # JDK stops reading these at the first gap, indexes have to stay continuous
-    provider_entries =
-      properties.stringPropertyNames.select { |key| key.match?(/^security\.provider\.\d+$/) }
-                .to_h { |key| [ key, properties.getProperty(key) ] }
+    provider_entries = {}
+    properties.stringPropertyNames.each do |key|
+      provider_entries[key] = properties.getProperty(key) if key.match?(/^security\.provider\.\d+$/)
+    end
 
     specs = providers.map { |provider| [ provider[:class], provider[:arg] ].compact.join(' ') }
     if replace

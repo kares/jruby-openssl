@@ -78,7 +78,7 @@ jobs:
         run: jruby -S gem install bundler -v "~>2.2.28"
 
       - name: bundle install
-        run: jruby -S bundle install
+        run: bash .github/scripts/bundle-install
 
       - name: rake test_prepare
         run: jruby -rbundler/setup -S rake test_prepare

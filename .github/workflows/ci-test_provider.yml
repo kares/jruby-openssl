@@ -45,7 +45,7 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
 
       - name: bundle install
-        run: jruby -S bundle install
+        run: bash .github/scripts/bundle-install
 
       - name: rake test_prepare
         run: jruby -rbundler/setup -S rake test_prepare

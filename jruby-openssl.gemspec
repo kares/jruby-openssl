@@ -1,11 +1,15 @@
 #-*- mode: ruby -*-
 
+jopenssl = Module.new.tap do |mod|
+  version_rb = File.expand_path('lib/jopenssl/version.rb', __dir__)
+  mod.module_eval(File.read(version_rb), version_rb)
+end.const_get(:JOpenSSL)
+
+
 Gem::Specification.new do |s|
   s.name = 'jruby-openssl'
 
-  version_rb = File.expand_path('lib/jopenssl/version.rb', File.dirname(__FILE__))
-  version_rb = File.read(version_rb)
-  s.version = version_rb.match( /.*\sVERSION\s*=\s*['"](.*)['"]/ )[1]
+  s.version = jopenssl::VERSION
   # stays MAJOR.MINOR.PATCH - 4th segment is reserved for the fips variant
   if Gem::Version.new(s.version).release.segments.size != 3
     fail "jruby-openssl version must be MAJOR.MINOR.PATCH (got #{s.version})"
@@ -31,16 +35,13 @@ Gem::Specification.new do |s|
                  f =~ /^(History|LICENSE|README|Rakefile|Mavenfile|pom.xml)/i } +
             ['lib/jopenssl.jar'] + Dir.glob('vendor/**/*.jar').sort
 
-  bc_version = version_rb.match( /.*\sBOUNCY_CASTLE_VERSION\s*=\s*['"](.*)['"]/ )[1]
-  raise 'BOUNCY_CASTLE_VERSION not matched' if (bc_version || '').empty?
-
   s.required_ruby_version = '>= 2.5.0' # JRuby >= 9.2
 
-  bc_supported_version = "[1.80,#{bc_version}]"
-  s.requirements << "jar org.bouncycastle:bcprov-jdk18on, #{bc_supported_version}" # Provider
-  s.requirements << "jar org.bouncycastle:bcpkix-jdk18on, #{bc_supported_version}" # PKIX/CMS/EAC/PKCSOCSP/TSP/OPENSSL
-  s.requirements << "jar org.bouncycastle:bctls-jdk18on,  #{bc_supported_version}" # DTLS/TLS API/JSSE Provider
-  s.requirements << "jar org.bouncycastle:bcutil-jdk18on, #{bc_supported_version}"
+  version_range = lambda { |artifact_id| "[1.80,#{jopenssl.version(artifact_id)}]" }
+  s.requirements << "jar org.bouncycastle:bcprov-jdk18on, #{version_range.('bcprov-jdk18on')}" # Provider
+  s.requirements << "jar org.bouncycastle:bcpkix-jdk18on, #{version_range.('bcpkix-jdk18on')}" # PKIX/CMS/EAC/PKCSOCSP/TSP/OPENSSL
+  s.requirements << "jar org.bouncycastle:bctls-jdk18on,  #{version_range.('bctls-jdk18on')}"  # DTLS/TLS API/JSSE Provider
+  s.requirements << "jar org.bouncycastle:bcutil-jdk18on, #{version_range.('bcutil-jdk18on')}"
 
 end
 

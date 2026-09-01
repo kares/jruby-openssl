@@ -86,6 +86,6 @@ jobs:
       - name: mvn test
         run: ./mvnw test
 
-      - name: rake test
-        run: jruby -rbundler/setup -S rake test
+      - name: rake test:all
+        run: jruby -rbundler/setup -S rake test:all
         timeout-minutes: 15

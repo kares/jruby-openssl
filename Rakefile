@@ -113,6 +113,17 @@ namespace :test do
                               jdk_providers: ['SUN', 'SunJSSE', 'SunJCE', 'SunEC'],
                               jars: -> { FileList['vendor/**/*.jar'].map { |path| File.expand_path(path) } }
   end
+
+  desc 'Run regular and provider test suites'
+  task :all do
+    %w[
+      test
+      test:provider:bc_all
+      test:provider:bc_wout_jsse
+    ].each do |name|
+      Rake::Task[name].invoke
+    end
+  end
 end
 
 namespace :integration do

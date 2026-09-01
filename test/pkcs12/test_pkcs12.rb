@@ -51,6 +51,12 @@ class TestPKCS12 < TestCase
     end
   end
 
+  def test_find_algorithms_skips_invalid_asn1_octet_strings
+    der = OpenSSL::ASN1::OctetString.new("\x0c\x01\xff".b).to_der
+
+    assert_equal [], find_algorithms(der, "1.2.3")
+  end
+
   def test_create_honors_legacy_pbe_options
     omit_on_fips 'legacy PKCS12 PBE is not approved'
 
@@ -400,7 +406,7 @@ BC8fv38mue8LZVcbHQQIUNrWKEnskCoCAggA
       elsif node.is_a?(OpenSSL::ASN1::OctetString)
         begin
           visit.call(OpenSSL::ASN1.decode(node.value))
-        rescue OpenSSL::ASN1::ASN1Error
+        rescue OpenSSL::ASN1::ASN1Error, ArgumentError
         end
       end
     end

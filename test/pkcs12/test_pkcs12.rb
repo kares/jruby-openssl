@@ -275,6 +275,26 @@ DQIJBQAwDAYIKoZIhvcNAgkFAAQgWcWc03vi+c4y+IiLx6R9WGHYofVoiZPW
     end
   end
 
+  # PBMAC1 param validation - C OpenSSL (p12_mutl.c) rejects a keyDerivationFunc that
+  # is not id-PBKDF2 and a PBKDF2 keyLength that is missing or > EVP_MAX_MD_SIZE (64)
+  def test_rejects_malformed_pbmac1
+    der = OpenSSL::PKCS12.create(PASSWORD, "myalias", @key, @cert).to_der
+
+    not_pbkdf2 = mutate_pbmac1(der) do |kdf, _pbkdf2|
+      kdf.value[0] = OpenSSL::ASN1::ObjectId.new("1.2.840.113549.1.5.13")
+    end
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) { OpenSSL::PKCS12.new(not_pbkdf2, PASSWORD) }
+
+    no_key_len = mutate_pbmac1(der) { |kdf, pbkdf2|
+      kdf.value[1] = OpenSSL::ASN1::Sequence([ pbkdf2.value[0], pbkdf2.value[1], pbkdf2.value[3] ]) }
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) { OpenSSL::PKCS12.new(no_key_len, PASSWORD) }
+
+    oversized_key_len = mutate_pbmac1(der) { |kdf, pbkdf2|
+      kdf.value[1] = OpenSSL::ASN1::Sequence([ pbkdf2.value[0], pbkdf2.value[1],
+        OpenSSL::ASN1::Integer.new(127), pbkdf2.value[3] ]) }
+    assert_raise(OpenSSL::PKCS12::PKCS12Error) { OpenSSL::PKCS12.new(oversized_key_len, PASSWORD) }
+  end
+
   def test_new_with_no_keys
     omit_on_fips 'fixture uses legacy PKCS12 PBE-SHA1-3DES'
     str = <<~EOF.unpack1("m")
@@ -412,6 +432,16 @@ BC8fv38mue8LZVcbHQQIUNrWKEnskCoCAggA
     end
     visit.call(OpenSSL::ASN1.decode(der))
     algorithms
+  end
+
+  # reach into the PBMAC1 macData params and yield [keyDerivationFunc, PBKDF2-params]
+  # returns re-encoded DER after the block mutates them
+  def mutate_pbmac1(der)
+    root = OpenSSL::ASN1.decode(der)
+    mac_alg = root.value[2].value[0].value[0]
+    kdf = mac_alg.value[1].value[0]
+    yield kdf, kdf.value[1]
+    root.to_der
   end
 
   def issue_cert(cn: "test", key: nil, issuer: nil, issuer_key: nil)

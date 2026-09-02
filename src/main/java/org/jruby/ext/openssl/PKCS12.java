@@ -112,6 +112,9 @@ public class PKCS12 extends RubyObject {
     private static final int PBE_DEFAULT_ITER = 2048;
     private static final int PBE_SALT_LEN = 16;
 
+    // EVP_MAX_MD_SIZE - OpenSSL's upper bound for a PBMAC1 PBKDF2 key length (bytes)
+    private static final int MAX_MAC_KEY_LENGTH = 64;
+
     static void createPKCS12(final Ruby runtime, final RubyModule OpenSSL, final RubyClass OpenSSLError) {
         final RubyClass _PKCS12 = OpenSSL.defineClassUnder("PKCS12", runtime.getObject(), ALLOCATOR);
         _PKCS12.defineClassUnder("PKCS12Error", OpenSSLError, OpenSSLError.getAllocator());
@@ -433,12 +436,14 @@ public class PKCS12 extends RubyObject {
             }
 
             final PBKDF2Params pbkdf2 = PBKDF2Params.getInstance(kdf.getParameters());
-            if (pbkdf2.getKeyLength() == null) {
-                throw new OperatorCreationException("PBMAC1 PBKDF2 key length is missing");
+            // RFC 9579 / OpenSSL reject a missing or out-of-range PBKDF2 keyLength (0 < len <= EVP_MAX_MD_SIZE)
+            final int keyBytes = pbkdf2.getKeyLength() == null ? 0 : pbkdf2.getKeyLength().intValueExact();
+            if (keyBytes <= 0 || keyBytes > MAX_MAC_KEY_LENGTH) {
+                throw new OperatorCreationException("PBMAC1 PBKDF2 key length is out of range");
             }
 
             final AlgorithmIdentifier macAlgorithm = AlgorithmIdentifier.getInstance(params.getObjectAt(1));
-            final int keySize = Math.multiplyExact(pbkdf2.getKeyLength().intValueExact(), 8);
+            final int keySize = keyBytes * 8;
 
             return new JcePBMac1CalculatorBuilder(macAlgorithm.getAlgorithm().getId(), keySize,
                     ignored -> macAlgorithm)

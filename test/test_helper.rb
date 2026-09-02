@@ -10,6 +10,8 @@ TestCase = Test::Unit::TestCase
 
 class TestCase
 
+  CI = ENV['CI'] == 'true'
+
   def setup; require 'openssl' end
 
   alias assert_raise assert_raises unless method_defined?(:assert_raise)
@@ -167,7 +169,7 @@ class TestCase
   end
 end
 
-Test::Unit::AutoRunner.prepare { |runner| runner.runner_options[:use_color] = true } if ENV['CI']
+Test::Unit::AutoRunner.prepare { |runner| runner.runner_options[:use_color] = true } if TestCase::CI
 
 if bc_version = ENV['BC_VERSION']
   if TestCase.bc_version != bc_version

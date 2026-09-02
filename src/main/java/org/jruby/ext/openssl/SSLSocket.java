@@ -556,9 +556,12 @@ public class SSLSocket extends RubyObject {
 
         channel.configureBlocking(false);
         final Selector selector = runtime.getSelectorPool().get();
-        final SelectionKey key = channel.register(selector, operations);
+        SelectionKey key = null;
+
+        if ( blocking ) io.addBlockingThread(thread);
 
         try {
+            key = channel.register(selector, operations);
             final int[] result = new int[1];
 
             if ( ! blocking ) {
@@ -588,7 +591,6 @@ public class SSLSocket extends RubyObject {
                     throw newIOError(runtime, ex);
                 }
             } else {
-                io.addBlockingThread(thread);
                 thread.executeBlockingTask(new RubyThread.BlockingTask() {
                     public void run() {
                         try {
@@ -605,7 +607,6 @@ public class SSLSocket extends RubyObject {
                     }
                 });
             }
-
 
             switch ( result[0] ) {
                 case READ_WOULD_BLOCK_RESULT :

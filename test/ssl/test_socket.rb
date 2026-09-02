@@ -102,6 +102,44 @@ class TestSSLSocket < TestCase
     end
   end if RUBY_VERSION > '2.2'
 
+  def test_blocking_sysread_interrupted_by_concurrent_close
+    iterations = Integer(ENV.fetch('SSL_CLOSE_RACE_ITERATIONS', ITERATIONS))
+    server_proc = proc { |_ctx, ssl| ssl.read rescue nil }
+    completed = 0
+
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true, :server_proc => server_proc) do |_, port|
+      iterations.times do |iteration|
+        server_connect(port) do |ssl|
+          started_queue = Queue.new
+          reader = Thread.new do
+            Thread.current.report_on_exception = false
+            started_queue << true
+            ssl.sysread(1)
+          rescue IOError, EOFError, OpenSSL::SSL::SSLError, SystemCallError
+          end
+
+          started_queue.pop
+          ssl.close
+
+          if reader.join(1)
+            completed += 1
+          else
+            backtrace = reader.backtrace
+            # reader.kill
+            # reader.join
+            flunk "blocking sysread did not stop after concurrent close " \
+                  "(iteration #{iteration + 1}/#{iterations}):\n  #{backtrace.join("\n  ")}"
+          end
+        ensure
+          reader.kill if reader&.alive?
+          reader.join if reader
+        end
+      end
+    end
+
+    assert_equal iterations, completed
+  end
+
   def test_read_nonblock
     start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true) { |_, port|
       ctx = OpenSSL::SSL::SSLContext.new

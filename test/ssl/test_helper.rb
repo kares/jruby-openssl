@@ -6,7 +6,7 @@ module SSLTestHelper
   # RUBY = EnvUtil.rubybin
   SSL_SERVER = File.join(File.dirname(__FILE__), "ssl_server.rb")
   PORT = 20443
-  ITERATIONS = ($0 == __FILE__) ? 100 : 10
+  ITERATIONS = TestCase::CI ? 100 : 10
 
   def setup;
 

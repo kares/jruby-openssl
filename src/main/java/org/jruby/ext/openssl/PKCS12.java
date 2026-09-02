@@ -24,10 +24,12 @@
 package org.jruby.ext.openssl;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.PublicKey;
@@ -47,6 +49,8 @@ import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.pkcs.ContentInfo;
+import org.bouncycastle.asn1.pkcs.MacData;
+import org.bouncycastle.asn1.pkcs.PBKDF2Params;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -57,18 +61,16 @@ import org.bouncycastle.operator.InputDecryptorProvider;
 import org.bouncycastle.operator.MacCalculator;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.OutputEncryptor;
-import org.bouncycastle.operator.PBEMacCalculatorProvider;
 import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilder;
-import org.bouncycastle.pkcs.PKCS12MacCalculatorBuilderProvider;
 import org.bouncycastle.pkcs.PKCS12PfxPdu;
 import org.bouncycastle.pkcs.PKCS12PfxPduBuilder;
 import org.bouncycastle.pkcs.PKCS12SafeBag;
 import org.bouncycastle.pkcs.PKCS12SafeBagBuilder;
 import org.bouncycastle.pkcs.PKCS12SafeBagFactory;
 import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS12SafeBagBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePBMac1CalculatorBuilder;
-import org.bouncycastle.pkcs.jcajce.JcePBMac1CalculatorProviderBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePKCS12MacCalculatorBuilderProvider;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder;
 import org.bouncycastle.pkcs.jcajce.JcePKCSPBEOutputEncryptorBuilder;
@@ -278,7 +280,7 @@ public class PKCS12 extends RubyObject {
         final Provider provider = SecurityHelper.getSecurityProvider();
         final PKCS12PfxPdu pfx = new PKCS12PfxPdu(storeBytes);
 
-        if (pfx.hasMac() && !pfx.isMacValid(macCalculatorBuilderProvider(provider), password)) {
+        if (pfx.hasMac() && !isMacValid(pfx, provider, password)) {
             throw newPKCS12Error(runtime, "PKCS12 MAC verification failed");
         }
 
@@ -400,25 +402,58 @@ public class PKCS12 extends RubyObject {
      * PBMAC1 (RFC 9579) is what OpenSSL (3) writes under FIPS
      * PKCS12 provider only knows the classic (PKCS12KDF) MAC, which is not approved
      */
-    private static PKCS12MacCalculatorBuilderProvider macCalculatorBuilderProvider(final Provider provider) {
-        final PKCS12MacCalculatorBuilderProvider pkcs12Calculator =
-            new JcePKCS12MacCalculatorBuilderProvider().setProvider(provider);
-        final PBEMacCalculatorProvider pbMac1Calculator =
-            new JcePBMac1CalculatorProviderBuilder().setProvider(provider).build();
+    private static boolean isMacValid(final PKCS12PfxPdu pfx, final Provider provider, final char[] password)
+        throws PKCSException, OperatorCreationException, IOException {
 
-        return algorithmId -> {
-            if (!id_PBMAC1.equals(algorithmId.getAlgorithm())) {
-                return pkcs12Calculator.get(algorithmId);
+        final MacData macData = pfx.toASN1Structure().getMacData();
+        final AlgorithmIdentifier algorithmId = macData.getMac().getAlgorithmId();
+        if (!id_PBMAC1.equals(algorithmId.getAlgorithm())) {
+            return pfx.isMacValid(new JcePKCS12MacCalculatorBuilderProvider().setProvider(provider), password);
+        }
+
+        // older BC-FIPS releases do not implement RFC 9579 PBMAC1 verification
+        final MacCalculator calculator = pbMac1Calculator(algorithmId, provider, password);
+        final ASN1OctetString authSafe = ASN1OctetString.getInstance(pfx.toASN1Structure().getAuthSafe().getContent());
+        try (OutputStream output = calculator.getOutputStream()) {
+            output.write(authSafe.getOctets());
+        }
+        return MessageDigest.isEqual(calculator.getMac(), macData.getMac().getDigest());
+    }
+
+    private static MacCalculator pbMac1Calculator(final AlgorithmIdentifier algorithmId,
+                                                  final Provider provider,
+                                                  final char[] password)
+        throws OperatorCreationException {
+
+        try {
+            final ASN1Sequence params = ASN1Sequence.getInstance(algorithmId.getParameters());
+            final AlgorithmIdentifier kdf = AlgorithmIdentifier.getInstance(params.getObjectAt(0));
+            if (!PKCSObjectIdentifiers.id_PBKDF2.equals(kdf.getAlgorithm())) {
+                throw new OperatorCreationException("PBMAC1 KDF is not PBKDF2");
             }
-            return new PKCS12MacCalculatorBuilder() {
-                public MacCalculator build(char[] password) throws OperatorCreationException {
-                    return pbMac1Calculator.get(algorithmId, password);
-                }
-                public AlgorithmIdentifier getDigestAlgorithmIdentifier() {
-                    return algorithmId;
-                }
-            };
-        };
+
+            final PBKDF2Params pbkdf2 = PBKDF2Params.getInstance(kdf.getParameters());
+            if (pbkdf2.getKeyLength() == null) {
+                throw new OperatorCreationException("PBMAC1 PBKDF2 key length is missing");
+            }
+
+            final AlgorithmIdentifier macAlgorithm = AlgorithmIdentifier.getInstance(params.getObjectAt(1));
+            final int keySize = Math.multiplyExact(pbkdf2.getKeyLength().intValueExact(), 8);
+
+            return new JcePBMac1CalculatorBuilder(macAlgorithm.getAlgorithm().getId(), keySize,
+                    ignored -> macAlgorithm)
+                .setProvider(provider)
+                .setSalt(pbkdf2.getSalt())
+                .setIterationCount(pbkdf2.getIterationCount().intValueExact())
+                .setPrf(pbkdf2.getPrf())
+                .build(password);
+        }
+        catch (OperatorCreationException e) {
+            throw e;
+        }
+        catch (Exception e) {
+            throw new OperatorCreationException("unable to create PBMAC1 calculator", e);
+        }
     }
 
     // PBES2 with PBKDF2 (HMAC-SHA256) - what OpenSSL uses to protect key/cert bags

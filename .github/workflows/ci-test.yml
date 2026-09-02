@@ -13,66 +13,77 @@ env:
 jobs:
 
   maven-test:
+    name: ${{ matrix.runtime.ruby }} / Java ${{ matrix.runtime.java }} / ${{ matrix.test-target }}
     runs-on: ubuntu-22.04
 
     strategy:
       matrix:
-        ruby-version: [ jruby-10.0.6.0 ]
-        java-version: [ 11, 21, 25 ]
-        distribution: [ temurin ]
-        include:
-          - java-version: 21
+        runtime:
+          - ruby: jruby-10.0.6.0
+            java: 11
+            distribution: temurin
+          - ruby: jruby-10.0.6.0
+            java: 21
+            distribution: temurin
+          - ruby: jruby-10.0.6.0
+            java: 25
+            distribution: temurin
+          - java: 21
             distribution: oracle
-            ruby-version: jruby-9.4.15.0
-          - java-version: 11
+            ruby: jruby-9.4.15.0
+          - java: 11
             distribution: corretto
-            ruby-version: jruby-9.4.14.0
-          - java-version: 11
+            ruby: jruby-9.4.14.0
+          - java: 11
             distribution: zulu
-            ruby-version: jruby-9.4.8.0
-          - java-version: 11
+            ruby: jruby-9.4.8.0
+          - java: 11
             distribution: temurin
-            ruby-version: jruby-9.3.13.0
-          - java-version: 11
+            ruby: jruby-9.3.13.0
+          - java: 11
             distribution: temurin
-            ruby-version: jruby-9.3.3.0
-          - java-version: 11
+            ruby: jruby-9.3.3.0
+          - java: 11
             distribution: temurin
-            ruby-version: jruby-9.2.19.0
-          - java-version: 11
+            ruby: jruby-9.2.19.0
+          - java: 11
             distribution: temurin
-            ruby-version: jruby-9.2.20.1
-          - java-version: 24
+            ruby: jruby-9.2.20.1
+          - java: 24
             distribution: corretto
-            ruby-version: jruby-10.0.5.0
-          - java-version: 21
+            ruby: jruby-10.0.5.0
+          - java: 21
             distribution: oracle
-            ruby-version: jruby-10.0.1.0
-          - java-version: 21
+            ruby: jruby-10.0.1.0
+          - java: 21
             distribution: zulu
-            ruby-version: jruby-10.1.0.0
-          - java-version: 25
+            ruby: jruby-10.1.0.0
+          - java: 25
             distribution: temurin
-            ruby-version: jruby-10.1.0.0
-          - java-version: 21
+            ruby: jruby-10.1.0.0
+          - java: 21
             distribution: corretto
-            ruby-version: jruby-head
+            ruby: jruby-head
+        test-target:
+          - test
+          - test:provider:bc_all
+          - test:provider:bc_wout_jsse
       fail-fast: false
 
     steps:
       - name: checkout
         uses: actions/checkout@v2
 
-      - name: set up java ${{ matrix.java-version }}
+      - name: set up java ${{ matrix.runtime.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: ${{ matrix.java-version }}
-          distribution: ${{ matrix.distribution }}
+          java-version: ${{ matrix.runtime.java }}
+          distribution: ${{ matrix.runtime.distribution }}
 
-      - name: set up ${{ matrix.ruby-version }}
+      - name: set up ${{ matrix.runtime.ruby }}
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby-version }}
+          ruby-version: ${{ matrix.runtime.ruby }}
 
       - name: install bundler
         run: jruby -S gem install bundler -v "~>2.2.28"
@@ -84,8 +95,9 @@ jobs:
         run: jruby -rbundler/setup -S rake test_prepare
 
       - name: mvn test
+        if: matrix.test-target == 'test'
         run: ./mvnw test
 
-      - name: rake test:all
-        run: jruby -rbundler/setup -S rake test:all
+      - name: rake ${{ matrix.test-target }}
+        run: jruby -rbundler/setup -S rake ${{ matrix.test-target }}
         timeout-minutes: 15

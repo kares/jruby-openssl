@@ -1167,6 +1167,12 @@ public class ASN1 {
         throws IOException, IllegalArgumentException {
         final byte[] asn1 = in.bytes();
         int offset = in.offset();
+
+        if (in.available() >= 2 && asn1[offset] == 0 && asn1[offset + 1] == 0) {
+            in.skip(2);
+            return EndOfContent.newInstance(context);
+        }
+
         final int tag = asn1[offset] & 0xFF;
 
         if ( ( tag & BERTags.CONSTRUCTED ) == 0 ) {
@@ -1764,10 +1770,6 @@ public class ASN1 {
             return getRuntime().newFixnum( id.intValue() );
         }
 
-        final IRubyObject value() {
-            return value(getRuntime().getCurrentContext());
-        }
-
         IRubyObject value(final ThreadContext context) {
             return callMethod(context, "value");
         }
@@ -1776,7 +1778,7 @@ public class ASN1 {
 
         @Override
         public String toString() {
-            return value().toString();
+            return value(getRuntime().getCurrentContext()).toString();
         }
 
         protected final void print() {
@@ -1786,7 +1788,7 @@ public class ASN1 {
         protected void print(int indent) {
             final PrintStream out = getRuntime().getOut();
             printIndent(out, indent);
-            final IRubyObject value = value();
+            final IRubyObject value = value(getRuntime().getCurrentContext());
             out.println("ASN1Data: ");
             if ( value instanceof RubyArray ) {
                 printArray(out, indent, (RubyArray) value);
@@ -1801,7 +1803,7 @@ public class ASN1 {
 
         static void printArray(final PrintStream out, final int indent, final RubyArray array) {
             for ( int i = 0; i < array.size(); i++ ) {
-                ((ASN1Data) array.entry(i)).print(indent + 1);
+                ((ASN1Data) array.eltInternal(i)).print(indent + 1);
             }
         }
 
@@ -1939,7 +1941,7 @@ public class ASN1 {
                     }
                     catch (IllegalArgumentException e) {
                         // e.g. in case of nil "string  not an OID"
-                        throw runtime.newTypeError(e.getMessage());
+                        throw newASN1Error(runtime, e.getMessage());
                     }
                     if ( name != null ) value = runtime.newString(name);
                     break;
@@ -2025,7 +2027,11 @@ public class ASN1 {
 
             final IRubyObject val = value(context);
             if ( type == ASN1ObjectIdentifier.class ) {
-                return getObjectID(context.runtime, val.toString());
+                try {
+                    return getObjectID(context.runtime, val.toString());
+                } catch (IllegalArgumentException e) {
+                    throw newASN1Error(context.runtime, e.getMessage());
+                }
             }
             if ( type == DERNull.class || type == ASN1Null.class ) {
                 return DERNull.INSTANCE;
@@ -2132,7 +2138,8 @@ public class ASN1 {
             printIndent(out, indent);
             out.print(getMetaClass().getRealClass().getBaseName());
             out.print(": ");
-            out.println(value().callMethod(getRuntime().getCurrentContext(), "inspect").toString());
+            final ThreadContext context = getRuntime().getCurrentContext();
+            out.println(value(context).callMethod(context, "inspect").toString());
         }
 
     }
@@ -2256,8 +2263,12 @@ public class ASN1 {
                 return toDERInternal(context, true, isInfiniteLength(), value(context));
             }
 
-            if (isEOC(context)) {
+            if ( isEOC(context) ) {
                 return toDERInternal(context, true, isIndefiniteLength, null);
+            }
+
+            if ( !isTagged() && isSet() ) {
+                return setToDER(context);
             }
 
             Class<? extends ASN1Encodable> type = typeClass( getMetaClass() );
@@ -2321,7 +2332,26 @@ public class ASN1 {
 
         private byte[] setToDER(final ThreadContext context) throws IOException {
             final ASN1EncodableVector values = toASN1EncodableVector(context);
-            return new BERSet(values).toASN1Primitive().getEncoded();
+            if (isInfiniteLength()) return new BERSet(values).toASN1Primitive().getEncoded();
+
+            final ByteArrayOutputStream content = new ByteArrayOutputStream(64);
+            for (int i = 0; i < values.size(); i++) {
+                final ASN1Encodable value = values.get(i);
+                if (value instanceof InternalEncodable) {
+                    final byte[] nested = ((InternalEncodable) value).entry.toDER(context);
+                    content.write(nested, 0, nested.length);
+                }
+                else {
+                    final byte[] encoded = value.toASN1Primitive().getEncoded(ASN1Encoding.DER);
+                    content.write(encoded, 0, encoded.length);
+                }
+            }
+
+            final ByteArrayOutputStream out = new ByteArrayOutputStream(content.size() + 4);
+            writeDERIdentifier(getTag(context), getTagClass(context) | BERTags.CONSTRUCTED, out);
+            writeDERLength(content.size(), out);
+            content.writeTo(out);
+            return out.toByteArray();
         }
 
         // Applies EXPLICIT or IMPLICIT tagging to an already-encoded indefinite-length
@@ -2348,10 +2378,12 @@ public class ASN1 {
 
         private ASN1EncodableVector toASN1EncodableVector(final ThreadContext context) {
             final ASN1EncodableVector vec = new ASN1EncodableVector();
-            final IRubyObject value = value(context);
             final RubyArray val = valueAsArray(context);
             for ( int i = 0; i < val.size(); i++ ) {
-                if ( addEntry(context, vec, val.entry(i)) ) break;
+                if ( val.eltInternal(i) instanceof EndOfContent && i != val.size() - 1 ) {
+                    throw newASN1Error(context.runtime, "illegal EOC octets in value");
+                }
+                if ( addEntry(context, vec, val.eltInternal(i)) ) break;
             }
             return vec;
         }
@@ -2364,7 +2396,7 @@ public class ASN1 {
                 if (!value.respondsTo("to_a")) {
                     throw context.runtime.newTypeError("can't convert " + value.getMetaClass().getName() + " into Array");
                 }
-                return (RubyArray) value.callMethod(context, "to_a");
+                return value.callMethod(context, "to_a").convertToArray();
             }
         }
 
@@ -2415,7 +2447,7 @@ public class ASN1 {
             if ( value instanceof RubyArray ) {
                 final RubyArray val = (RubyArray) value;
                 for ( int i = 0; i < val.size(); i++ ) {
-                    block.yield(context, val.entry(i));
+                    block.yield(context, val.eltInternal(i));
                 }
             }
             else {

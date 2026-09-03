@@ -190,14 +190,7 @@ class TestASN1 < TestCase
 
     assert_equal(OpenSSL::ASN1::BitString, sig_val.class)
     cululated_sig = key.sign(OpenSSL::Digest.new('SHA256'), tbs_cert.to_der)
-    # TODO: Import Issue
-    # Fails from import with:
-    # <"\x9E\x19\xE3oI\xC0\x85n$\xF4\xCE\n" +
-    # "\x87\xA6\xFCu\x1AQbti\xB1\xE0o\xD5\x18?}\xFAEq\xC8\xEF\x17K\xCA|d\xDEu;%\xFB\xA1\xD4\x14\x04\x837\x90E\xAC.p=\x14\xA7\x8B\xAE\xC4\xBE-\x99\xBAx\xB8\x9B+\x87\x80\e\xA1\x17{\fV\xA0\xCF\xA60b\xDFc\x06\x81\xFB\xD3:\x01\x17\x8F\xC5[\xE0m\xAB,\xD3D\xBE\xA0\xA5\x8C\x1E\xCB\x18!\xBF&\x17\xA6\xCF\x8A\xDD\xF1\xB4\x1C\x89\xD8t\xAEz\x95\xC6\xE4\x9E\xA3\xA4">
-    # expected but was
-    # <",\xF4.\x1CH\xD5y\xFE\x05~\xB2\x05\xB7\xCB{2VwdZ\xD7\r^\x87AF\x16\x1A\xC8+U\xA1\xCA'\x1Ca\xCE}\xD2H<g\x9D\b\xB3\rz\x81f\x8Eu\x16+G\x84\xF8\xDB\xDF\xC8YV\xE3Fa\x14\x16\b\x86\xF7\xB7w\xCB9\xA67\x11\x91MJ\n" +
-    # "\x83M{3\x1D|\xBCK\xF8\xFA\ei\xAC\xFD\xF7q\xE6\xC5\xD8\xDC.$\x99\x94\xE9\xC4rl\xE5D\x82\x17\x03\x81\x96)\e\xE0\xCE\x02\x13y\xBD\xB5\x843V\x8A">
-    #assert_equal(cululated_sig, sig_val.value)
+    assert_equal(cululated_sig, sig_val.value)
   end
 
   def test_encode_boolean
@@ -205,9 +198,7 @@ class TestASN1 < TestCase
   end
 
   def test_end_of_content
-    # TODO: Import Issue
-    # raises OpenSSL::ASN1::ASN1Error: unexpected end-of-contents marker
-    #encode_decode_test B(%w{ 00 00 }), OpenSSL::ASN1::EndOfContent.new
+    encode_decode_test B(%w{ 00 00 }), OpenSSL::ASN1::EndOfContent.new
     assert_raise(OpenSSL::ASN1::ASN1Error) {
       OpenSSL::ASN1.decode(B(%w{ 00 01 00 }))
     }
@@ -355,18 +346,14 @@ class TestASN1 < TestCase
       assert_equal name, obj.sn
       assert_equal name, obj.ln
     end
-    # TODO: Import Issue
-    # Fails with: <OpenSSL::ASN1::ASN1Error> expected but was <RuntimeError(<(TypeError) string  not an OID>)
-    #assert_raise(OpenSSL::ASN1::ASN1Error) {
-    #  OpenSSL::ASN1.decode(B(%w{ 06 00 }))
-    #}
-    #assert_raise(OpenSSL::ASN1::ASN1Error) {
-    #  OpenSSL::ASN1.decode(B(%w{ 06 01 80 }))
-    #}
-    # <OpenSSL::ASN1::ASN1Error> expected but was <TypeError(<string 3.0 not an OID>)
-    #assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1::ObjectId.new("3.0".b).to_der }
-    # <OpenSSL::ASN1::ASN1Error> exception was expected but none was thrown.
-    #assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1::ObjectId.new("0.40".b).to_der }
+    assert_raise(OpenSSL::ASN1::ASN1Error) {
+      OpenSSL::ASN1.decode(B(%w{ 06 00 }))
+    }
+    assert_raise(OpenSSL::ASN1::ASN1Error) {
+      OpenSSL::ASN1.decode(B(%w{ 06 01 80 }))
+    }
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1::ObjectId.new("3.0".b).to_der }
+    assert_raise(OpenSSL::ASN1::ASN1Error) { OpenSSL::ASN1::ObjectId.new("0.40".b).to_der }
 
     oid = (0...100).to_a.join(".").b
     obj = OpenSSL::ASN1::ObjectId.new(oid)
@@ -385,22 +372,16 @@ class TestASN1 < TestCase
     ]
 
     aki.each do |a|
-      # TODO: Import Issue
-      # None of these are equivalent to each other
-      #aki.each do |b|
-      #  assert a == b
-      #end
+      aki.each do |b|
+        assert a == b
+      end
 
       ski.each do |b|
         refute a == b
       end
     end
 
-    # TODO: Import Issue
-    # <TypeError> exception was expected but none was thrown.
-    #assert_raise(TypeError) {
-    #  OpenSSL::ASN1::ObjectId.new("authorityKeyIdentifier") == nil
-    #}
+    assert_equal false, OpenSSL::ASN1::ObjectId.new("authorityKeyIdentifier") == nil
 
     oid = OpenSSL::ASN1::ObjectId.new("2.5.29.14")
     assert_equal true, oid == OpenSSL::ASN1::ObjectId.new("2.5.29.14")
@@ -467,9 +448,7 @@ class TestASN1 < TestCase
       OpenSSL::ASN1::EndOfContent.new,
     ])
     obj.indefinite_length = true
-    # TODO: Import Issue
-    # <OpenSSL::ASN1::ASN1Error> exception was expected but none was thrown.
-    #assert_raise(OpenSSL::ASN1::ASN1Error) { obj.to_der }
+    assert_raise(OpenSSL::ASN1::ASN1Error) { obj.to_der }
 
     # The last EOC in value is ignored if indefinite length form is used
     expected = OpenSSL::ASN1::Sequence.new([
@@ -482,13 +461,11 @@ class TestASN1 < TestCase
 
   def test_set
     encode_decode_test B(%w{ 31 00 }), OpenSSL::ASN1::Set.new([])
-    # TODO: Import Issue
-    # <"1\a\x05\x000\x00\x04\x01\x00"> expected but was <"1\a\x04\x01\x00\x05\x000\x00">
-    #encode_decode_test B(%w{ 31 07 05 00 30 00 04 01 00 }), OpenSSL::ASN1::Set.new([
-    #  OpenSSL::ASN1::Null.new(nil),
-    #  OpenSSL::ASN1::Sequence.new([]),
-    #  OpenSSL::ASN1::OctetString.new(B(%w{ 00 }))
-    #])
+    encode_decode_test B(%w{ 31 07 05 00 30 00 04 01 00 }), OpenSSL::ASN1::Set.new([
+      OpenSSL::ASN1::Null.new(nil),
+      OpenSSL::ASN1::Sequence.new([]),
+      OpenSSL::ASN1::OctetString.new(B(%w{ 00 }))
+    ])
     expected = OpenSSL::ASN1::Set.new([OpenSSL::ASN1::OctetString.new(B(%w{ 00 }))])
     expected.indefinite_length = true
     encode_decode_test B(%w{ 31 80 04 01 00 00 00 }), expected
@@ -712,23 +689,15 @@ class TestASN1 < TestCase
   end
 
   def test_octet_string_constructed_tagging
-    #octets = [ OpenSSL::ASN1::OctetString.new('aaa') ]
-    #cons = OpenSSL::ASN1::Constructive.new(octets, 0, :IMPLICIT)
-    # TODO: Import Issues
-    # OpenSSL::ASN1::ASN1Error: Constructive shall only be used with indefinite length
-    #encode_test B(%w{ A0 05 04 03 61 61 61 }), cons
+    octets = [ OpenSSL::ASN1::OctetString.new('aaa') ]
+    cons = OpenSSL::ASN1::Constructive.new(octets, 0, :IMPLICIT)
+    encode_test B(%w{ A0 05 04 03 61 61 61 }), cons
 
-    #octets = [ OpenSSL::ASN1::OctetString.new('aaa'),
-    #           OpenSSL::ASN1::EndOfContent.new() ]
-    #cons = OpenSSL::ASN1::Constructive.new(octets, 0, :IMPLICIT)
-    #cons.indefinite_length = true
-    # Java::JavaLang::UnsupportedOperationException:
-    # #<OpenSSL::ASN1::Constructive:0x4a86be01 @tag=0,
-    # @value=[#<OpenSSL::ASN1::OctetString:0x53b907d9 @tag=4, @value="aaa",
-    # @tag_class=:UNIVERSAL, @tagging=nil, @indefinite_length=false>,
-    # #<OpenSSL::ASN1::EndOfContent:0x2c3b0cc8 @tag=0, @value="",
-    # @tag_class=:UNIVERSAL>], @tag_class=:CONTEXT_SPECIFIC, @tagging=:IMPLICIT, @indefinite_length=true>
-    #encode_test B(%w{ A0 80 04 03 61 61 61 00 00 }), cons
+    octets = [ OpenSSL::ASN1::OctetString.new('aaa'),
+               OpenSSL::ASN1::EndOfContent.new() ]
+    cons = OpenSSL::ASN1::Constructive.new(octets, 0, :IMPLICIT)
+    cons.indefinite_length = true
+    encode_test B(%w{ A0 80 04 03 61 61 61 00 00 }), cons
   end
 
   def test_recursive_octet_string_indefinite_length

@@ -155,6 +155,34 @@ class TestSSLSocket < TestCase
     }
   end
 
+  def test_partial_tls_record_read_nonblock
+    ready = Queue.new
+    written = Queue.new
+    result = Queue.new
+    server_proc = proc do |_ctx, ssl|
+      ready << true
+      written.pop
+      begin
+        ssl.read_nonblock(1)
+        result << :read
+      rescue IO::WaitReadable
+        result << :wait_readable
+      end
+    end
+
+    ctx_proc = proc { |ctx| ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION }
+    start_server0(PORT, OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc, server_proc: server_proc) do |_, port|
+      ctx = OpenSSL::SSL::SSLContext.new
+      ctx.max_version = OpenSSL::SSL::TLS1_2_VERSION
+      server_connect(port, ctx) do |ssl|
+        ready.pop
+        ssl.io.write("\x17") # TLS application-data record type
+        written << true
+        assert_equal :wait_readable, result.pop
+      end
+    end
+  end
+
   def test_readbyte
     server_proc = proc do |_ctx, ssl|
       ssl.write("ab")

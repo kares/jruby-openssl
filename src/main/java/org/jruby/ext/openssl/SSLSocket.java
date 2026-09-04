@@ -1035,14 +1035,9 @@ public class SSLSocket extends RubyObject {
                 // post-handshake processing (e.g. TLS 1.3 NewSessionTicket) signaled would-block
                 if ( isWouldBlockResult(read) ) return wouldBlockSymbol(read);
 
-                if ( read == 0 && netReadData.position() == 0 ) {
-                    // If we didn't get any data back and there is no buffered network data left to process,
-                    // wait for more data from the network instead of spinning until it arrives.
-                    // In blocking mode this blocks; in non-blocking mode it raises/returns "read would block".
-                    //
-                    // We check netReadData.position() rather than status == BUFFER_UNDERFLOW because readAndUnwrap
-                    // may have successfully consumed a non-application record (e.g. a TLS 1.3 NewSessionTicket)
-                    // leaving status == OK with zero app bytes produced and nothing left in the network buffer.
+                if ( read == 0 && ( status == SSLEngineResult.Status.BUFFER_UNDERFLOW ||
+                                    netReadData.position() == 0 ) ) {
+                    // wait for more TLS record bytes or after a consumed non-application record
                     final Object ex = waitSelect(SelectionKey.OP_READ, blocking, exception);
                     if ( ex instanceof IRubyObject ) return (IRubyObject) ex; // :wait_readable
                 }

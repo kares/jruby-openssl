@@ -206,6 +206,11 @@ public class OCSPRequest extends RubyObject {
         Ruby runtime = getRuntime();
         return RubyArray.newArray(runtime, certificateIds);
     }
+
+    @JRubyMethod(name = "signed?")
+    public RubyBoolean signed_p() {
+        return getRuntime().newBoolean(asn1bcReq != null && asn1bcReq.getOptionalSignature() != null);
+    }
     
     @JRubyMethod(name = "check_nonce")
     public IRubyObject check_nonce(ThreadContext context, IRubyObject response) {

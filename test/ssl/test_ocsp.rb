@@ -163,6 +163,18 @@ class TestOCSP < TestCase
     assert_equal 0, req2.check_nonce(bres)
   end
 
+  def test_request_is_signed
+    cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert)
+    req = OpenSSL::OCSP::Request.new.add_certid(cid)
+
+    assert_equal false, req.signed?
+    assert_equal false, OpenSSL::OCSP::Request.new(req.to_der).signed?
+
+    req.sign(@cert, @cert_key, [], 0, OpenSSL::Digest::SHA256.new)
+    assert_equal true, req.signed?
+    assert_equal true, OpenSSL::OCSP::Request.new(req.to_der).signed?
+  end
+
   def test_request_dup
     request = OpenSSL::OCSP::Request.new
     cid = OpenSSL::OCSP::CertificateId.new(@cert, @ca_cert, OpenSSL::Digest::SHA1.new)

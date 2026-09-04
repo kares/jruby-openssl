@@ -141,14 +141,6 @@ EOF
     crl = OpenSSL::X509::CRL.new(crl.to_der)
     exts = crl.extensions
 
-    # MRI expects to retain extension order : crlNumber, authorityKeyIdentifier, issuerAltName
-    exts = exts.dup
-    ext1 = exts.find { |ext| ext.oid == 'authorityKeyIdentifier' }
-    exts.delete(ext1); exts.unshift(ext1)
-    ext0 = exts.find { |ext| ext.oid == 'crlNumber' }
-    exts.delete(ext0); exts.unshift(ext0)
-    # MRI
-
     assert_equal(3, exts.size)
     assert_equal("1", exts[0].value)
     assert_equal("crlNumber", exts[0].oid)

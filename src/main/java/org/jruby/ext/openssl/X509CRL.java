@@ -42,15 +42,16 @@ import java.security.cert.CRLException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509CRLEntry;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Comparator;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -75,6 +76,7 @@ import org.jruby.RubyTime;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.openssl.log.Logger;
+import org.jruby.ext.openssl.shim.ASN1Shim;
 import org.jruby.ext.openssl.x509store.PEMInputOutput;
 import org.jruby.runtime.Arity;
 import org.jruby.runtime.Block;
@@ -253,15 +255,35 @@ public class X509CRL extends RubyObject {
     }
 
     private void extractExtensions(final ThreadContext context) {
-        if ( crlHolder != null ) extractExtensions(context, crlHolder);
-        else extractExtensionsCRL(context, getCRL());
+        if (crlHolder != null) {
+            extractExtensions(context, crlHolder);
+            return;
+        }
+
+        final java.security.cert.X509CRL crl = getCRL();
+        try { // CertificateList contains TBSCertList with [0] EXPLICIT extensions last
+            final ASN1Sequence certList = ASN1Sequence.getInstance(
+                    new ASN1InputStream(crl.getEncoded()).readObject());
+            final ASN1Sequence tbsCertList = ASN1Sequence.getInstance(certList.getObjectAt(0));
+            final ASN1Encodable last = tbsCertList.getObjectAt(tbsCertList.size() - 1);
+            if (last instanceof ASN1TaggedObject && ((ASN1TaggedObject) last).getTagNo() == 0) {
+                final Extensions extensions = Extensions.getInstance(ASN1Shim.getTaggedObject((ASN1TaggedObject) last));
+                for (ASN1ObjectIdentifier oid : extensions.getExtensionOIDs()) addExtension(context, oid, extensions);
+                return;
+            }
+        } catch (IOException | CRLException | IllegalArgumentException e) {
+            LOG.debugStack(context.runtime, "unable to process CRL extensions in order", e);
+        }
+
+        extractExtensionsCRL(context, crl); // fallback
     }
 
     @SuppressWarnings("unchecked")
     private void extractExtensions(final ThreadContext context, final X509CRLHolder crl) {
-        if ( ! crlHolder.hasExtensions() ) return;
-        for ( ASN1ObjectIdentifier oid : (Collection<ASN1ObjectIdentifier>) crl.getExtensionOIDs() ) {
-            addExtension(context, oid, crl);
+        if (crl.getExtensions() != null) {
+            for (ASN1ObjectIdentifier oid : crl.getExtensions().getExtensionOIDs()) {
+                addExtension(context, oid, crl);
+            }
         }
     }
 
@@ -272,10 +294,14 @@ public class X509CRL extends RubyObject {
         this.extensions.append(extension);
     }
 
-    private void extractExtensionsCRL(final ThreadContext context,
-        final java.security.cert.X509Extension crl) {
-        //final RubyClass _Extension = _Extension(context.runtime);
+    private void addExtension(final ThreadContext context,
+        final ASN1ObjectIdentifier extOID, final Extensions extensions) {
+        final Extension ext = extensions.getExtension(extOID);
+        final IRubyObject extension = newExtension(context.runtime, extOID, ext);
+        this.extensions.append(extension);
+    }
 
+    private void extractExtensionsCRL(final ThreadContext context, final java.security.cert.X509Extension crl) {
         final Set<String> criticalExtOIDs = crl.getCriticalExtensionOIDs();
         if ( criticalExtOIDs != null ) {
             for ( final String extOID : criticalExtOIDs ) {

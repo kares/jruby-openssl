@@ -107,6 +107,12 @@ module OpenSSL::Buffering
     read(1)&.ord
   end
 
+  # Get the next 8bit byte. Raises EOFError on EOF
+  def readbyte
+    raise EOFError if eof?
+    getbyte
+  end
+
   ##
   # Reads _size_ bytes from the stream.  If _buf_ is provided it must
   # reference a string which will receive the data.
@@ -225,7 +231,7 @@ module OpenSSL::Buffering
   #
   # Unlike IO#gets the separator must be provided if a limit is provided.
 
-  def gets(eol=$/, limit=nil)
+  def gets(eol=$/, limit=nil, chomp: false)
     idx = @rbuffer.index(eol)
     until @eof
       break if idx
@@ -240,7 +246,9 @@ module OpenSSL::Buffering
     if size && limit && limit >= 0
       size = [size, limit].min
     end
-    consume_rbuff(size)
+    line = consume_rbuff(size)
+    line.chomp!(eol) if chomp && line
+    line
   end
 
   ##

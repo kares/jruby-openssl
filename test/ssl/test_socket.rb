@@ -155,6 +155,33 @@ class TestSSLSocket < TestCase
     }
   end
 
+  def test_readbyte
+    server_proc = proc do |_ctx, ssl|
+      ssl.write("ab")
+    end
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, server_proc: server_proc) do |_, port|
+      server_connect(port) do |ssl|
+        assert_equal "a".ord, ssl.readbyte
+        assert_equal "b".ord, ssl.readbyte
+        assert_raise(EOFError) { ssl.readbyte }
+      end
+    end
+  end
+
+  def test_gets_chomp
+    server_proc = proc do |_ctx, ssl|
+      ssl.write("abc\n")
+    end
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, server_proc: server_proc) do |_, port|
+      server_connect(port) do |ssl|
+        assert_equal "abc", ssl.gets(chomp: true)
+        assert_nil ssl.gets(chomp: true)
+      end
+    end
+  end
+
   def test_connect_non_connected; require 'socket'
     socket = OpenSSL::SSL::SSLSocket.new(Socket.new(:INET, :STREAM))
     begin

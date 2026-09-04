@@ -30,8 +30,8 @@ package org.jruby.ext.openssl;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -51,6 +51,7 @@ import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERBitString;
+import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERGeneralString;
 import org.bouncycastle.asn1.DERGeneralizedTime;
 import org.bouncycastle.asn1.DERGraphicString;
@@ -64,7 +65,6 @@ import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.DERUniversalString;
 import org.bouncycastle.asn1.DERVideotexString;
 import org.bouncycastle.asn1.DLSequence;
-import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -74,6 +74,7 @@ import org.bouncycastle.util.encoders.Hex;
 
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
+import org.jruby.RubyBasicObject;
 import org.jruby.RubyBoolean;
 import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
@@ -93,6 +94,7 @@ import org.jruby.ext.openssl.x509store.Name;
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.X509._X509;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
+import static org.jruby.ext.openssl.util.RubySupport.extractKeywordArgs;
 import static org.jruby.ext.openssl.util.RubySupport.newString;
 import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
 
@@ -176,11 +178,13 @@ public class X509Name extends RubyObject {
         oids = new ArrayList<>(4);
         values = new ArrayList<>(4);
         types = new ArrayList<>(4);
+        rdnEnds = new ArrayList<>(4);
     }
 
     private final List<ASN1ObjectIdentifier> oids;
     private final List<ASN1Encodable> values; // <ASN1String>
     private final List<Integer> types;
+    private final List<Integer> rdnEnds;
 
     private transient X500Name name;
     private transient X500Name canonicalName;
@@ -195,7 +199,7 @@ public class X509Name extends RubyObject {
     }
 
     void fromASN1Sequence(final ASN1Sequence seq) {
-        oids.clear(); values.clear(); types.clear();
+        oids.clear(); values.clear(); types.clear(); rdnEnds.clear();
         if ( seq != null ) {
             for ( Enumeration e = seq.getObjects(); e.hasMoreElements(); ) {
                 ASN1Object element = (ASN1Object) e.nextElement();
@@ -220,6 +224,7 @@ public class X509Name extends RubyObject {
             addValue( val );
             addType( runtime, val );
         }
+        rdnEnds.add(oids.size());
     }
 
     private void fromASN1Set(final ASN1Object element) {
@@ -227,6 +232,7 @@ public class X509Name extends RubyObject {
         for ( int i = 0; i < typeAndValue.size(); i++ ) {
             fromASN1Sequence( typeAndValue.getObjectAt(i) );
         }
+        rdnEnds.add(oids.size());
     }
 
     private void fromASN1Sequence(final ASN1Encodable element) {
@@ -364,7 +370,7 @@ public class X509Name extends RubyObject {
 
                 if (type.isNil()) type = getDefaultType(context, name, template);
 
-                add_entry(context, name, value, type);
+                addEntry(context, name, value, type, -1, 0);
             }
         }
         else {
@@ -405,14 +411,36 @@ public class X509Name extends RubyObject {
         }
     } */
 
-    @JRubyMethod
-    public IRubyObject add_entry(ThreadContext context, IRubyObject oid, IRubyObject value) {
-        return add_entry(context, oid, value, context.nil);
+    @JRubyMethod(name = "add_entry", rest = true)
+    public IRubyObject add_entry(final ThreadContext context, final IRubyObject[] args) {
+        final Ruby runtime = context.runtime;
+        if (args.length < 2 || args.length > 3) {
+            throw runtime.newArgumentError(args.length, 2);
+        }
+
+        final IRubyObject oid = args[0];
+        final IRubyObject value = args[1];
+        IRubyObject type = context.nil;
+        int loc = -1;
+        int set = 0;
+        if (args.length == 3) {
+            if (args[2] instanceof RubyHash) {
+                final IRubyObject[] options = extractKeywordArgs(context, (RubyHash) args[2], "type", "loc", "set");
+                if (options[0] != RubyBasicObject.UNDEF) type = options[0];
+                if (options[1] != RubyBasicObject.UNDEF) loc = options[1].convertToInteger().getIntValue();
+                if (options[2] != RubyBasicObject.UNDEF) set = options[2].convertToInteger().getIntValue();
+            }
+            else {
+                type = args[2];
+            }
+        }
+
+        return addEntry(context, oid, value, type, loc, set);
     }
 
-    @JRubyMethod
-    public IRubyObject add_entry(final ThreadContext context,
-        final IRubyObject oid, final IRubyObject value, IRubyObject type) {
+    private IRubyObject addEntry(final ThreadContext context,
+                                 final IRubyObject oid, final IRubyObject value,
+                                 IRubyObject type, final int loc, final int set) {
         final Ruby runtime = context.runtime;
 
         final RubyString oidStr = oid.asString();
@@ -435,7 +463,7 @@ public class X509Name extends RubyObject {
         }
 
         try {
-            addEntry(objectId, value.asString(), typeInt);
+            addEntry(objectId, value.asString(), typeInt, loc, set);
         }
         catch (RuntimeException | IOException e) {
             LOG.debugStack(runtime, null, e);
@@ -445,17 +473,61 @@ public class X509Name extends RubyObject {
         return this;
     }
 
-    private IRubyObject getDefaultType(final ThreadContext context, final RubyString oid) {
+    private void addEntry(final ASN1ObjectIdentifier oid, final RubyString value,
+                          final int type, final int loc, final int set) throws IOException {
+        final ASN1Encodable converted = convertNameEntryValue(oid, value, type);
+        final int rdnCount = rdnEnds.size();
+        final int index = loc < 0 ? rdnCount : loc;
+        if (index < 0 || index > rdnCount) throw newNameError(getRuntime(), "invalid entry location");
+
+        if (set == 0 || rdnCount == 0) {
+            final int entryIndex = index == rdnCount ? oids.size() : rdnStart(index);
+            insertEntry(oid, entryIndex, converted, type);
+            rdnEnds.add(index, entryIndex + 1);
+            incrementRdnEnds(index + 1);
+            return;
+        }
+
+        final int rdnIndex = set < 0 ? (index == rdnCount ? rdnCount - 1 : index - 1) :
+                (index == rdnCount ? rdnCount - 1 : index);
+        if (rdnIndex < 0 || rdnIndex >= rdnCount) throw newNameError(getRuntime(), "invalid entry location");
+
+        final int entryIndex = set < 0 && index < rdnCount ? rdnStart(rdnIndex) : rdnEnds.get(rdnIndex);
+        insertEntry(oid, entryIndex, converted, type);
+        incrementRdnEnds(rdnIndex);
+    }
+
+    private void insertEntry(final ASN1ObjectIdentifier oid, final int index,
+                             final ASN1Encodable value, final int type) {
+        this.name = null;
+        this.canonicalName = null;
+        oids.add(index, oid);
+        values.add(index, value);
+        types.add(index, type);
+    }
+
+    private int rdnStart(final int rdnIndex) {
+        return rdnIndex == 0 ? 0 : rdnEnds.get(rdnIndex - 1);
+    }
+
+    private void incrementRdnEnds(final int start) {
+        for (int i = start; i < rdnEnds.size(); i++) {
+            rdnEnds.set(i, rdnEnds.get(i) + 1);
+        }
+    }
+
+    private static IRubyObject getDefaultType(final ThreadContext context, final RubyString oid) {
         return getDefaultType(context, oid, _Name(context.runtime).getConstant("OBJECT_TYPE_TEMPLATE"));
     }
 
-    private IRubyObject getDefaultType(final ThreadContext context, final IRubyObject oid, final IRubyObject template) {
+    private static IRubyObject getDefaultType(final ThreadContext context,
+                                              final IRubyObject oid, final IRubyObject template) {
         final IRubyObject type = template instanceof RubyHash ?
-                ((RubyHash) template).op_aref(context, oid) : template.callMethod(context, "[]", oid);
+                ((RubyHash) template).op_aref(context, oid) :
+                    template.callMethod(context, "[]", oid);
         return type.isNil() ? _Name(context.runtime).getConstant("DEFAULT_OBJECT_TYPE") : type;
     }
 
-    @SuppressWarnings("unchecked")
     @JRubyMethod(name = "to_s", rest = true)
     public IRubyObject to_s(IRubyObject[] args) {
         int flag = 0;
@@ -463,8 +535,7 @@ public class X509Name extends RubyObject {
             flag = RubyNumeric.fix2int( args[0] );
         }
         final Ruby runtime = getRuntime();
-        // NOTE: historically we haven't screwed this up as ASCII-8BIT as C-OpenSSL does
-        return RubyString.newString(runtime, toFormat(runtime, flag));
+        return newString(runtime, toFormat(runtime, flag, true).toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /* Should follow parameters like this:
@@ -480,61 +551,63 @@ public class X509Name extends RubyObject {
     else
     => /CN=ola.bini/O=sweden/streetAddress=sweden/O=sweden/2.5.4.43343=sweden
      */
-    private StringBuilder toFormat(final Ruby runtime, final int format) {
-        final Iterator<ASN1ObjectIdentifier> oidsIter;
-        final Iterator<Object> valuesIter;
-        if ( format == RFC2253 ) {
-            ArrayList<ASN1ObjectIdentifier> reverseOids = new ArrayList<>(oids);
-            ArrayList<Object> reverseValues = new ArrayList<>(values);
-            Collections.reverse(reverseOids);
-            Collections.reverse(reverseValues);
-            oidsIter = reverseOids.iterator();
-            valuesIter = reverseValues.iterator();
-        } else {
-            oidsIter = oids.iterator();
-            valuesIter = (Iterator) values.iterator();
-        }
-
+    private StringBuilder toFormat(final Ruby runtime, final int format, final boolean escapeNonAscii) {
         final StringBuilder str = new StringBuilder(48); String sep = "";
-        while (oidsIter.hasNext()) {
-            final ASN1ObjectIdentifier oid = oidsIter.next();
-            String oName = name(runtime, oid);
-            if ( oName == null ) oName = oid.toString();
-            final Object value = valuesIter.next(); // ASN1String impl (getString() -> toString())
+        for (int rdn = format == RFC2253 ? rdnEnds.size() - 1 : 0;
+             format == RFC2253 ? rdn >= 0 : rdn < rdnEnds.size(); rdn += format == RFC2253 ? -1 : 1) {
+            final int start = rdnStart(rdn);
+            final int end = rdnEnds.get(rdn);
+            for (int i = format == RFC2253 ? end - 1 : start;
+                 format == RFC2253 ? i >= start : i < end; i += format == RFC2253 ? -1 : 1) {
+                final ASN1ObjectIdentifier oid = oids.get(i);
+                String oName = name(runtime, oid);
+                if ( oName == null ) oName = oid.toString();
+                final Object value = values.get(i);
 
-            switch (format) {
-                case RFC2253:
-                    str.append(sep).append(oName).append('=');
-                    appendValueRFC2253(str, value);
-                    sep = ",";
-                    break;
-                case ONELINE:
-                    str.append(sep).append(oName).append(" = ").append(value);
-                    sep = ",";
-                    break;
-                case MULTILINE:
-                    final Integer nid = ASN1.oid2nid(runtime, oid);
-                    if ( nid != null ) {
-                        final String ln = ASN1.nid2ln(runtime, nid);
-                        if ( ln != null ) oName = ln;
-                    } // TODO need indention :
-                    str.append(sep).append(oName).append(" = ").append(value);
-                    sep = "\n";
-                    break;
-                case COMPAT:
-                default:
-                    str.append('/').append(oName).append('=').append(value);
+                switch (format) {
+                    case RFC2253:
+                        str.append(sep).append(oName).append('=');
+                        appendValueRFC2253(str, value, escapeNonAscii);
+                        sep = i == start ? "," : "+";
+                        break;
+                    case ONELINE:
+                        str.append(sep).append(oName).append(" = ").append(value);
+                        sep = i == end - 1 ? "," : "+";
+                        break;
+                    case MULTILINE:
+                        final Integer nid = ASN1.oid2nid(runtime, oid);
+                        if ( nid != null ) {
+                            final String ln = ASN1.nid2ln(runtime, nid);
+                            if ( ln != null ) oName = ln;
+                        } // TODO need indention :
+                        str.append(sep).append(oName).append(" = ").append(value);
+                        sep = i == end - 1 ? "\n" : "+";
+                        break;
+                    case COMPAT:
+                    default:
+                        str.append('/').append(oName).append('=');
+                        appendValueOpenSSL(str, value);
+                }
             }
         }
 
         return str;
     }
 
-    private static void appendValueRFC2253(final StringBuilder str, final Object value) {
-        final String val = value.toString();
-        for (int i = 0; i < val.length(); i++) {
-            char c = val.charAt(i);
-            if ((i == 0 && (c == ' ' || c == '#')) || (i == val.length() - 1 && c == ' ')) {
+    private static void appendValueRFC2253(final StringBuilder str, final Object value,
+        final boolean escapeNonAscii) {
+        if (!escapeNonAscii) {
+            appendValueRFC2253UTF8(str, value.toString());
+            return;
+        }
+        final byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < bytes.length; i++) {
+            char c = (char) (bytes[i] & 0xff);
+            if (escapeNonAscii && c >= 0x80) {
+                str.append('\\').append(String.format("%02X", (int) c));
+                continue;
+            }
+            if ((i == 0 && (c == ' ' || c == '#')) || (i == bytes.length - 1 && c == ' ')) {
                 str.append('\\').append(c);
                 continue;
             }
@@ -554,15 +627,51 @@ public class X509Name extends RubyObject {
         }
     }
 
+    private static void appendValueRFC2253UTF8(final StringBuilder str, final String value) {
+        for (int i = 0; i < value.length(); i++) {
+            final char c = value.charAt(i);
+            if ((i == 0 && (c == ' ' || c == '#')) || (i == value.length() - 1 && c == ' ')) {
+                str.append('\\').append(c);
+                continue;
+            }
+            switch (c) {
+                case ',' :
+                case '+' :
+                case '"' :
+                case '<' :
+                case '>' :
+                case ';' :
+                case '\\' :
+                    str.append('\\').append(c);
+                    break;
+                default :
+                    str.append(c);
+            }
+        }
+    }
+
+    private static void appendValueOpenSSL(final StringBuilder str, final Object value) {
+        final byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
+        for (byte valueByte : bytes) {
+            final int c = valueByte & 0xff;
+            if (c >= 0x80) {
+                str.append("\\x").append(String.format("%02X", c));
+            }
+            else {
+                str.append((char) c);
+            }
+        }
+    }
+
     @JRubyMethod
     public IRubyObject to_utf8(ThreadContext context) {
-        return newUTF8String(context.runtime, toFormat(context.runtime, RFC2253));
+        return newUTF8String(context.runtime, toFormat(context.runtime, RFC2253, false));
     }
 
     @Override
     @JRubyMethod
     public IRubyObject inspect() {
-        return ObjectSupport.inspect(this, toFormat(getRuntime(), RFC2253));
+        return ObjectSupport.inspect(this, toFormat(getRuntime(), RFC2253, false));
     }
 
     @Override
@@ -597,8 +706,8 @@ public class X509Name extends RubyObject {
         if ( name != null ) return name;
 
         final X500NameBuilder builder = new X500NameBuilder( BCStyle.INSTANCE );
-        for ( int i = 0; i < oids.size(); i++ ) {
-            builder.addRDN( oids.get(i), values.get(i) );
+        for (int rdn = 0; rdn < rdnEnds.size(); rdn++) {
+            addRDN(builder, rdn, false);
         }
         return name = builder.build();
     }
@@ -607,16 +716,32 @@ public class X509Name extends RubyObject {
         if ( canonicalName != null ) return canonicalName;
 
         final X500NameBuilder builder = new X500NameBuilder( BCStyle.INSTANCE );
-        for ( int i = 0; i < oids.size(); i++ ) {
-            ASN1Encodable value = values.get(i);
-            value = Name.canonicalize(value);
-            builder.addRDN( oids.get(i), value );
+        for (int rdn = 0; rdn < rdnEnds.size(); rdn++) {
+            addRDN(builder, rdn, true);
         }
         return canonicalName = builder.build();
     }
 
+    private void addRDN(final X500NameBuilder builder, final int rdn, final boolean canonical) {
+        final int start = rdnStart(rdn);
+        final int end = rdnEnds.get(rdn);
+        if (end - start == 1) {
+            final ASN1Encodable value = values.get(start);
+            builder.addRDN(oids.get(start), canonical ? Name.canonicalize(value) : value);
+            return;
+        }
+        final ASN1ObjectIdentifier[] rdnOids = new ASN1ObjectIdentifier[end - start];
+        final ASN1Encodable[] rdnValues = new ASN1Encodable[end - start];
+        for (int i = start; i < end; i++) {
+            rdnOids[i - start] = oids.get(i);
+            final ASN1Encodable value = values.get(i);
+            rdnValues[i - start] = canonical ? Name.canonicalize(value) : value;
+        }
+        builder.addMultiValuedRDN(rdnOids, rdnValues);
+    }
+
     @JRubyMethod(name = { "cmp", "<=>" })
-    public RubyFixnum cmp(IRubyObject other) {
+    public IRubyObject cmp(IRubyObject other) {
         if ( equals(other) ) {
             return RubyFixnum.zero( getRuntime() );
         }
@@ -628,7 +753,7 @@ public class X509Name extends RubyObject {
             int cmp = thisName.toString().compareTo( thatName.toString() );
             return RubyFixnum.newFixnum( getRuntime(), cmp );
         }
-        return RubyFixnum.one( getRuntime() );
+        return getRuntime().getNil();
     }
 
     @Override
@@ -704,29 +829,16 @@ public class X509Name extends RubyObject {
         final DLSequence seq;
         if ( oids.size() > 0 ) {
             ASN1EncodableVector vec = new ASN1EncodableVector();
-            ASN1EncodableVector sVec = new ASN1EncodableVector();
-            ASN1ObjectIdentifier lastOid = null;
-            for ( int i = 0; i != oids.size(); i++ ) {
-                final ASN1ObjectIdentifier oid = oids.get(i);
-                ASN1EncodableVector v = new ASN1EncodableVector();
-                v.add(oid);
-                // TODO DO NOT USE DL types !
-                //final String value = values.get(i);
-                //final int type = RubyNumeric.fix2int(types.get(i));
-                //v.add( convert(oid, value, type) );
-                v.add( values.get(i) );
-
-                if ( lastOid == null ) {
+            for (int rdn = 0; rdn < rdnEnds.size(); rdn++) {
+                ASN1EncodableVector sVec = new ASN1EncodableVector();
+                for (int i = rdnStart(rdn); i < rdnEnds.get(rdn); i++) {
+                    ASN1EncodableVector v = new ASN1EncodableVector();
+                    v.add(oids.get(i));
+                    v.add(values.get(i));
                     sVec.add(new DLSequence(v));
                 }
-                else {
-                    vec.add(new DLSet(sVec));
-                    sVec = new ASN1EncodableVector();
-                    sVec.add(new DLSequence(v));
-                }
-                lastOid = oid;
+                vec.add(new DERSet(sVec));
             }
-            vec.add(new DLSet(sVec));
             seq = new DLSequence(vec);
         } else {
             seq = new DLSequence();
@@ -737,6 +849,20 @@ public class X509Name extends RubyObject {
         catch (IOException e) {
             throw newNameError(runtime, e);
         }
+    }
+
+    @Override
+    @JRubyMethod(name = "initialize_copy", visibility = Visibility.PRIVATE)
+    public IRubyObject initialize_copy(final IRubyObject original) {
+        super.initialize_copy(original);
+        final X509Name name = (X509Name) original;
+        oids.clear(); oids.addAll(name.oids);
+        values.clear(); values.addAll(name.values);
+        types.clear(); types.addAll(name.types);
+        rdnEnds.clear(); rdnEnds.addAll(name.rdnEnds);
+        this.name = null;
+        this.canonicalName = null;
+        return this;
     }
 
     private ASN1Primitive convert(ASN1ObjectIdentifier oid, String value, int type) {

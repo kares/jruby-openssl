@@ -40,14 +40,14 @@ class TestX509Name < TestCase
       assert_equal el, ary[i]
     end
 
-    assert_equal "/DC=org/DC=jruby/CN=Karol Bucek/UID=kares/emailAddress=jruby@kares-x.org/serialNumber=1234567890/street=Edelenska/generationQualifier=X/pseudonym=B;BS/postalCode=048+01/postalAddress=Edelénska 2022/11, RV",
+    assert_equal "/DC=org/DC=jruby/CN=Karol Bucek/UID=kares/emailAddress=jruby@kares-x.org/serialNumber=1234567890/street=Edelenska/generationQualifier=X/pseudonym=B;BS/postalCode=048+01/postalAddress=Edel\\xC3\\xA9nska 2022/11, RV",
                  name.to_s
-    # assert_equal Encoding::ASCII_8BIT, name.to_s.encoding # MRI behavior
+    assert_equal Encoding::ASCII_8BIT, name.to_s.encoding
     # assert_equal "DC=org, DC=jruby, CN=Karol Bucek/UID=kares/emailAddress=jruby@kares-x.org/serialNumber=1234567890/street=Edelenska/generationQualifier=X/pseudonym=B;BS/postalCode=048+01/postalAddress=Edelénska 2022/11, RV",
     #              name.to_s(OpenSSL::X509::Name::COMPAT)
     # assert_equal Encoding::ASCII_8BIT, name.to_s(OpenSSL::X509::Name::COMPAT).encoding # MRI behavior
 
-    assert_equal "postalAddress=Edelénska 2022/11\\, RV,postalCode=048\\+01,pseudonym=B\\;BS,generationQualifier=X,street=Edelenska,serialNumber=1234567890,emailAddress=jruby@kares-x.org,UID=kares,CN=Karol Bucek,DC=jruby,DC=org",
+    assert_equal "postalAddress=Edel\\C3\\A9nska 2022/11\\, RV,postalCode=048\\+01,pseudonym=B\\;BS,generationQualifier=X,street=Edelenska,serialNumber=1234567890,emailAddress=jruby@kares-x.org,UID=kares,CN=Karol Bucek,DC=jruby,DC=org",
                  name.to_s(OpenSSL::X509::Name::RFC2253)
     assert_equal "postalAddress=Edelénska 2022/11\\, RV,postalCode=048\\+01,pseudonym=B\\;BS,generationQualifier=X,street=Edelenska,serialNumber=1234567890,emailAddress=jruby@kares-x.org,UID=kares,CN=Karol Bucek,DC=jruby,DC=org",
                  name.to_utf8
@@ -350,6 +350,45 @@ class TestX509Name < TestCase
     ary = name.to_a
     assert_equal("/DC=org/DC=ruby-lang/CN=GOTOU Yuuzou/emailAddress=gotoyuzo@ruby-lang.org/serialNumber=123/street=Namiki", name.to_s)
     assert_equal("Namiki", ary[5][1])
+  end
+
+  def test_add_entry_placing
+    der = %w{ 30 2A
+               31 12
+                  30 10 06 03 55 04 0A 0C 09 72 75 62 79 2D 6C 61 6E 67
+               31 14
+                  30 08 06 03 55 04 0B 0C 01 61
+                  30 08 06 03 55 04 0B 0C 01 62 }
+    orig = OpenSSL::X509::Name.new([der.join].pack("H*"))
+
+    assert_equal "OU=b+OU=a,O=ruby-lang", orig.to_s(OpenSSL::X509::Name::RFC2253)
+    [
+      [1, -1, "OU=b+OU=a,O=ruby-lang+CN=unya"],
+      [1, 1, "CN=unya+OU=b+OU=a,O=ruby-lang"],
+      [-1, -1, "CN=unya+OU=b+OU=a,O=ruby-lang"],
+      [-1, 0, "CN=unya,OU=b+OU=a,O=ruby-lang"],
+    ].each do |loc, set, expected|
+      name = orig.dup
+      name.add_entry("CN", "unya", loc: loc, set: set)
+      assert_equal expected, name.to_s(OpenSSL::X509::Name::RFC2253)
+    end
+  end
+
+  def test_to_s_escapes_non_ascii_bytes
+    name = OpenSSL::X509::Name.new([["CN", "フー, バー"]])
+
+    assert_equal "/CN=\\xE3\\x83\\x95\\xE3\\x83\\xBC, \\xE3\\x83\\x90\\xE3\\x83\\xBC", name.to_s
+    assert_equal Encoding::BINARY, name.to_s.encoding
+  end
+
+  def test_spaceship_non_name
+    name = OpenSSL::X509::Name.new([["CN", "a"]])
+    assert_nil name <=> "a"
+  end
+
+  def test_dup
+    name = OpenSSL::X509::Name.parse("/CN=ruby-lang.org")
+    assert_equal name.to_der, name.dup.to_der
   end
 
   ###

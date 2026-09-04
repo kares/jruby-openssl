@@ -34,7 +34,6 @@ import java.io.PrintStream;
 import java.math.BigInteger;
 import java.text.ParseException;
 import java.util.Date;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -64,12 +63,12 @@ import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 
 import org.jruby.ext.openssl.impl.ASN1Registry;
+import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 
 import static org.jruby.ext.openssl.OpenSSL.*;
 import static org.jruby.ext.openssl.util.RubySupport.newError;
 import static org.jruby.ext.openssl.util.RubySupport.newIOError;
 import static org.jruby.ext.openssl.util.RubySupport.newRuntimeError;
-import org.jruby.ext.openssl.util.ByteArrayOutputStream;
 
 /**
  * @author <a href="mailto:ola.bini@ki.se">Ola Bini</a>
@@ -1038,7 +1037,7 @@ public class ASN1 {
             final ASN1Sequence sequence = ASN1Shim.getBaseUniversalSequence(taggedObj);
             if (sequence != null) {
                 @SuppressWarnings("unchecked")
-                final RubyArray valArr = decodeObjects(context, ASN1, sequence.getObjects());
+                final RubyArray valArr = decodeObjects(context, ASN1, sequence);
                 return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { valArr, tag, tag_class }, Block.NULL_BLOCK);
             }
 
@@ -1049,12 +1048,12 @@ public class ASN1 {
 
         if ( obj instanceof ASN1Sequence ) {
             @SuppressWarnings("unchecked")
-            RubyArray arr = decodeObjects(context, ASN1, ((ASN1Sequence) obj).getObjects());
+            RubyArray arr = decodeObjects(context, ASN1, ((ASN1Sequence) obj));
             return ASN1.getClass("Sequence").newInstance(context, arr, Block.NULL_BLOCK);
         }
         if ( obj instanceof ASN1Set ) {
             @SuppressWarnings("unchecked")
-            RubyArray arr = decodeObjects(context, ASN1, ((ASN1Set) obj).getObjects());
+            RubyArray arr = decodeObjects(context, ASN1, ((ASN1Set) obj));
             return ASN1.getClass("Set").newInstance(context, arr, Block.NULL_BLOCK);
         }
 
@@ -1088,23 +1087,29 @@ public class ASN1 {
 
         final IRubyObject val;
         if (appSpecific.isConstructed()) {
-            @SuppressWarnings("unchecked")
-            final RubyArray valArr = decodeObjects(context, ASN1, appSpecific.sequence.getObjects());
-            val = valArr;
+            val = decodeObjects(context, ASN1, appSpecific.sequence);
         } else {
             val = context.runtime.newString(new ByteList(appSpecific.contents, false));
         }
         return ASN1.getClass("ASN1Data").newInstance(context, new IRubyObject[] { val, tag, tag_class }, Block.NULL_BLOCK);
     }
 
-    private static RubyArray decodeObjects(final ThreadContext context, final RubyModule ASN1,
-        final Enumeration<ASN1Encodable> e)
+    private static RubyArray decodeObjects(final ThreadContext context, final RubyModule ASN1, final ASN1Sequence seq)
         throws IOException {
-        final RubyArray arr = context.runtime.newArray();
-        while ( e.hasMoreElements() ) {
-            arr.append( decodeObject(context, ASN1, e.nextElement()) );
+        final IRubyObject[] elems = new IRubyObject[seq.size()];
+        for ( int i = 0; i < seq.size(); i++ ) {
+            elems[i] = decodeObject(context, ASN1, seq.getObjectAt(i));
         }
-        return arr;
+        return RubyArray.newArrayNoCopy(context.runtime,  elems);
+    }
+
+    private static RubyArray decodeObjects(final ThreadContext context, final RubyModule ASN1, final ASN1Set set)
+            throws IOException {
+        final IRubyObject[] elems = new IRubyObject[set.size()];
+        for ( int i = 0; i < set.size(); i++ ) {
+            elems[i] = decodeObject(context, ASN1, set.getObjectAt(i));
+        }
+        return RubyArray.newArrayNoCopy(context.runtime,  elems);
     }
 
     @JRubyMethod(meta = true)
@@ -1165,65 +1170,193 @@ public class ASN1 {
 
     private static IRubyObject decodeImpl(final ThreadContext context, final RubyModule ASN1, final BytesInputStream in)
         throws IOException, IllegalArgumentException {
-        final byte[] asn1 = in.bytes();
-        int offset = in.offset();
-
-        if (in.available() >= 2 && asn1[offset] == 0 && asn1[offset + 1] == 0) {
-            in.skip(2);
-            return EndOfContent.newInstance(context);
-        }
-
-        final int tag = asn1[offset] & 0xFF;
-
-        if ( ( tag & BERTags.CONSTRUCTED ) == 0 ) {
-            return decodeObject(context, ASN1, readObject(in));
-        }
-
-        // NOTE: need to handle OpenSSL::ASN1::Constructive wrapping by hand :
-        int tagNo = tag & 0x1f;
-        if (tagNo == 0x1f)
-        {
-            tagNo = 0;
-            int b = asn1[ ++offset ];
-
-            // X.690-0207 8.1.2.4.2
-            // "c) bits 7 to 1 of the first subsequent octet shall not all be zero."
-            if ((b & 0x7f) == 0) { // -1 will pass
-                throw new IOException("corrupted stream - invalid high tag number found");
-            }
-
-            while ((b >= 0) && ((b & 0x80) != 0)) {
-                tagNo |= (b & 0x7f);
-                tagNo <<= 7;
-                b = asn1[ ++offset ];
-            }
-
-            if (b < 0) throw new IOException("EOF found inside tag value");
-
-            tagNo |= (b & 0x7f);
-        }
-        final int length = asn1[ ++offset ] & 0xFF;
-        final boolean isIndefiniteLength = length == 0x80;
-        IRubyObject decoded;
-
-        decoded = decodeObject(context, ASN1, readObject(in));
-
-        final boolean isUniversal = ((ASN1Data) decoded).isUniversal(context);
-
-        if (isIndefiniteLength) {
-            if (tagNo == BERTags.SEQUENCE || tagNo == BERTags.SET) {
-                return ASN1Data.setInfiniteLength(context, decoded);
-            } else if (isUniversal) {
-                decoded = Constructive.newInfiniteLength(context, context.runtime.newArray(decoded), tagNo);
-            } else {
-                if (decoded instanceof ASN1Data) {
-                    return ASN1Data.setInfiniteLength(context, decoded);
-                } else {
-                    decoded = ASN1Data.newInfiniteLength(context, context.runtime.newArray(decoded), tagNo, ((ASN1Data) decoded).tagClass());
-                }
-            }
-        }
+        final BerReader reader = new BerReader(in.bytes(), in.position(), in.position() + in.available());
+        final IRubyObject decoded = decodeBerObject(context, ASN1, reader, reader.end, 0);
+        in.skip(reader.position - in.position());
         return decoded;
+    }
+
+    private static final class BerReader {
+        private final byte[] bytes;
+        private final int end;
+        private int position;
+
+        private BerReader(final byte[] bytes, final int position, final int end) {
+            this.bytes = bytes;
+            this.position = position;
+            this.end = end;
+        }
+
+        private Header readHeader(final int limit) throws IOException {
+            final int start = position;
+            if (position >= limit) throw new IOException("header too short");
+
+            final int identifier = bytes[position++] & 0xFF;
+            final int tagClass = identifier & 0xC0;
+            final boolean constructed = (identifier & BERTags.CONSTRUCTED) != 0;
+            int tag = identifier & 0x1F;
+
+            if (tag == 0x1F) {
+                tag = 0;
+                if (position >= limit) throw new IOException("EOF found inside tag value");
+
+                int octet = bytes[position++] & 0xFF;
+                if ((octet & 0x7F) == 0) {
+                    throw new IOException("corrupted stream - invalid high tag number found");
+                }
+                do {
+                    if (tag > (Integer.MAX_VALUE >>> 7)) throw new IOException("tag number too large");
+                    tag = (tag << 7) | (octet & 0x7F);
+                    if ((octet & 0x80) == 0) break;
+                    if (position >= limit) throw new IOException("EOF found inside tag value");
+                    octet = bytes[position++] & 0xFF;
+                } while (true);
+            }
+
+            if (position >= limit) throw new IOException("header too short");
+            final int lengthByte = bytes[position++] & 0xFF;
+            final boolean indefinite = lengthByte == 0x80;
+            final int contentStart;
+            final int contentEnd;
+
+            if (indefinite) {
+                if (!constructed) throw new IOException("indefinite length for primitive value");
+                contentStart = position;
+                contentEnd = -1;
+            }
+            else {
+                long length = lengthByte;
+                if ((lengthByte & 0x80) != 0) {
+                    final int lengthBytes = lengthByte & 0x7F;
+                    if (lengthBytes == 0 || lengthBytes > 8) {
+                        throw new IOException("invalid length encoding");
+                    }
+                    if (position + lengthBytes > limit) throw new IOException("header too short");
+                    length = 0;
+                    for (int i = 0; i < lengthBytes; i++) {
+                        if (length > (Long.MAX_VALUE >>> 8)) {
+                            throw new IOException("length too large");
+                        }
+                        length = (length << 8) | (bytes[position++] & 0xFFL);
+                    }
+                }
+                contentStart = position;
+                if (length > Integer.MAX_VALUE || length > (long) limit - position) {
+                    throw new IOException("value is too short");
+                }
+                contentEnd = position + (int) length;
+            }
+
+            return new Header(start, contentStart, contentEnd, tag, tagClass, constructed, indefinite);
+        }
+    }
+
+    private static final class Header {
+        final int start;
+        final int contentStart;
+        final int contentEnd;
+        final int tag;
+        final int tagClass;
+        final boolean constructed;
+        final boolean indefinite;
+
+        private Header(final int start, final int contentStart, final int contentEnd,
+                       final int tag, final int tagClass, final boolean constructed,
+                       final boolean indefinite) {
+            this.start = start;
+            this.contentStart = contentStart;
+            this.contentEnd = contentEnd;
+            this.tag = tag;
+            this.tagClass = tagClass;
+            this.constructed = constructed;
+            this.indefinite = indefinite;
+        }
+    }
+
+    private static IRubyObject decodeBerObject(final ThreadContext context,
+                                               final RubyModule ASN1,
+                                               final BerReader reader,
+                                               final int limit,
+                                               final int depth)
+        throws IOException, IllegalArgumentException {
+
+        if (depth > MAX_NESTING) throw newASN1Error(context.runtime, NESTED_TOO_DEEP);
+        final Header header = reader.readHeader(limit);
+
+        if (!header.constructed) {
+            if (header.tagClass == ASN1Shim.TAG_UNIVERSAL && header.tag == EOC) {
+                if (header.indefinite || header.contentEnd != header.contentStart) {
+                    throw new IOException("invalid end-of-contents marker");
+                }
+                return EndOfContent.newInstance(context);
+            }
+
+            final int end = header.contentEnd;
+            final byte[] encoded = new byte[end - header.start];
+            System.arraycopy(reader.bytes, header.start, encoded, 0, encoded.length);
+            reader.position = end;
+
+            if (header.tagClass == ASN1Shim.TAG_UNIVERSAL && typeClassSafe(header.tag) != null) {
+                return decodeObject(context, ASN1, readObject(encoded));
+            }
+
+            final Ruby runtime = context.runtime;
+            final RubyString value = runtime.newString(new ByteList(
+                reader.bytes, header.contentStart, end - header.contentStart, false));
+            return ASN1.getClass("ASN1Data").newInstance(context,
+                new IRubyObject[] { value, runtime.newFixnum(header.tag), tagClassSymbol(runtime, header.tagClass) },
+                Block.NULL_BLOCK);
+        }
+
+        final RubyArray values = context.runtime.newArray();
+        if (header.indefinite) {
+            boolean foundEOC = false;
+            while (reader.position < limit) {
+                final IRubyObject value = decodeBerObject(context, ASN1, reader, limit, depth + 1);
+                if (value instanceof EndOfContent) {
+                    foundEOC = true;
+                    break;
+                }
+                values.append(value);
+            }
+            if (!foundEOC) throw new IOException("EOC missing in indefinite length encoding");
+        }
+        else {
+            while (reader.position < header.contentEnd) {
+                values.append(decodeBerObject(context, ASN1, reader, header.contentEnd, depth + 1));
+            }
+            if (reader.position != header.contentEnd) {
+                throw new IOException("constructed value is too short");
+            }
+        }
+
+        final IRubyObject tag = context.runtime.newFixnum(header.tag);
+        final IRubyObject tagClass = tagClassSymbol(context.runtime, header.tagClass);
+        final RubyClass klass;
+        if (header.tagClass == ASN1Shim.TAG_UNIVERSAL && header.tag == SEQUENCE) {
+            klass = ASN1.getClass("Sequence");
+        }
+        else if (header.tagClass == ASN1Shim.TAG_UNIVERSAL && header.tag == SET) {
+            klass = ASN1.getClass("Set");
+        }
+        else if (header.tagClass == ASN1Shim.TAG_UNIVERSAL) {
+            klass = ASN1.getClass("Constructive");
+        }
+        else {
+            klass = ASN1.getClass("ASN1Data");
+        }
+
+        final IRubyObject result;
+        if (klass == ASN1.getClass("ASN1Data")) {
+            result = klass.newInstance(context,
+                new IRubyObject[] { values, tag, tagClass }, Block.NULL_BLOCK);
+        }
+        else {
+            result = klass.newInstance(context,
+                new IRubyObject[] { values, tag, context.nil, tagClass }, Block.NULL_BLOCK);
+        }
+        if (header.indefinite) ASN1Data.setInfiniteLength(context, result);
+        return result;
     }
 
     @JRubyMethod(meta = true, required = 1)
@@ -1490,8 +1623,6 @@ public class ASN1 {
 
         static ASN1Data setInfiniteLength(final ThreadContext context, final IRubyObject constructive) {
             final ASN1Data instance = ((ASN1Data) constructive);
-            final IRubyObject value = instance.value(context);
-            value.callMethod(context, "<<", EndOfContent.newInstance(context));
             instance.setInstanceVariable("@indefinite_length", context.runtime.getTrue());
             return instance;
         }
@@ -1499,9 +1630,6 @@ public class ASN1 {
         private void checkTag(final Ruby runtime, final IRubyObject tag, final IRubyObject tagClass) {
             if ( ! (tagClass instanceof RubySymbol) ) {
                 throw newASN1Error(runtime, "invalid tag class");
-            }
-            if ( "UNIVERSAL".equals(tagClass.toString()) && RubyNumeric.fix2int(tag) > MAX_TAG_VALUE ) {
-                throw newASN1Error(runtime, "tag number for :UNIVERSAL too large (" + tag + ")");
             }
         }
 
@@ -1683,8 +1811,7 @@ public class ASN1 {
                 }
 
                 if (isIndefiniteLength) {
-                    if (arr.length != 0 && !(arr[arr.length - 1] instanceof EndOfContent)) {
-                        // indefinite length object with no EOC object in the array.
+                    if (arr.length == 0 || !(arr[arr.length - 1] instanceof EndOfContent)) {
                         valueOut.write(0x00);
                         valueOut.write(0x00);
                     }
@@ -2306,11 +2433,22 @@ public class ASN1 {
 
         private byte[] octetStringToDER(final ThreadContext context) throws IOException {
             final ASN1EncodableVector values = toASN1EncodableVector(context);
-            ASN1OctetString[] octets = new ASN1OctetString[ values.size() ];
+            final ByteArrayOutputStream out = new ByteArrayOutputStream(64);
+            writeDERIdentifier(getTag(context), getTagClass(context) | BERTags.CONSTRUCTED, out);
+            out.write(0x80);
             for ( int i = 0; i < values.size(); i++ ) {
-                octets[i] = (ASN1OctetString) values.get(i).toASN1Primitive();
+                final ASN1Encodable value = values.get(i);
+                if (value instanceof InternalEncodable) {
+                    final byte[] nested = ((InternalEncodable) value).entry.toDER(context);
+                    out.write(nested, 0, nested.length);
+                }
+                else {
+                    out.write(value.toASN1Primitive().getEncoded());
+                }
             }
-            return new BEROctetString(octets).getEncoded();
+            out.write(0x00);
+            out.write(0x00);
+            return out.toByteArray();
         }
 
         private byte[] sequenceToDER(final ThreadContext context) throws IOException {

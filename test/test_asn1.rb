@@ -193,8 +193,13 @@ class TestASN1 < TestCase
     assert_equal(cululated_sig, sig_val.value)
   end
 
-  def test_encode_boolean
-    encode_decode_test1(OpenSSL::ASN1::Boolean, [true, false])
+  def test_boolean
+    encode_decode_test B(%w{ 01 01 00 }), OpenSSL::ASN1::Boolean.new(false)
+    encode_decode_test B(%w{ 01 01 FF }), OpenSSL::ASN1::Boolean.new(true)
+    decode_test B(%w{ 01 01 01 }), OpenSSL::ASN1::Boolean.new(true)
+    assert_raise(OpenSSL::ASN1::ASN1Error) {
+      OpenSSL::ASN1.decode(B(%w{ 01 02 00 00 }))
+    }
   end
 
   def test_end_of_content
@@ -204,15 +209,15 @@ class TestASN1 < TestCase
     }
   end
 
-  def test_encode_integer
-    ai = OpenSSL::ASN1::Integer.new( i = 42 )
-    assert_equal i, OpenSSL::ASN1.decode(ai.to_der).value
-
-    ai = OpenSSL::ASN1::Integer.new( i = 0 )
-    assert_equal i, OpenSSL::ASN1.decode(ai.to_der).value
-
-    ai = OpenSSL::ASN1::Integer.new( i = -1 )
-    assert_equal i, OpenSSL::ASN1.decode(ai.to_der).value
+  def test_integer
+    encode_decode_test B(%w{ 02 01 00 }), OpenSSL::ASN1::Integer.new(0)
+    encode_decode_test B(%w{ 02 01 48 }), OpenSSL::ASN1::Integer.new(72)
+    encode_decode_test B(%w{ 02 02 00 80 }), OpenSSL::ASN1::Integer.new(128)
+    encode_decode_test B(%w{ 02 01 81 }), OpenSSL::ASN1::Integer.new(-127)
+    encode_decode_test B(%w{ 02 01 80 }), OpenSSL::ASN1::Integer.new(-128)
+    encode_decode_test B(%w{ 02 01 FF }), OpenSSL::ASN1::Integer.new(-1)
+    encode_decode_test B(%w{ 02 09 01 00 00 00 00 00 00 00 00 }), OpenSSL::ASN1::Integer.new(2 ** 64)
+    encode_decode_test B(%w{ 02 09 FF 00 00 00 00 00 00 00 00 }), OpenSSL::ASN1::Integer.new(-(2 ** 64))
 
     ai = OpenSSL::ASN1::Integer.new( i = 2**4242 )
     assert_equal i, OpenSSL::ASN1.decode(ai.to_der).value
@@ -528,11 +533,14 @@ class TestASN1 < TestCase
     encode_decode_test B(%w{ 41 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :APPLICATION)
     encode_decode_test B(%w{ 81 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :CONTEXT_SPECIFIC)
     encode_decode_test B(%w{ C1 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 1, :PRIVATE)
-    # encode_decode_test B(%w{ 1F 20 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 32, :UNIVERSAL)
+    encode_decode_test B(%w{ 1F 20 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 32, :UNIVERSAL)
     encode_decode_test B(%w{ 9F C0 20 00 }), OpenSSL::ASN1::ASN1Data.new(B(%w{}), 8224, :CONTEXT_SPECIFIC)
     encode_decode_test B(%w{ 41 02 AB CD }), OpenSSL::ASN1::ASN1Data.new(B(%w{ AB CD }), 1, :APPLICATION)
     encode_decode_test B(%w{ 41 81 80 } + %w{ AB CD } * 64), OpenSSL::ASN1::ASN1Data.new(B(%w{ AB CD } * 64), 1, :APPLICATION)
     encode_decode_test B(%w{ 41 82 01 00 } + %w{ AB CD } * 128), OpenSSL::ASN1::ASN1Data.new(B(%w{ AB CD } * 128), 1, :APPLICATION)
+    assert_raise(OpenSSL::ASN1::ASN1Error) {
+      OpenSSL::ASN1.decode(B(%w{ 04 88 FF FF FF FF FF FF FF FF }))
+    }
     encode_decode_test B(%w{ 61 00 }), OpenSSL::ASN1::ASN1Data.new([], 1, :APPLICATION)
     obj = OpenSSL::ASN1::ASN1Data.new([OpenSSL::ASN1::ASN1Data.new(B(%w{ AB CD }), 2, :PRIVATE)], 1, :APPLICATION)
     obj.indefinite_length = true
@@ -575,8 +583,7 @@ class TestASN1 < TestCase
     obj = OpenSSL::ASN1::Constructive.new([octet_string], 1)
     obj.indefinite_length = true
     encode_test B(%w{ 21 80 04 02 AB CD 00 00 }), obj
-    # TODO: BC doesn't support decoding indef constructive asn1s from unsupported tag types.
-    # encode_decode_test B(%w{ 21 80 04 02 AB CD 00 00 }), obj
+    encode_decode_test B(%w{ 21 80 04 02 AB CD 00 00 }), obj
     obj = OpenSSL::ASN1::Constructive.new([octet_string, OpenSSL::ASN1::EndOfContent.new], 1)
     obj.indefinite_length = true
     encode_test B(%w{ 21 80 04 02 AB CD 00 00 }), obj
@@ -701,76 +708,51 @@ class TestASN1 < TestCase
   end
 
   def test_recursive_octet_string_indefinite_length
-    #octets_sub1 = [ OpenSSL::ASN1::OctetString.new("\x01"),
-    #                OpenSSL::ASN1::EndOfContent.new() ]
-    #octets_sub2 = [ OpenSSL::ASN1::OctetString.new("\x02"),
-    #                OpenSSL::ASN1::EndOfContent.new() ]
-    #container1 = OpenSSL::ASN1::Constructive.new(octets_sub1, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
-    #container1.indefinite_length = true
-    #container2 = OpenSSL::ASN1::Constructive.new(octets_sub2, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
-    #container2.indefinite_length = true
-    #octets3 = OpenSSL::ASN1::OctetString.new("\x03")
+    octets_sub1 = [ OpenSSL::ASN1::OctetString.new("\x01"),
+                    OpenSSL::ASN1::EndOfContent.new() ]
+    octets_sub2 = [ OpenSSL::ASN1::OctetString.new("\x02"),
+                    OpenSSL::ASN1::EndOfContent.new() ]
+    container1 = OpenSSL::ASN1::Constructive.new(octets_sub1, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
+    container1.indefinite_length = true
+    container2 = OpenSSL::ASN1::Constructive.new(octets_sub2, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
+    container2.indefinite_length = true
+    octets3 = OpenSSL::ASN1::OctetString.new("\x03")
 
-    #octets = [ container1, container2, octets3,
-    #           OpenSSL::ASN1::EndOfContent.new() ]
-    #cons = OpenSSL::ASN1::Constructive.new(octets, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
-    #cons.indefinite_length = true
-    #raw = B(%w{ 24 80 24 80 04 01 01 00 00 24 80 04 01 02 00 00 04 01 03 00 00 })
-    # TODO: Implict Issue
-    # Java::JavaLang::UnsupportedOperationException
-    #  org.jruby.ext.openssl.ASN1$Constructive$InternalEncodable.toASN1Primitive(ASN1.java:1961)
-    #  org.jruby.ext.openssl.ASN1$Constructive.octetStringToDER(ASN1.java:1904)
-    #  org.jruby.ext.openssl.ASN1$Constructive.toDER(ASN1.java:1873)
-    #  org.jruby.ext.openssl.ASN1$ASN1Data.to_der(ASN1.java:1414)
-    #assert_equal(raw, cons.to_der)
-    # <"$\x80$\x80\x04\x01\x01\x00\x00$\x80\x04\x01\x02\x00\x00\x04\x01\x03\x00\x00"> expected but was <"$\x80\x04\x03\x01\x02\x03\x00\x00">
-    #assert_equal(raw, OpenSSL::ASN1.decode(raw).to_der)
+    octets = [ container1, container2, octets3,
+               OpenSSL::ASN1::EndOfContent.new() ]
+    cons = OpenSSL::ASN1::Constructive.new(octets, OpenSSL::ASN1::OCTET_STRING, nil, :UNIVERSAL)
+    cons.indefinite_length = true
+    raw = B(%w{ 24 80 24 80 04 01 01 00 00 24 80 04 01 02 00 00 04 01 03 00 00 })
+    assert_equal(raw, cons.to_der)
+    assert_equal(raw, OpenSSL::ASN1.decode(raw).to_der)
   end
 
   def test_recursive_octet_string_parse
     raw = B(%w{ 24 80 24 80 04 01 01 00 00 24 80 04 01 02 00 00 04 01 03 00 00 })
     asn1 = OpenSSL::ASN1.decode(raw)
     assert_equal(OpenSSL::ASN1::Constructive, asn1.class)
-    # TODO: Import Issue
-    # <false> expected but was <true>
-    #assert_universal(OpenSSL::ASN1::OCTET_STRING, asn1)
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, asn1, true)
     assert_equal(true, asn1.indefinite_length)
-    # <3> expected but was <2>
-    #assert_equal(3, asn1.value.size)
+    assert_equal(3, asn1.value.size)
     nested1 = asn1.value[0]
-    # <OpenSSL::ASN1::Constructive> expected but was <OpenSSL::ASN1::OctetString>
-    #assert_equal(OpenSSL::ASN1::Constructive, nested1.class)
-    assert_universal(OpenSSL::ASN1::OCTET_STRING, nested1)
-    # <true> expected but was <false>
-    #assert_equal(true, nested1.indefinite_length)
-    # <1> expected but was <3>
-    #assert_equal(1, nested1.value.size)
-    #oct1 = nested1.value[0]
-    #   NoMethodError: undefined method `tag' for "\x01":String
-    #     Did you mean?  tap
-    #     src/test/ruby/test_asn1.rb:1286:in `assert_universal'
-    #assert_universal(OpenSSL::ASN1::OCTET_STRING, oct1)
-    # NoMethodError: undefined method `indefinite_length' for "\x01":String
-    #assert_equal(false, oct1.indefinite_length)
-    #nested2 = asn1.value[1]
-    # <OpenSSL::ASN1::Constructive> expected but was <OpenSSL::ASN1::EndOfContent>
-    #assert_equal(OpenSSL::ASN1::Constructive, nested2.class)
-    # <4> expected but was <0>
-    #assert_universal(OpenSSL::ASN1::OCTET_STRING, nested2)
-    # <true> expected but was <nil>
-    #assert_equal(true, nested2.indefinite_length)
-    # <1> expected but was <0>
-    #assert_equal(1, nested2.value.size)
-    #oct2 = nested2.value[0]
-    # NoMethodError: undefined method `tag' for nil:NilClass
-    #assert_universal(OpenSSL::ASN1::OCTET_STRING, oct2)
-    # NoMethodError: undefined method `indefinite_length' for nil:NilClass
-    #assert_equal(false, oct2.indefinite_length)
-    #oct3 = asn1.value[2]
-    # NoMethodError: undefined method `tag' for nil:NilClass
-    #assert_universal(OpenSSL::ASN1::OCTET_STRING, oct3)
-    # NoMethodError: undefined method `indefinite_length' for nil:NilClass
-    #assert_equal(false, oct3.indefinite_length)
+    assert_equal(OpenSSL::ASN1::Constructive, nested1.class)
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, nested1, true)
+    assert_equal(true, nested1.indefinite_length)
+    assert_equal(1, nested1.value.size)
+    oct1 = nested1.value[0]
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, oct1)
+    assert_equal(false, oct1.indefinite_length)
+    nested2 = asn1.value[1]
+    assert_equal(OpenSSL::ASN1::Constructive, nested2.class)
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, nested2, true)
+    assert_equal(true, nested2.indefinite_length)
+    assert_equal(1, nested2.value.size)
+    oct2 = nested2.value[0]
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, oct2)
+    assert_equal(false, oct2.indefinite_length)
+    oct3 = asn1.value[2]
+    assert_universal(OpenSSL::ASN1::OCTET_STRING, oct3)
+    assert_equal(false, oct3.indefinite_length)
   end
 
   def test_decode_constructed_overread
@@ -916,12 +898,10 @@ class TestASN1 < TestCase
 
     first = asn1.value[0]
     assert first.instance_of?(OpenSSL::ASN1::OctetString), "expected OctetString got: #{first.class}"
-    # NOTE: probably won't pass (without writing a custom "parser") :
-    #assert_equal "\x01", asn1.value[0].value
-    #assert_equal "\x02", asn1.value[1].value
-    #assert_equal "", asn1.value[2].value
-    last = asn1.value.last
-    assert last.instance_of?(OpenSSL::ASN1::EndOfContent), "expected EndOfContent got: #{last.class}"
+    assert_equal "\x01", asn1.value[0].value
+    assert_equal "\x02", asn1.value[1].value
+    assert_equal 2, asn1.value.size
+    assert_equal der, asn1.to_der
   end
 
   TEST_KEY_RSA1024 = <<-_end_of_pem_

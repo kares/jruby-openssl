@@ -1127,7 +1127,8 @@ public class SSLContext extends RubyObject {
             }
             putCredential(credentials, leaf, key.getPrivateKey(), null);
         }
-        if (extraChainCert != null) { // explicit add_certificate chains take priority over shared chain
+        // empty extra_chain_cert adds nothing (like MRI) so the chain still gets built from the store
+        if (extraChainCert != null && !extraChainCert.isEmpty()) { // explicit add_certificate chains take priority over shared chain
             for (Map.Entry<String, Credential> entry : credentials.entrySet()) {
                 final Credential credential = entry.getValue();
                 if (credential.chain == null) {
@@ -1238,6 +1239,8 @@ public class SSLContext extends RubyObject {
                 try {
                     keyFactory = KeyFactory.getInstance("EdDSA", "SunEC");
                 } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+                    LOG.warn(getRuntime(), "skipping " + publicKey.getAlgorithm() +
+                            " certificate - SunJSSE lacks EdDSA support (requires Java 15+): " + e.getMessage());
                     return null; // older SunJSSE can still use other configured credential types
                 }
 

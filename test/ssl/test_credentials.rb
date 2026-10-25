@@ -35,8 +35,10 @@ class TestSSLCredentials < TestCase
     ec_key, ec_cert = credential('p256')
     configure = proc do |ctx|
       set_version(ctx, 'TLSv1_2')
+      ctx.cert = ctx.key = nil
       ctx.extra_chain_cert = [@ca_cert]
-      ctx.add_certificate(ec_cert, ec_key, [@ca_cert])
+      ctx.add_certificate(@svr_cert, @svr_key)
+      ctx.add_certificate(ec_cert, ec_key)
     end
     start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure) do |_server, port|
       { 'ECDHE-RSA-AES128-GCM-SHA256' => @svr_cert,
@@ -81,6 +83,136 @@ class TestSSLCredentials < TestCase
   end
 
   VERSIONS.each do |version, (context_version, negotiated_version)|
+    define_method("test_peer_rejects_server_opposite_role_eku_#{version}") do
+      check_support('rsa', context_version)
+      key, cert = credential('rsa', 81, 'clientAuth')
+      configure = proc do |ctx|
+        set_version(ctx, context_version)
+        install_credential(ctx, 'add_certificate', cert, key)
+      end
+      start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure,
+                   ignore_listener_error: true) do |_server, port|
+        ctx = client_context(context_version)
+        verification_errors = []
+        ctx.verify_callback = proc do |preverified, store|
+          verification_errors << store.error unless preverified
+          preverified
+        end
+        ssl = OpenSSL::SSL::SSLSocket.new(TCPSocket.new('127.0.0.1', port), ctx)
+        ssl.sync_close = true
+        assert_raise(OpenSSL::SSL::SSLError) { ssl.connect }
+        assert_include verification_errors, OpenSSL::X509::V_ERR_INVALID_PURPOSE
+      ensure
+        ssl.close if ssl
+      end
+    end
+
+    define_method("test_mixed_rsa_and_ed25519_credentials_#{version}") do
+      omit_on_fips
+      check_support('rsa', context_version)
+      ed_key, ed_cert = credential('ed25519', 80)
+      configure = proc do |ctx|
+        set_version(ctx, context_version)
+        ctx.cert = ctx.key = nil
+        ctx.add_certificate(@svr_cert, @svr_key, [@ca_cert])
+        ctx.add_certificate(ed_cert, ed_key, [@ca_cert])
+      end
+      start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure) do |_server, port|
+        ctx = client_context(context_version)
+        ctx.ciphers = 'ECDHE-RSA-AES128-GCM-SHA256' if context_version == 'TLSv1_2'
+        server_connect(port, ctx) do |ssl|
+          assert_equal negotiated_version, ssl.ssl_version
+          assert_include [@svr_cert.to_der, ed_cert.to_der], ssl.peer_cert.to_der
+          assert_equal @svr_cert.to_der, ssl.peer_cert.to_der if context_version == 'TLSv1_2'
+          assert_echo(ssl)
+        end
+      end
+    end
+
+    %w[rsa p256].each do |key_type|
+      %w[explicit global empty empty_global empty_global_legacy].each do |chain_source|
+        define_method("test_#{key_type}_#{chain_source}_chain_precedence_#{version}") do
+          check_support(key_type, context_version)
+          key, cert = credential(key_type, 60)
+          configure = proc do |ctx|
+            set_version(ctx, context_version)
+            ctx.cert = ctx.key = nil
+            case chain_source
+            when 'explicit'
+              ctx.add_certificate(cert, key, [@ca_cert])
+              ctx.cert = cert
+              ctx.key = key
+              ctx.extra_chain_cert = []
+            when 'global'
+              ctx.add_certificate(cert, key)
+              ctx.extra_chain_cert = [@ca_cert]
+            when 'empty'
+              ctx.add_certificate(cert, key, [])
+              ctx.extra_chain_cert = [@ca_cert]
+            when 'empty_global' # chain built from the cert_store (holds @ca_cert)
+              ctx.add_certificate(cert, key)
+              ctx.extra_chain_cert = []
+            when 'empty_global_legacy'
+              ctx.cert = cert
+              ctx.key = key
+              ctx.extra_chain_cert = []
+            end
+          end
+          start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure) do |_server, port|
+            server_connect(port, client_context(context_version)) do |ssl|
+              assert_equal negotiated_version, ssl.ssl_version
+              assert_peer_credential(ssl, cert)
+              expected_chain = [cert.to_der]
+              expected_chain << @ca_cert.to_der unless chain_source == 'empty'
+              assert_equal expected_chain, ssl.peer_cert_chain.map(&:to_der)
+              assert_echo(ssl)
+            end
+          end
+        end
+      end
+    end
+
+    %w[legacy add_certificate].each do |registration|
+      define_method("test_server_opposite_role_eku_#{registration}_#{version}") do
+        check_support('rsa', context_version)
+        key, cert = credential('rsa', 70, 'clientAuth')
+        configure = proc do |ctx|
+          set_version(ctx, context_version)
+          install_credential(ctx, registration, cert, key)
+        end
+        start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure) do |_server, port|
+          ctx = client_context(context_version)
+          ctx.verify_callback = method(:accept_wrong_purpose)
+          server_connect(port, ctx) do |ssl|
+            assert_equal negotiated_version, ssl.ssl_version
+            assert_peer_credential(ssl, cert)
+            assert_echo(ssl)
+          end
+        end
+      end
+
+      define_method("test_client_opposite_role_eku_#{registration}_#{version}") do
+        check_support('rsa', context_version)
+        key, cert = credential('rsa', 71, 'serverAuth')
+        configure = proc do |ctx|
+          set_version(ctx, context_version)
+          ctx.client_ca = [@ca_cert]
+          ctx.verify_callback = method(:accept_wrong_purpose)
+        end
+        inspect_client = proc do |_ctx, ssl|
+          assert_equal negotiated_version, ssl.ssl_version
+          assert_peer_credential(ssl, cert)
+          ssl.puts ssl.gets
+        end
+        verify = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+        start_server(verify, true, ctx_proc: configure, server_proc: inspect_client) do |_server, port|
+          ctx = client_context(context_version)
+          install_credential(ctx, registration, cert, key)
+          server_connect(port, ctx) { |ssl| assert_echo(ssl) }
+        end
+      end
+    end
+
     %w[omitted empty].each do |replacement_chain|
       define_method("test_replacement_#{replacement_chain}_chain_#{version}") do
         check_support('rsa', context_version)
@@ -178,7 +310,6 @@ class TestSSLCredentials < TestCase
     end
 
     define_method("test_client_credential_with_nonmatching_issuer_#{version}") do
-      skip 'JSSE filters client certificate issuers' unless jruby?
       check_support('rsa', context_version)
       key, cert = credential('rsa', 30, 'clientAuth')
       other_ca = issue_cert(OpenSSL::X509::Name.parse('/CN=Other CA'), @ca_key, 31,
@@ -188,10 +319,11 @@ class TestSSLCredentials < TestCase
         ctx.client_ca = [other_ca]
       end
       inspect_client = proc do |_ctx, ssl|
-        assert_nil ssl.peer_cert
+        assert_peer_credential(ssl, cert)
         ssl.puts ssl.gets
       end
-      start_server(OpenSSL::SSL::VERIFY_PEER, true, ctx_proc: configure,
+      verify = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+      start_server(verify, true, ctx_proc: configure,
                    server_proc: inspect_client) do |_server, port|
         ctx = client_context(context_version)
         ctx.add_certificate(cert, key, [@ca_cert])
@@ -201,6 +333,10 @@ class TestSSLCredentials < TestCase
   end
 
   private
+
+  def accept_wrong_purpose(preverified, store)
+    preverified || store.error == OpenSSL::X509::V_ERR_INVALID_PURPOSE
+  end
 
   def set_version(ctx, version)
     if !jruby? && version == 'TLSv1_3'

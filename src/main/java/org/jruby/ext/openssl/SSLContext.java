@@ -28,17 +28,22 @@
 package org.jruby.ext.openssl;
 
 import java.net.Socket;
+import java.io.IOException;
+import java.security.InvalidKeyException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 import java.security.GeneralSecurityException;
-import java.security.KeyManagementException;
+import java.security.KeyFactory;
+import java.security.KeyStore;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
@@ -46,14 +51,18 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Collections;
 
-import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSessionContext;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509ExtendedTrustManager;
 
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+
+import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyClass;
@@ -332,7 +341,7 @@ public class SSLContext extends RubyObject {
     transient volatile int sessionCacheNum;
 
     private volatile InternalContext internalContext;
-    private final ArrayList<Credential> addedCredentials = new ArrayList<>(); // @certs_and_keys in MRI
+    private final Map<String, Credential> addedCredentials = new LinkedHashMap<>(); // @certs_and_keys in MRI
 
     @JRubyMethod(required = 0, optional = 1, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(IRubyObject[] args) {
@@ -551,30 +560,54 @@ public class SSLContext extends RubyObject {
             extraChain = null;
         }
 
-        final String alias = Integer.toString(addedCredentials.size());
-        addedCredentials.add(new Credential(alias, auxCert, privateKey, key.getKeyType(), extraChain));
+        putCredential(addedCredentials, auxCert, privateKey, extraChain);
 
         return this;
     }
 
     private static class Credential {
-        final String alias;
         final X509AuxCertificate leaf;
         final PrivateKey privateKey;
-        final String keyType;
         final List<X509AuxCertificate> chain; // null => build from the cert store
 
-        Credential(final String alias,
-                   final X509AuxCertificate leaf,
+        Credential(final X509AuxCertificate leaf,
                    final PrivateKey privateKey,
-                   final String keyType,
                    final List<X509AuxCertificate> chain) {
-            this.alias = alias;
             this.leaf = leaf;
             this.privateKey = privateKey;
-            this.keyType = keyType;
             this.chain = chain;
         }
+    }
+
+    // one credential per key algorithm OID (all EC curves share a slot - like in OpenSSL)
+    private static void putCredential(final Map<String, Credential> credentials,
+                                      final X509AuxCertificate leaf,
+                                      final PrivateKey privateKey,
+                                      final List<X509AuxCertificate> chain) {
+        final String alias = keyAlgorithmId(leaf.getPublicKey()).getId();
+        final Credential previous = credentials.get(alias);
+        // a replaced certificate keeps its slot's chain unless a new one is given
+        final List<X509AuxCertificate> effectiveChain = chain == null && previous != null ? previous.chain : chain;
+        credentials.put(alias, new Credential(leaf, privateKey, effectiveChain));
+    }
+
+    private static ASN1ObjectIdentifier keyAlgorithmId(final PublicKey publicKey) {
+        switch (publicKey.getAlgorithm().toUpperCase(Locale.ROOT)) {
+            case "RSA":
+                return PKCSObjectIdentifiers.rsaEncryption;
+            case "RSASSA-PSS":
+                return PKCSObjectIdentifiers.id_RSASSA_PSS;
+            case "EC": case "ECDSA":
+                return X9ObjectIdentifiers.id_ecPublicKey;
+            case "DSA":
+                return X9ObjectIdentifiers.id_dsa;
+            case "ED25519":
+                return EdECObjectIdentifiers.id_Ed25519;
+            case "ED448":
+                return EdECObjectIdentifiers.id_Ed448;
+        }
+        // NOTE: SunEC reports "EdDSA" for both Ed25519 and Ed448 types
+        return SubjectPublicKeyInfo.getInstance(publicKey.getEncoded()).getAlgorithm().getAlgorithm();
     }
 
     @JRubyMethod
@@ -1080,34 +1113,49 @@ public class SSLContext extends RubyObject {
         return (RubyClass) _SSL(runtime).getConstantAt("SSLContext");
     }
 
-    private List<Credential> buildCredentials(final X509Cert cert, final PKey key,
-                                              final List<X509AuxCertificate> extraChainCert) {
-        if ( cert == null || key == null || key.getPrivateKey() == null || cert.getAuxCert() == null ) {
-            return addedCredentials;
+    private Map<String, Credential> buildCredentials(final X509Cert cert, final PKey key,
+                                                     final List<X509AuxCertificate> extraChainCert) {
+        final Map<String, Credential> credentials = new LinkedHashMap<>(addedCredentials);
+
+        if (cert != null && key != null && key.getPrivateKey() != null && cert.getAuxCert() != null) {
+            final X509AuxCertificate leaf = cert.getAuxCert();
+            final PublicKey certPublicKey = leaf.getPublicKey();
+            final PublicKey publicKey = key.getPublicKey();
+            if (certPublicKey == null || publicKey == null ||
+                    !Arrays.equals(certPublicKey.getEncoded(), publicKey.getEncoded())) {
+                throw newSSLError(getRuntime(), "certificate and private key do not match");
+            }
+            putCredential(credentials, leaf, key.getPrivateKey(), null);
         }
-        final ArrayList<Credential> credentials = new ArrayList<>(addedCredentials.size() + 1);
-        credentials.add(new Credential("@cert", cert.getAuxCert(), key.getPrivateKey(), key.getKeyType(), extraChainCert));
-        credentials.addAll(addedCredentials);
+        // empty extra_chain_cert adds nothing (like MRI) so the chain still gets built from the store
+        if (extraChainCert != null && !extraChainCert.isEmpty()) { // explicit add_certificate chains take priority over shared chain
+            for (Map.Entry<String, Credential> entry : credentials.entrySet()) {
+                final Credential credential = entry.getValue();
+                if (credential.chain == null) {
+                    entry.setValue(new Credential(credential.leaf, credential.privateKey, extraChainCert));
+                }
+            }
+        }
         return credentials;
     }
 
     private InternalContext initSSLContext(ThreadContext context,
         final Store store, final List<X509AuxCertificate> clientCA,
         final int verifyMode, final IRubyObject verifyCallback, final int verifyDepth, final int timeout,
-        final String[] alpnProtocols, final RubyProc alpnSelectCb, final List<Credential> certsAndKeys) {
+        final String[] alpnProtocols, final RubyProc alpnSelectCb, final Map<String, Credential> credentials) {
 
         final InternalContext internalContext;
         try {
             internalContext = new InternalContext(
                     store, clientCA,
                     verifyMode, verifyCallback, verifyDepth,
-                    timeout, alpnProtocols, alpnSelectCb,
-                    certsAndKeys
+                    timeout, alpnProtocols, alpnSelectCb
             );
-            internalContext.initSSLContext(context);
+            internalContext.initSSLContext(context, credentials);
         }
-        catch (GeneralSecurityException | IllegalStateException e) {
-            // IllegalStateException from BC random initialization: "RDSEED persistently failed to produce entropy"
+        catch (GeneralSecurityException | IOException | IllegalStateException | IllegalArgumentException e) {
+            // IllegalStateException - BC random initialization: "RDSEED persistently failed to produce entropy"
+            // IllegalArgumentException - PrivateKeyEntry: key and certificate algorithm names differ
             throw newSSLError(context.runtime, e);
         }
         return internalContext;
@@ -1126,10 +1174,7 @@ public class SSLContext extends RubyObject {
             final int verifyDepth,
             final int timeout,
             final String[] alpnProtocols,
-            final RubyProc alpnSelectCallback,
-            final List<Credential> certsAndKeys) throws NoSuchAlgorithmException {
-
-            this.credentials = certsAndKeys;
+            final RubyProc alpnSelectCallback) throws NoSuchAlgorithmException {
 
             this.store = store;
             this.clientCA = clientCA;
@@ -1143,13 +1188,29 @@ public class SSLContext extends RubyObject {
             this.sslContext = SecurityHelper.getSSLContext(protocol);
         }
 
-        void initSSLContext(final ThreadContext context) throws NoSuchAlgorithmException, KeyManagementException {
-            final KeyManager[] keyManager = new KeyManager[] { new KeyManagerImpl(this) };
+        void initSSLContext(final ThreadContext context, final Map<String, Credential> credentials)
+            throws GeneralSecurityException, IOException {
+
+            final LinkedHashMap<String, KeyStore.PrivateKeyEntry> entries = new LinkedHashMap<>();
+            final boolean usingSunProvider = "SunJSSE".equals(sslContext.getProvider().getName());
+
+            for (Map.Entry<String, Credential> entry : credentials.entrySet()) {
+                final Credential credential = entry.getValue();
+                final X509Certificate[] chain = outputCertChain(credential);
+                PrivateKey privateKey = credential.privateKey;
+                if (usingSunProvider) {
+                    privateKey = translateKeysForSunEngineIfNecessary(chain, chain[0].getPublicKey(), privateKey);
+                    if (privateKey == null) continue; // NOTE: key type not supported - best we can do is to skip?
+                }
+                entries.put(entry.getKey(), new KeyStore.PrivateKeyEntry(privateKey, chain));
+            }
+
             final TrustManager[] trustManager = new TrustManager[] { new TrustManagerImpl(this) };
             // SSLContext (internals) on Sun JDK :
             // private final java.security.Provider provider; "SunJSSE"
             // private final javax.net.ssl.SSLContextSpi; sun.security.ssl.SSLContextImpl
-            sslContext.init(keyManager, trustManager, OpenSSL.getSecureRandom(context));
+            sslContext.init(SSLKeyManager.create(sslContext.getProvider(), entries),
+                    trustManager, OpenSSL.getSecureRandom(context));
             // if secureRandom == null JSSE will try :
             // - new SecureRandom();
             // - SecureRandom.getInstance("PKCS11", cryptoProvider);
@@ -1170,14 +1231,40 @@ public class SSLContext extends RubyObject {
             }
         }
 
+        private PrivateKey translateKeysForSunEngineIfNecessary(final X509Certificate[] chain,
+                                                                final PublicKey publicKey,
+                                                                PrivateKey privateKey) throws InvalidKeyException {
+            if (PKeyEdDSA.isEdDSAAlgorithm(publicKey.getAlgorithm())) {
+                final KeyFactory keyFactory;
+                try {
+                    keyFactory = KeyFactory.getInstance("EdDSA", "SunEC");
+                } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+                    LOG.warn(getRuntime(), "skipping " + publicKey.getAlgorithm() +
+                            " certificate - SunJSSE lacks EdDSA support (requires Java 15+): " + e.getMessage());
+                    return null; // older SunJSSE can still use other configured credential types
+                }
+
+                // both keys must report EdDSA to SunJSSE
+                if (!"EdDSA".equals(privateKey.getAlgorithm())) {
+                    privateKey = (PrivateKey) keyFactory.translateKey(privateKey);
+                }
+                if (!"EdDSA".equals(publicKey.getAlgorithm())) {
+                    final PublicKey newPublicKey = (PublicKey) keyFactory.translateKey(publicKey);
+                    // expose SunEC key without changing certificate bytes (SUN parsing can still pick BC)
+                    chain[0] = new X509AuxCertificate(chain[0]) {
+                        @Override
+                        public PublicKey getPublicKey() { return newPublicKey; }
+                    };
+                }
+            }
+            return privateKey; // publicKey is replaced in the chain directly
+        }
+
         final Store store;
 
         final int verifyMode;
         final IRubyObject verifyCallback; // null when unset
         final int verifyDepth; // -1 when unset
-
-        // one or more server/client credentials; empty when no cert/key configured
-        final List<Credential> credentials;
 
         // @client_ca - CAs whose names go into the CertificateRequest message
         final List<X509AuxCertificate> clientCA; // assumed always != null
@@ -1209,85 +1296,25 @@ public class SSLContext extends RubyObject {
             SSLContext.this.setLastVerifyResult(lastVerifyResult);
         }
 
-    }
-
-    private static class KeyManagerImpl extends X509ExtendedKeyManager {
-
-        final InternalContext internalContext;
-
-        KeyManagerImpl(InternalContext internalContext) {
-            super();
-            this.internalContext = internalContext;
-        }
-
-        @Override
-        public String chooseEngineClientAlias(String[] keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
-            for (int i = 0; i < keyType.length; i++) {
-                String alias = chooseAlias(keyType[i]);
-                if (alias != null) return alias;
-            }
-            return null;
-        }
-
-        @Override
-        public String chooseEngineServerAlias(String keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
-            return chooseAlias(keyType);
-        }
-
-        @Override
-        public String chooseClientAlias(String[] keyType, java.security.Principal[] issuers, java.net.Socket socket) {
-            for (int i = 0; i < keyType.length; i++) {
-                String alias = chooseAlias(keyType[i]);
-                if (alias != null) return alias;
-            }
-            return null;
-        }
-
-        @Override
-        public String chooseServerAlias(String keyType, java.security.Principal[] issuers, java.net.Socket socket) {
-            return chooseAlias(keyType);
-        }
-
-        // BCJSSE asks per negotiated key type (RSA / EC / ...)
-        private String chooseAlias(final String keyType) {
-            if (keyType == null) return null;
-            for (int i = 0; i < internalContext.credentials.size(); i++) {
-                final Credential credential = internalContext.credentials.get(i);
-                if (credential.privateKey != null && keyType.equalsIgnoreCase(credential.keyType)) {
-                    return credential.alias; // pick the first credential that matches
-                }
-            }
-            return null;
-        }
-
-        private Credential credentialByAlias(String alias) {
-            if (alias == null) return null;
-            for (int i = 0; i < internalContext.credentials.size(); i++) {
-                final Credential credential = internalContext.credentials.get(i);
-                if (credential.alias.equals(alias)) return credential;
-            }
-            return null;
-        }
-
-        @Override // c: ssl3_output_cert_chain
-        public java.security.cert.X509Certificate[] getCertificateChain(String alias) {
-            final Credential credential = credentialByAlias(alias);
-            if ( credential == null || credential.leaf == null ) return new java.security.cert.X509Certificate[0];
-
+        // c: ssl3_output_cert_chain
+        private X509Certificate[] outputCertChain(final Credential credential) {
             if ( credential.chain != null ) {
+                final int chainLen = credential.chain.size();
                 // OpenSSL (ssl_add_cert_chain) sends the leaf cert first, then iterates extra_certs
                 // getCertificateChain must return the full chain starting with the leaf
-                final java.security.cert.X509Certificate[] chain;
-                chain = new java.security.cert.X509Certificate[credential.chain.size() + 1];
+                final X509Certificate[] chain = new X509Certificate[chainLen + 1];
                 chain[0] = credential.leaf;
-                for (int i = 0; i < credential.chain.size(); i++) chain[i + 1] = credential.chain.get(i);
+                for (int i = 0; i < chainLen; i++) chain[i + 1] = credential.chain.get(i);
                 return chain;
             }
 
-            final ArrayList<java.security.cert.X509Certificate> chain = new ArrayList<>(8);
-            StoreContext storeCtx = internalContext.createStoreContext(null);
+            final StoreContext storeCtx = createStoreContext(null);
+            // store may be absent or fail init - still send the configured leaf
+            if (storeCtx == null) return new X509Certificate[] { credential.leaf };
+
+            final ArrayList<X509Certificate> chain = new ArrayList<>(8);
             X509AuxCertificate x = credential.leaf;
-            while (true) {
+            while (!chain.contains(x)) {
 
                 chain.add(x);
 
@@ -1302,31 +1329,15 @@ public class SSLContext extends RubyObject {
                     x = ((Certificate) s_obj[0]).cert;
                 }
                 catch (RuntimeException e) {
-                    LOG.debugStack(e);
+                    LOG.debugStack(getRuntime(), "outputCertChain", e);
                     break;
                 }
                 catch (Exception e) {
-                    LOG.debug("KeyManagerImpl bySubject failed", e);
+                    LOG.debug(getRuntime(), "outputCertChain", e);
                     break;
                 }
             }
-            return chain.toArray( new java.security.cert.X509Certificate[chain.size()] );
-        }
-
-        @Override
-        public String[] getClientAliases(String keyType, java.security.Principal[] issuers) {
-            return null;
-        }
-
-        @Override
-        public java.security.PrivateKey getPrivateKey(String alias) {
-            final Credential credential = credentialByAlias(alias);
-            return credential == null ? null : credential.privateKey;
-        }
-
-        @Override
-        public String[] getServerAliases(String keyType, java.security.Principal[] issuers) {
-            return null;
+            return chain.toArray(new X509Certificate[chain.size()]);
         }
 
     }

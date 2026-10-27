@@ -1266,6 +1266,7 @@ public class SSLContext extends RubyObject {
         }
 
         private static boolean keyTypeMatches(final String requested, final Credential credential) {
+            // BCJSSE may ask for cipher or signature names where SunJSSE asks for key algorithms
             if (requested.equalsIgnoreCase(credential.keyType)) return true;
 
             switch (requested.toUpperCase(Locale.ROOT)) {
@@ -1295,7 +1296,7 @@ public class SSLContext extends RubyObject {
                 parameters.init(new ECGenParameterSpec(namedGroup));
                 final ECParameterSpec expected = parameters.getParameterSpec(ECParameterSpec.class);
                 final ECParameterSpec actual = ((ECKey) publicKey).getParams();
-                // check the whole group so another EC credential cannot match by type alone
+                // BCJSSE names the TLS 1.3 group; EC alone could select a certificate on another curve
                 return actual != null && expected.getCurve().equals(actual.getCurve()) &&
                     expected.getGenerator().equals(actual.getGenerator()) &&
                     expected.getOrder().equals(actual.getOrder()) &&

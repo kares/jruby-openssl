@@ -952,6 +952,39 @@ class TestSSL < TestCase
     end
   end
 
+  def test_default_context_selects_eddsa_certificate_by_signature_scheme
+    omit_on_fips
+    skip 'SunJSSE supports EdDSA in TLS since Java 16' if sunjsse_without_eddsa?('SSL')
+    require 'open3'
+
+    keys = {
+      'ED448' => OpenSSL::PKey.new_raw_private_key('ED448', 'x' * 57),
+      'ED25519' => OpenSSL::PKey.generate_key('ED25519')
+    }
+    certs = {}
+    keys.each_with_index do |(algorithm, key), index|
+      certs[algorithm] = issue_cert(OpenSSL::X509::Name.parse("/CN=#{algorithm}"), key, 540 + index,
+        [['keyUsage', 'digitalSignature', true]], @ca_cert, @ca_key)
+    end
+    configure = proc do |ctx|
+      ctx.min_version = ctx.max_version = OpenSSL::SSL::TLS1_3_VERSION
+      ctx.cert = ctx.key = nil
+      keys.each { |algorithm, key| ctx.add_certificate(certs[algorithm], key, [@ca_cert]) }
+    end
+
+    reply = proc { |_ctx, ssl| ssl.puts 'ok' }
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: configure, server_proc: reply) do |_server, port|
+      %w[ed25519 ed448].each do |algorithm|
+        output, error, status = Open3.capture3('openssl', 's_client', '-connect', "127.0.0.1:#{port}",
+          '-tls1_3', '-sigalgs', algorithm, '-showcerts', stdin_data: "ping\n")
+        assert status.success?, error
+        pem = output[/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m]
+        assert_not_nil pem
+        assert_equal certs[algorithm.upcase].to_der, OpenSSL::X509::Certificate.new(pem).to_der
+      end
+    end
+  end
+
   def test_add_certificate_validates_private_key_and_chain
     ctx = OpenSSL::SSL::SSLContext.new
     public_key = OpenSSL::PKey.read(@svr_key.public_to_der)

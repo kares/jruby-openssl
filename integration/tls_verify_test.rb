@@ -117,9 +117,10 @@ class TLSVerifyTest < TestCase
   def test_min_version_above_server_maximum_fails
     with_service do
       configure = lambda { |ctx| ctx.min_version = OpenSSL::SSL::TLS1_3_VERSION }
-      assert_raise(OpenSSL::SSL::SSLError) do
+      err = assert_raise(OpenSSL::SSL::SSLError, Errno::ECONNRESET) do
         ssl_connect('tls-v1-2.badssl.com', 1012, configure: configure) { |ssl| ssl }
       end
+      omit "badssl.com dropped the connection (#{err.message})" if err.is_a?(Errno::ECONNRESET)
     end
   end
 
@@ -168,8 +169,8 @@ class TLSVerifyTest < TestCase
          Errno::ENETUNREACH, Errno::ETIMEDOUT, Timeout::Error => e
     omit "badssl.com not reachable (#{e.class}: #{e.message})"
   rescue OpenSSL::SSL::SSLError => e
-    # JRuby reports a peer dropping the connection mid-handshake as SSLError (MRI: Errno::ECONNRESET)
-    raise unless e.message.match?(/Connection reset|closing inbound before receiving peer's close_notify/i)
+    # peer closing mid-handshake is an SSLError (not Errno) in JRuby and MRI
+    raise unless e.message.match?(/closing inbound before receiving peer's close_notify|unexpected eof/i)
     omit "badssl.com dropped the connection (#{e.message})"
   end
 

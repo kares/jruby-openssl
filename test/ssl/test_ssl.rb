@@ -117,10 +117,11 @@ class TestSSL < TestCase
     cert
   end
 
+  # JDK 15 SunEC has EdDSA keys but its JSSE still disables EdDSA for TLS (JDK-8166596, Java 16)
   def sunjsse_without_eddsa?(protocol)
     return unless jruby?
     provider = org.jruby.ext.openssl.SecurityHelper.getSSLContext(protocol).provider.name
-    provider == 'SunJSSE' && self.class.java_version.last.to_i < 15
+    provider == 'SunJSSE' && self.class.java_version.last.to_i < 16
   end
 
   public
@@ -919,7 +920,7 @@ class TestSSL < TestCase
   # SSLContext.new without a version uses SunJSSE (BC EdDSA keys need translation there)
   def test_default_context_ed25519_credentials
     omit_on_fips
-    skip 'SunJSSE supports EdDSA since Java 15' if sunjsse_without_eddsa?('SSL')
+    skip 'SunJSSE supports EdDSA in TLS since Java 16' if sunjsse_without_eddsa?('SSL')
 
     server_key = OpenSSL::PKey.generate_key('ED25519')
     server_cert = issue_cert(OpenSSL::X509::Name.parse('/CN=Ed25519 server'), server_key, 530,

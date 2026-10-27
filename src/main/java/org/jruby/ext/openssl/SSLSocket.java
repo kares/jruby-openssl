@@ -345,10 +345,15 @@ public class SSLSocket extends RubyObject {
             forceClose();
             throw newSSLErrorFromHandshake(context.runtime, e);
         }
-        catch (IOException e) {
+        catch (SSLException e) {
             LOG.debug(context.runtime, "connectImpl", e);
             forceClose();
             throw newSSLError(context.runtime, e);
+        }
+        catch (IOException e) { // e.g. connection reset (Errno::ECONNRESET as in MRI)
+            LOG.debug(context.runtime, "connectImpl", e);
+            forceClose();
+            throw newError(context.runtime::newIOErrorFromException, e);
         }
         catch (NotYetConnectedException e) {
             throw newErrnoEPIPEError(context.runtime, "SSL_connect");
@@ -446,9 +451,13 @@ public class SSLSocket extends RubyObject {
             }
             throw newSSLErrorFromHandshake(context.runtime, e);
         }
-        catch (IOException e) {
+        catch (SSLException e) {
             LOG.debugStack(context.runtime, null, e);
             throw newSSLError(context.runtime, e);
+        }
+        catch (IOException e) { // e.g. connection reset (Errno::ECONNRESET as in MRI)
+            LOG.debugStack(context.runtime, null, e);
+            throw newError(context.runtime::newIOErrorFromException, e);
         }
         catch (RaiseException e) {
             throw e;

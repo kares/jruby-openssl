@@ -53,12 +53,9 @@ import java.util.Collections;
 import java.util.Locale;
 
 import javax.net.ssl.KeyManager;
-import javax.net.ssl.ExtendedSSLSession;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSessionContext;
-import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509ExtendedTrustManager;
@@ -94,8 +91,6 @@ import org.jruby.ext.openssl.x509store.X509Object;
 import org.jruby.ext.openssl.x509store.X509Utils;
 
 import org.jruby.runtime.callsite.FunctionalCachingCallSite;
-import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 
 import static org.jruby.ext.openssl.CipherStrings.SuiteToOSSL;
 import static org.jruby.ext.openssl.util.RubySupport.newUTF8String;
@@ -1274,7 +1269,7 @@ public class SSLContext extends RubyObject {
         @Override
         public String chooseEngineClientAlias(String[] keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
             for (int i = 0; i < keyType.length; i++) {
-                String alias = chooseAlias(keyType[i], engine == null ? null : engine.getHandshakeSession());
+                String alias = chooseAlias(keyType[i]);
                 if (alias != null) return alias;
             }
             return null;
@@ -1282,13 +1277,13 @@ public class SSLContext extends RubyObject {
 
         @Override
         public String chooseEngineServerAlias(String keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
-            return chooseAlias(keyType, engine == null ? null : engine.getHandshakeSession());
+            return chooseAlias(keyType);
         }
 
         @Override
         public String chooseClientAlias(String[] keyType, java.security.Principal[] issuers, java.net.Socket socket) {
             for (int i = 0; i < keyType.length; i++) {
-                String alias = chooseAlias(keyType[i], socket instanceof SSLSocket ? ((SSLSocket) socket).getHandshakeSession() : null);
+                String alias = chooseAlias(keyType[i]);
                 if (alias != null) return alias;
             }
             return null;
@@ -1296,40 +1291,7 @@ public class SSLContext extends RubyObject {
 
         @Override
         public String chooseServerAlias(String keyType, java.security.Principal[] issuers, java.net.Socket socket) {
-            return chooseAlias(keyType, socket instanceof SSLSocket ? ((SSLSocket) socket).getHandshakeSession() : null);
-        }
-
-        private String chooseAlias(final String keyType, final SSLSession session) {
-            if (!"EdDSA".equalsIgnoreCase(keyType) || !(session instanceof ExtendedSSLSession)) {
-                return chooseAlias(keyType);
-            }
-
-            // SunJSSE asks for EdDSA; peer certificate schemes narrow the possible variants
-            final String[] peerAlgorithms = ((ExtendedSSLSession) session).getPeerSupportedSignatureAlgorithms();
-            for (Credential credential : internalContext.credentials) {
-                if (credential.privateKey == null || !"EdDSA".equalsIgnoreCase(credential.keyType)) continue;
-                final String variant = edDSAVariant(credential.leaf.getPublicKey());
-                for (String peerAlgorithm : peerAlgorithms) {
-                    if (peerAlgorithm.equalsIgnoreCase(variant)) return credential.alias;
-                }
-            }
-            return null;
-        }
-
-        private static String edDSAVariant(final PublicKey publicKey) {
-            if (publicKey == null) return null;
-            final byte[] encoded = publicKey.getEncoded();
-            if (encoded == null) return null;
-            try {
-                // SunEC calls both variants EdDSA, so use the public key's encoded algorithm
-                final SubjectPublicKeyInfo info = SubjectPublicKeyInfo.getInstance(encoded);
-                if (EdECObjectIdentifiers.id_Ed25519.equals(info.getAlgorithm().getAlgorithm())) return "Ed25519";
-                if (EdECObjectIdentifiers.id_Ed448.equals(info.getAlgorithm().getAlgorithm())) return "Ed448";
-            }
-            catch (IllegalArgumentException e) {
-                return null;
-            }
-            return null;
+            return chooseAlias(keyType);
         }
 
         // BCJSSE asks for cipher key types in TLS 1.2 and named curves in TLS 1.3

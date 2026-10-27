@@ -28,6 +28,7 @@
 package org.jruby.ext.openssl;
 
 import java.net.Socket;
+import java.security.AlgorithmParameters;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -41,10 +42,14 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.interfaces.ECKey;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECParameterSpec;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Locale;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLEngine;
@@ -1248,16 +1253,57 @@ public class SSLContext extends RubyObject {
             return chooseAlias(keyType);
         }
 
-        // BCJSSE asks per negotiated key type (RSA / EC / ...)
+        // BCJSSE asks for cipher key types in TLS 1.2 and named curves in TLS 1.3
         private String chooseAlias(final String keyType) {
             if (keyType == null) return null;
             for (int i = 0; i < internalContext.credentials.size(); i++) {
                 final Credential credential = internalContext.credentials.get(i);
-                if (credential.privateKey != null && keyType.equalsIgnoreCase(credential.keyType)) {
+                if (credential.privateKey != null && keyTypeMatches(keyType, credential)) {
                     return credential.alias; // pick the first credential that matches
                 }
             }
             return null;
+        }
+
+        private static boolean keyTypeMatches(final String requested, final Credential credential) {
+            if (requested.equalsIgnoreCase(credential.keyType)) return true;
+
+            switch (requested.toUpperCase(Locale.ROOT)) {
+                case "ECDHE_ECDSA":
+                    return "EC".equalsIgnoreCase(credential.keyType);
+                case "ECDHE_RSA": case "DHE_RSA":
+                    return "RSA".equalsIgnoreCase(credential.keyType);
+                case "DHE_DSS":
+                    return "DSA".equalsIgnoreCase(credential.keyType);
+                case "ED25519": case "ED448":
+                    // EdDSA alone cannot distinguish Ed25519 from Ed448
+                    if (!"EdDSA".equalsIgnoreCase(credential.keyType)) return false;
+                    final PublicKey publicKey = credential.leaf.getPublicKey();
+                    return (publicKey != null && requested.equalsIgnoreCase(publicKey.getAlgorithm())) ||
+                        requested.equalsIgnoreCase(credential.privateKey.getAlgorithm());
+                default:
+                    if (!"EC".equalsIgnoreCase(credential.keyType) ||
+                            !requested.regionMatches(true, 0, "EC/", 0, 3)) return false;
+                    return matchesCurve(credential.leaf.getPublicKey(), requested.substring(3));
+            }
+        }
+
+        private static boolean matchesCurve(final PublicKey publicKey, final String namedGroup) {
+            if (!(publicKey instanceof ECKey)) return false;
+            try {
+                final AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
+                parameters.init(new ECGenParameterSpec(namedGroup));
+                final ECParameterSpec expected = parameters.getParameterSpec(ECParameterSpec.class);
+                final ECParameterSpec actual = ((ECKey) publicKey).getParams();
+                // check the whole group so another EC credential cannot match by type alone
+                return actual != null && expected.getCurve().equals(actual.getCurve()) &&
+                    expected.getGenerator().equals(actual.getGenerator()) &&
+                    expected.getOrder().equals(actual.getOrder()) &&
+                    expected.getCofactor() == actual.getCofactor();
+            }
+            catch (GeneralSecurityException | IllegalArgumentException e) {
+                return false;
+            }
         }
 
         private Credential credentialByAlias(String alias) {

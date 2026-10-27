@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 
 import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
@@ -1096,6 +1097,30 @@ public class SSLContext extends RubyObject {
         return credentials;
     }
 
+    // NOTE: only used under SunJSSE (engine) provider
+    private static Credential translateEdDSAKeys(final Ruby runtime, final Credential credential) {
+        final PublicKey publicKey = credential.leaf.getPublicKey();
+        if (!"EdDSA".equals(credential.keyType) || publicKey == null) return credential;
+        if ("EdDSA".equals(publicKey.getAlgorithm()) && "EdDSA".equals(credential.privateKey.getAlgorithm())) {
+            return credential;
+        }
+        try {
+            final KeyFactory keyFactory = KeyFactory.getInstance("EdDSA", "SunEC"); // Java 15+
+            final PrivateKey privateKey = (PrivateKey) keyFactory.translateKey(credential.privateKey);
+            final PublicKey sunPublicKey = (PublicKey) keyFactory.translateKey(publicKey);
+            // same certificate bytes, only the public key object differs
+            final X509AuxCertificate leaf = new X509AuxCertificate(credential.leaf) {
+                @Override
+                public PublicKey getPublicKey() { return sunPublicKey; }
+            };
+            return new Credential(credential.alias, leaf, privateKey, credential.keyType, credential.chain);
+        }
+        catch (GeneralSecurityException e) {
+            LOG.warn(runtime, "SunJSSE can not use " + publicKey.getAlgorithm() + " credential: ", e);
+            return credential;
+        }
+    }
+
     private InternalContext initSSLContext(ThreadContext context,
         final Store store, final List<X509AuxCertificate> clientCA,
         final int verifyMode, final IRubyObject verifyCallback, final int verifyDepth, final int timeout,
@@ -1134,8 +1159,6 @@ public class SSLContext extends RubyObject {
             final RubyProc alpnSelectCallback,
             final List<Credential> certsAndKeys) throws NoSuchAlgorithmException {
 
-            this.credentials = certsAndKeys;
-
             this.store = store;
             this.clientCA = clientCA;
             this.verifyMode = verifyMode;
@@ -1146,6 +1169,24 @@ public class SSLContext extends RubyObject {
             this.alpnSelectCallback = alpnSelectCallback;
 
             this.sslContext = SecurityHelper.getSSLContext(protocol);
+            this.credentials = convertCredentialsIfNeeded(certsAndKeys);
+        }
+
+        private List<Credential> convertCredentialsIfNeeded(final List<Credential> certsAndKeys) {
+            if (!"SunJSSE".equals(sslContext.getProvider().getName())) return certsAndKeys;
+
+            final Ruby runtime = getRuntime();
+            // SunJSSE skips EdDSA credentials unless both keys report "EdDSA" (BC keys report Ed25519/Ed448)
+            List<Credential> credentials = certsAndKeys;
+            for (int i = 0; i < certsAndKeys.size(); i++) {
+                final Credential credential = certsAndKeys.get(i);
+                final Credential translated = translateEdDSAKeys(runtime, credential);
+                if (translated != credential) {
+                    if (certsAndKeys == credentials) credentials = new ArrayList<>(certsAndKeys);
+                    credentials.set(i, translated);
+                }
+            }
+            return credentials;
         }
 
         void initSSLContext(final ThreadContext context) throws NoSuchAlgorithmException, KeyManagementException {

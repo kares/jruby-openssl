@@ -117,6 +117,12 @@ class TestSSL < TestCase
     cert
   end
 
+  def sunjsse_without_eddsa?(protocol)
+    return unless jruby?
+    provider = org.jruby.ext.openssl.SecurityHelper.getSSLContext(protocol).provider.name
+    provider == 'SunJSSE' && self.class.java_version.last.to_i < 15
+  end
+
   public
 
   # Ported from CRuby's test_verify_hostname_on_connect (test/openssl/test_ssl.rb).
@@ -787,11 +793,7 @@ class TestSSL < TestCase
       'P-256' => OpenSSL::PKey::EC.generate('prime256v1'),
       'P-384' => OpenSSL::PKey::EC.generate('secp384r1')
     }
-    # SunJSSE Ed25519 needs separate key translation
-    if !fips? && (!jruby? ||
-        Java::OrgJrubyExtOpenssl::SecurityHelper.getSSLContext('TLSv1.2').provider.name == 'BCJSSE')
-      keys['Ed25519'] = OpenSSL::PKey.generate_key('ED25519')
-    end
+    keys['Ed25519'] = OpenSSL::PKey.generate_key('ED25519') if !fips? && !sunjsse_without_eddsa?('TLSv1.2')
 
     keys.each_with_index do |(name, key), index|
       subject = OpenSSL::X509::Name.parse("/CN=#{name}")
@@ -910,6 +912,41 @@ class TestSSL < TestCase
             assert_equal cert.to_der.unpack1('H*'), ssl.gets.chomp, "#{name} #{registration}"
           end
         end
+      end
+    end
+  end
+
+  # SSLContext.new without a version uses SunJSSE (BC EdDSA keys need translation there)
+  def test_default_context_ed25519_credentials
+    omit_on_fips
+    skip 'SunJSSE supports EdDSA since Java 15' if sunjsse_without_eddsa?('SSL')
+
+    server_key = OpenSSL::PKey.generate_key('ED25519')
+    server_cert = issue_cert(OpenSSL::X509::Name.parse('/CN=Ed25519 server'), server_key, 530,
+      [['keyUsage', 'digitalSignature', true]], @ca_cert, @ca_key)
+    client_key = OpenSSL::PKey.generate_key('ED25519')
+    client_cert = issue_cert(OpenSSL::X509::Name.parse('/CN=Ed25519 client'), client_key, 531,
+      [['keyUsage', 'digitalSignature', true], ['extendedKeyUsage', 'clientAuth', false]], @ca_cert, @ca_key)
+
+    configure = proc do |ctx|
+      ctx.cert = server_cert
+      ctx.key = server_key
+      ctx.extra_chain_cert = [@ca_cert]
+      ctx.client_ca = [@ca_cert]
+    end
+    report = proc do |_ctx, ssl| # local key and peer certificate as seen by the server
+      ssl.puts [ssl.cert.public_key.raw_public_key, ssl.peer_cert.to_der].map { |bytes| bytes.unpack1('H*') }.join(' ')
+    end
+    verify = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+    start_server(verify, true, ctx_proc: configure, server_proc: report) do |_server, port|
+      client_ctx = OpenSSL::SSL::SSLContext.new
+      client_ctx.add_certificate(client_cert, client_key, [@ca_cert])
+      server_connect(port, client_ctx) do |ssl|
+        assert_equal server_cert.to_der, ssl.peer_cert.to_der
+        assert_equal server_key.raw_public_key, ssl.peer_cert.public_key.raw_public_key
+        local_key, peer_cert = ssl.gets.split.map { |hex| [hex].pack('H*') }
+        assert_equal server_key.raw_public_key, local_key
+        assert_equal client_cert.to_der, peer_cert
       end
     end
   end

@@ -868,6 +868,52 @@ class TestSSL < TestCase
     end
   end
 
+  # BCJSSE asks clients for EC/<named group> in TLS 1.3
+  def test_explicit_tls13_ec_client_certificate
+    keys = {
+      'P-256' => OpenSSL::PKey::EC.generate('prime256v1'),
+      'P-384' => OpenSSL::PKey::EC.generate('secp384r1')
+    }
+    configure = proc do |ctx|
+      if jruby?
+        ctx.ssl_version = :TLSv1_3
+      else
+        ctx.min_version = ctx.max_version = OpenSSL::SSL::TLS1_3_VERSION
+      end
+    end
+    server_ctx = proc do |ctx|
+      configure.call(ctx)
+      ctx.client_ca = [@ca_cert]
+    end
+    report_peer = proc do |_ctx, ssl|
+      ssl.puts ssl.peer_cert ? ssl.peer_cert.to_der.unpack1('H*') : 'none'
+    end
+    verify = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+
+    keys.each_with_index do |(name, key), index|
+      subject = OpenSSL::X509::Name.parse("/CN=#{name} client")
+      cert = issue_cert(subject, key, 520 + index,
+        [['keyUsage', 'digitalSignature', true], ['extendedKeyUsage', 'clientAuth', false]], @ca_cert, @ca_key)
+
+      %w[legacy add_certificate].each do |registration|
+        start_server(verify, true, ctx_proc: server_ctx, server_proc: report_peer) do |_server, port|
+          client_ctx = OpenSSL::SSL::SSLContext.new
+          configure.call(client_ctx)
+          if registration == 'legacy'
+            client_ctx.cert = cert
+            client_ctx.key = key
+          else
+            client_ctx.add_certificate(cert, key, [@ca_cert])
+          end
+          server_connect(port, client_ctx) do |ssl|
+            assert_equal 'TLSv1.3', ssl.ssl_version
+            assert_equal cert.to_der.unpack1('H*'), ssl.gets.chomp, "#{name} #{registration}"
+          end
+        end
+      end
+    end
+  end
+
   def test_add_certificate_validates_private_key_and_chain
     ctx = OpenSSL::SSL::SSLContext.new
     public_key = OpenSSL::PKey.read(@svr_key.public_to_der)

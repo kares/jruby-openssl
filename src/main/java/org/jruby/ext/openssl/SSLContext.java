@@ -1276,8 +1276,7 @@ public class SSLContext extends RubyObject {
                     return "RSA".equalsIgnoreCase(credential.keyType);
                 case "DHE_DSS":
                     return "DSA".equalsIgnoreCase(credential.keyType);
-                case "ED25519": case "ED448":
-                    // EdDSA alone cannot distinguish Ed25519 from Ed448
+                case "ED25519": case "ED448": // EdDSA alone cannot distinguish Ed25519 from Ed448
                     if (!"EdDSA".equalsIgnoreCase(credential.keyType)) return false;
                     final PublicKey publicKey = credential.leaf.getPublicKey();
                     return (publicKey != null && requested.equalsIgnoreCase(publicKey.getAlgorithm())) ||
@@ -1291,6 +1290,7 @@ public class SSLContext extends RubyObject {
 
         private static boolean matchesCurve(final PublicKey publicKey, final String namedGroup) {
             if (!(publicKey instanceof ECKey)) return false;
+
             try {
                 final AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
                 parameters.init(new ECGenParameterSpec(namedGroup));

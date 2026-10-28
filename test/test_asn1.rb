@@ -1379,6 +1379,45 @@ dPMQD5JX6g5HKnHFg2mZtoXQrWmJSn7p8GJK8yNTopEErA==
     end
   end
 
+  def test_high_tag_multi_byte_der_encoding
+    prim = OpenSSL::ASN1::OctetString.new("x", 32, nil, :UNIVERSAL)
+    assert_equal "\x1F\x20\x01x".b, prim.to_der
+
+    seq = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Integer.new(1)], 32, :IMPLICIT)
+    assert_equal "\xBF\x20\x03\x02\x01\x01".b, seq.to_der
+
+    seq.indefinite_length = true
+    assert_equal "\xBF\x20\x80\x02\x01\x01\x00\x00".b, seq.to_der
+
+    seq = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Integer.new(1)], 32, nil, :UNIVERSAL)
+    assert_equal "\x3F\x20\x03\x02\x01\x01".b, seq.to_der
+    assert_equal seq.to_der, OpenSSL::ASN1.decode(seq.to_der).to_der
+
+    seq.indefinite_length = true
+    assert_equal "\x3F\x20\x80\x02\x01\x01\x00\x00".b, seq.to_der
+
+    seq = OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::Integer.new(1)], 200, :IMPLICIT)
+    seq.indefinite_length = true
+    assert_equal "\xBF\x81\x48\x80\x02\x01\x01\x00\x00".b, seq.to_der
+    assert_equal seq.to_der, OpenSSL::ASN1.decode(seq.to_der).to_der
+  end
+
+  def test_indefinite_length_encoding_with_long_content
+    content = OpenSSL::ASN1::OctetString.new("x" * 200)
+    [ 1, 32 ].each do |tag|
+      data = OpenSSL::ASN1::ASN1Data.new([content, OpenSSL::ASN1::EndOfContent.new], tag, :CONTEXT_SPECIFIC)
+      data.indefinite_length = true
+      header = tag < 31 ? "\xA1\x80".b : "\xBF\x20\x80".b
+      assert_equal header + content.to_der + "\x00\x00".b, data.to_der
+    end
+  end
+
+  def test_indefinite_length_constructive_bit_string_implicit
+    cons = OpenSSL::ASN1::Constructive.new([OpenSSL::ASN1::BitString.new("a"), OpenSSL::ASN1::EndOfContent.new], 3, :IMPLICIT)
+    cons.indefinite_length = true
+    assert_equal "\xA3\x80\x03\x02\x00a\x00\x00".b, cons.to_der
+  end
+
   def test_universal_asn1_data_constructed_bit
     seq_data = OpenSSL::ASN1::ASN1Data.new([OpenSSL::ASN1::Integer.new(1)], 16, :UNIVERSAL)
     assert_equal "\x30\x03\x02\x01\x01".b, seq_data.to_der

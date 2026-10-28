@@ -1686,10 +1686,6 @@ public class ASN1 {
             }
         }
 
-        private boolean isConstructive() {
-            return this instanceof Constructive;
-        }
-
         boolean isInfiniteLength() {
             return getInstanceVariable("@indefinite_length").isTrue();
         }
@@ -1797,38 +1793,20 @@ public class ASN1 {
         }
 
         byte[] toDER(final ThreadContext context) throws IOException {
-            if (!(this instanceof Constructive) && !(this instanceof Primitive) && isUniversal(context)) {
+            if (!(this instanceof Constructive) && !(this instanceof Primitive) && (isUniversal(context) || isInfiniteLength())) {
                 final IRubyObject val = value(context);
-                final boolean constructed = isConstructive() || val instanceof RubyArray;
-                return toDERInternal(context, constructed, isInfiniteLength(), val);
+                return toDERInternal(context, val instanceof RubyArray, isInfiniteLength(), val);
             }
 
-            final ASN1Primitive prim = toASN1(context).toASN1Primitive();
-
-            if (isInfiniteLength()) {
-                final ByteArrayOutputStream tagOut = new ByteArrayOutputStream();
-                final ByteArrayOutputStream contentOut = new ByteArrayOutputStream();
-                prim.encodeTo(contentOut, ASN1Encoding.DER);
-                writeDERIdentifier(getTag(context), getTagClass(context) | BERTags.CONSTRUCTED, tagOut);
-
-                byte[] tagBytes = tagOut.toByteArray();
-                byte[] contentBytes = contentOut.toByteArray();
-
-                final int contentOnlyLen = contentBytes.length - tagBytes.length - 1;
-                final ByteArrayOutputStream out = new ByteArrayOutputStream(tagBytes.length + contentOnlyLen + 3);
-                out.write(tagBytes);
-                out.write(0x80);
-                out.write(contentBytes, tagBytes.length + 1, contentOnlyLen);
-                out.write(0x00);
-                out.write(0x00);
-
-                return out.toByteArray();
-            }
-
-            return prim.getEncoded(ASN1Encoding.DER);
+            return toASN1(context).toASN1Primitive().getEncoded(ASN1Encoding.DER);
         }
 
         byte[] toDERInternal(final ThreadContext context, boolean isConstructed, boolean isIndefiniteLength, final IRubyObject value) throws IOException {
+            return toDERInternal(context, getTag(context), getTagClass(context), isConstructed, isIndefiniteLength, value);
+        }
+
+        byte[] toDERInternal(final ThreadContext context, final int tag, final int tagClass,
+            boolean isConstructed, boolean isIndefiniteLength, final IRubyObject value) throws IOException {
             // handstitch conversion
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
 
@@ -1881,12 +1859,12 @@ public class ASN1 {
                 }
             }
 
-            int flags = getTagClass(context);
+            int flags = tagClass;
             if (isConstructed) {
                 flags |= BERTags.CONSTRUCTED;
             }
             // tag
-            writeDERIdentifier(getTag(context), flags, out);
+            writeDERIdentifier(tag, flags, out);
             if (isIndefiniteLength) {
                 out.write(0x80);
             } else {
@@ -1895,6 +1873,19 @@ public class ASN1 {
             // value
             out.write(valueBytes);
 
+            return out.toByteArray();
+        }
+
+        // swaps the identifier octet(s) of an encoding for tag + tagClass (keeps the CONSTRUCTED bit)
+        final byte[] replaceIdentifier(final byte[] encoded, final int tag, final int tagClass) {
+            int idLen = 1;
+            if ((encoded[0] & 0x1f) == 0x1f) { // high-tag-number form
+                while ((encoded[idLen] & 0x80) != 0) idLen++;
+                idLen++;
+            }
+            final ByteArrayOutputStream out = new ByteArrayOutputStream(encoded.length + 4);
+            writeDERIdentifier(tag, tagClass | (encoded[0] & BERTags.CONSTRUCTED), out);
+            out.write(encoded, idLen, encoded.length - idLen);
             return out.toByteArray();
         }
 
@@ -2162,8 +2153,7 @@ public class ASN1 {
                 final IRubyObject defTag = defaultTag();
                 if ( !defTag.isNil() && getTag(context) != RubyNumeric.fix2int(defTag) ) {
                     final byte[] encoded = toASN1Primitive(context).toASN1Primitive().getEncoded(ASN1Encoding.DER);
-                    encoded[0] = (byte) getTag(context);
-                    return encoded;
+                    return replaceIdentifier(encoded, getTag(context), getTagClass(context));
                 }
             }
 
@@ -2403,20 +2393,16 @@ public class ASN1 {
             final boolean isIndefiniteLength = isInfiniteLength();
 
             if ( isIndefiniteLength ) {
-                if ( isSequence() || tagNo == SEQUENCE ) {
-                    return applyIndefiniteTagging(context, sequenceToDER(context));
+                if ( isExplicitTagging() && ( isSequence() || isSet() || tagNo == SEQUENCE || tagNo == SET ) ) {
+                    final int innerTag = isSequence() ? SEQUENCE : ( isSet() ? SET : tagNo );
+                    final ByteArrayOutputStream out = new ByteArrayOutputStream(64);
+                    writeDERIdentifier(tagNo, getTagClass(context) | BERTags.CONSTRUCTED, out);
+                    out.write(0x80);
+                    out.write(toDERInternal(context, innerTag, BERTags.UNIVERSAL, true, true, value(context)));
+                    out.write(0x00); out.write(0x00);
+                    return out.toByteArray();
                 }
-                if ( isSet() || tagNo == SET)  {
-                    return applyIndefiniteTagging(context, setToDER(context));
-                }
-                // "raw" Constructive
-                switch ( getTag(context) ) {
-                case OCTET_STRING:
-                    return octetStringToDER(context);
-                case BIT_STRING:
-                    return bitStringToDER(context);
-                }
-                return toDERInternal(context, true, isInfiniteLength(), value(context));
+                return toDERInternal(context, true, true, value(context));
             }
 
             if ( isEOC(context) ) {
@@ -2440,66 +2426,15 @@ public class ASN1 {
                 final IRubyObject defTag = defaultTag();
                 if ( !defTag.isNil() && tagNo != RubyNumeric.fix2int(defTag) ) {
                     final byte[] encoded = toASN1(context).toASN1Primitive().getEncoded(ASN1Encoding.DER);
-                    encoded[0] = (byte) (BERTags.CONSTRUCTED | tagNo);
-                    return encoded;
+                    return replaceIdentifier(encoded, tagNo, getTagClass(context));
                 }
             }
 
             return super.toDER(context);
         }
 
-        private byte[] bitStringToDER(final ThreadContext context) throws IOException {
-            final ASN1EncodableVector values = toASN1EncodableVector(context);
-            final ByteArrayOutputStream out = new ByteArrayOutputStream();
-            out.write(BERTags.CONSTRUCTED | BERTags.BIT_STRING);
-            out.write(0x80); // infinite-length
-            for ( int i = 0; i < values.size(); i++ ) {
-                out.write( values.get(i).toASN1Primitive().getEncoded() );
-            }
-            out.write(0x00); out.write(0x00); // writeBEREnd
-            return out.toByteArray();
-        }
-
-        private byte[] octetStringToDER(final ThreadContext context) throws IOException {
-            final ASN1EncodableVector values = toASN1EncodableVector(context);
-            final ByteArrayOutputStream out = new ByteArrayOutputStream(64);
-            writeDERIdentifier(getTag(context), getTagClass(context) | BERTags.CONSTRUCTED, out);
-            out.write(0x80);
-            for ( int i = 0; i < values.size(); i++ ) {
-                final ASN1Encodable value = values.get(i);
-                if (value instanceof InternalEncodable) {
-                    final byte[] nested = ((InternalEncodable) value).entry.toDER(context);
-                    out.write(nested, 0, nested.length);
-                }
-                else {
-                    out.write(value.toASN1Primitive().getEncoded());
-                }
-            }
-            out.write(0x00);
-            out.write(0x00);
-            return out.toByteArray();
-        }
-
-        private byte[] sequenceToDER(final ThreadContext context) throws IOException {
-            final ASN1EncodableVector values = toASN1EncodableVector(context);
-
-            final ByteArrayOutputStream out = new ByteArrayOutputStream(64);
-            BERSequenceGenerator sequenceGenerator = new BERSequenceGenerator(out);
-            for ( int i = 0; i < values.size(); i++ ) {
-                final ASN1Encodable value = values.get(i);
-                if ( value instanceof InternalEncodable ) { // HACK
-                    byte[] nested = ((InternalEncodable) value).entry.toDER(context);
-                    out.write(nested, 0, nested.length); continue;
-                }
-                sequenceGenerator.addObject( values.get(i) );
-            }
-            sequenceGenerator.close();
-            return out.toByteArray();
-        }
-
         private byte[] setToDER(final ThreadContext context) throws IOException {
             final ASN1EncodableVector values = toASN1EncodableVector(context);
-            if (isInfiniteLength()) return new BERSet(values).toASN1Primitive().getEncoded();
 
             final ByteArrayOutputStream content = new ByteArrayOutputStream(64);
             for (int i = 0; i < values.size(); i++) {
@@ -2519,28 +2454,6 @@ public class ASN1 {
             writeDERLength(content.size(), out);
             content.writeTo(out);
             return out.toByteArray();
-        }
-
-        // Applies EXPLICIT or IMPLICIT tagging to an already-encoded indefinite-length
-        // Sequence or Set byte array. For IMPLICIT, replaces the tag byte in-place.
-        // For EXPLICIT, wraps the inner bytes with an outer tag + indefinite-length header
-        // and appends the required outer EOC (0x00 0x00).
-        private byte[] applyIndefiniteTagging(final ThreadContext context, final byte[] innerBytes) throws IOException {
-            if ( !isTagged() ) return innerBytes;
-            final int tag = getTag(context);
-            final int tagClass = getTagClass(context);
-            if ( isImplicitTagging() ) {
-                innerBytes[0] = (byte) (tagClass | BERTags.CONSTRUCTED | tag);
-                return innerBytes;
-            } else { // EXPLICIT
-                final ByteArrayOutputStream out = new ByteArrayOutputStream(innerBytes.length + 4);
-                writeDERIdentifier(tag, tagClass | BERTags.CONSTRUCTED, out);
-                out.write(0x80); // indefinite length
-                out.write(innerBytes);
-                out.write(0x00); // outer EOC
-                out.write(0x00);
-                return out.toByteArray();
-            }
         }
 
         private ASN1EncodableVector toASN1EncodableVector(final ThreadContext context) {

@@ -434,6 +434,70 @@ class TestCipher < TestCase
     end
   end
 
+  STREAM_MODE_CIPHERS = %w[ aes-128-ctr aes-256-ctr aes-128-ofb aes-256-ofb
+                            aes-128-cfb aes-256-cfb aes-128-cfb8 aes-256-cfb8 ].freeze
+  OTHER_STREAM_MODE_CIPHERS = %w[ camellia-128-ctr camellia-192-ofb camellia-256-cfb camellia-128-cfb8
+                                  des-ede3-ofb des-ede3-cfb ].freeze
+
+  def test_stream_modes_update_outputs_partial_blocks
+    STREAM_MODE_CIPHERS.each { |algo| assert_stream_mode_update(algo) }
+  end
+
+  def test_stream_modes_continue_after_final_on_partial_block
+    STREAM_MODE_CIPHERS.each { |algo| assert_stream_mode_final(algo) }
+  end
+
+  def test_other_stream_modes_on_partial_blocks
+    skip_fips_unapproved_ciphers
+
+    OTHER_STREAM_MODE_CIPHERS.each do |algo|
+      assert_stream_mode_update(algo)
+      assert_stream_mode_final(algo)
+    end
+  end
+
+  def test_stream_modes_ignore_padding
+    data = ("0123456789abcdef" * 2 + "012").b
+    STREAM_MODE_CIPHERS.each do |algo|
+      expected = keyed_cipher(algo, :encrypt).update(data)
+      [0, 1].each do |padding|
+        enc = keyed_cipher(algo, :encrypt); enc.padding = padding
+        assert_equal expected, enc.update(data) + enc.final, "#{algo} encrypt with padding = #{padding}"
+
+        dec = keyed_cipher(algo, :decrypt); dec.padding = padding
+        assert_equal data, dec.update(expected) + dec.final, "#{algo} decrypt with padding = #{padding}"
+      end
+    end
+  end
+
+  def test_stream_and_aead_modes_block_size
+    (STREAM_MODE_CIPHERS + %w[aes-128-gcm aes-256-gcm]).each do |algo|
+      assert_equal 1, OpenSSL::Cipher.new(algo).block_size, algo
+    end
+    assert_equal 16, OpenSSL::Cipher.new('aes-128-cbc').block_size
+    assert_equal 16, OpenSSL::Cipher.new('aes-128-ecb').block_size
+  end
+
+  # SunJCE outputs (and buffers) differently than BC, it also wipes key bytes after use
+  def test_partial_blocks_with_jdk_cipher_provider
+    omit_on_fips 'JDK provider not used in FIPS mode'
+
+    data = ("0123456789abcdef" * 2 + "0123456789").b
+    cbc = keyed_cipher('aes-128-cbc', :encrypt)
+    cbc_expected = cbc.update(data.byteslice(0, 5)) + cbc.final + cbc.update(data.byteslice(5, 37)) + cbc.final
+
+    with_jdk_cipher_provider do
+      %w[aes-128-ctr aes-128-ofb aes-128-cfb aes-128-cfb8].each do |algo|
+        assert_stream_mode_update(algo)
+        assert_stream_mode_final(algo)
+      end
+
+      cbc = keyed_cipher('aes-128-cbc', :encrypt)
+      out = cbc.update(data.byteslice(0, 5)) + cbc.final + cbc.update(data.byteslice(5, 37)) + cbc.final
+      assert_equal cbc_expected, out, 'aes-128-cbc update after final'
+    end
+  end if defined? JRUBY_VERSION
+
   # NIST SP 800-38A F.5.5/F.5.6 AES-256-CTR known-answer vector
   def test_aes256_ctr_nist_kat
     key = ['603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4'].pack('H*')
@@ -1071,18 +1135,8 @@ class TestCipher < TestCase
     bytes = '0000' * 5
     expected = "f0@\x02\xF6\xA8\xC2\rt\xCC\x83\x8F8e\x19RZ\x8D5\xF8" # from MRI
     actual = cipher.update(bytes)
-    if fips?
-      assert_equal expected, actual
-      assert_equal "", cipher.final
-    elsif jruby? # NOTE: ugly but this is as far as JCE gets us :
-      assert_equal expected[0...16], actual
-      # since on Java the padding is handled internally by the Cipher
-      # we get :( "Z\x8D5\xF8\x10S|\xB7_R\xA2\x921\x93\x14]"
-      assert_equal expected[16..-1], cipher.final[0...4]
-    else
-      assert_equal expected, actual
-      assert_equal "", cipher.final
-    end
+    assert_equal expected, actual
+    assert_equal "", cipher.final
   end
 
   def test_encrypt_aes_256_cbc_modifies_buffer
@@ -1185,6 +1239,65 @@ class TestCipher < TestCase
       cipher.decrypt
       kwargs.each {|k, v| cipher.send(:"#{k}=", v) }
     end
+  end
+
+  STREAM_DATA = (0..255).map(&:chr).join.b.freeze
+
+  def keyed_cipher(algo, mode)
+    cipher = OpenSSL::Cipher.new(algo).send(mode)
+    cipher.key = "k" * cipher.key_len
+    cipher.iv = "v" * cipher.iv_len
+    cipher
+  end
+
+  # every update outputs as many bytes as given (OpenSSL does not hold back a partial block)
+  def assert_stream_mode_update(algo, chunks = [1, 5, 10, 16, 3, 17, 31, 2, 48, 7])
+    data = STREAM_DATA.byteslice(0, chunks.sum)
+    expected = keyed_cipher(algo, :encrypt).update(data)
+    assert_equal data.bytesize, expected.bytesize, "#{algo} encrypt output size"
+
+    [[:encrypt, data, expected], [:decrypt, expected, data]].each do |mode, input, output|
+      cipher = keyed_cipher(algo, mode)
+      offset = 0
+      chunks.each do |n|
+        part = cipher.update(input.byteslice(offset, n))
+        assert_equal output.byteslice(offset, n), part, "#{algo} #{mode} update(#{n}) at offset #{offset}"
+        offset += n
+      end
+      assert_equal '', cipher.final, "#{algo} #{mode} final"
+    end
+  end
+
+  # final outputs nothing and does not reset the stream (e.g. CTR counter) on a partial block
+  def assert_stream_mode_final(algo, chunks = [5, 1, 10, 16, 5, 3, 25])
+    data = STREAM_DATA.byteslice(0, chunks.sum)
+    expected = keyed_cipher(algo, :encrypt).update(data)
+
+    [[:encrypt, data, expected], [:decrypt, expected, data]].each do |mode, input, output|
+      cipher = keyed_cipher(algo, mode)
+      out = ''.b; offset = 0
+      chunks.each do |n|
+        out << cipher.update(input.byteslice(offset, n))
+        assert_equal '', cipher.final, "#{algo} #{mode} final after #{offset + n} bytes"
+        offset += n
+      end
+      assert_equal output, out, "#{algo} #{mode} with final after each update"
+    end
+  end
+
+  # use JDK crypto (SunJCE) instead of the BC provider
+  def with_jdk_cipher_provider
+    require 'jruby'
+    helper = JRuby.runtime.jruby_class_loader.loadClass('org.jruby.ext.openssl.SecurityHelper')
+    fields = %w[securityProvider initSecurityProvider].map do |name|
+      helper.getDeclaredField(name).tap { |field| field.setAccessible(true) }
+    end
+    saved = fields.map { |field| field.get(nil) }
+    fields[0].set(nil, nil)
+    fields[1].set(nil, false.to_java)
+    yield
+  ensure
+    fields.zip(saved).each { |field, value| field.set(nil, value) } if saved
   end
 
 end

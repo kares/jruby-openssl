@@ -286,6 +286,11 @@ public class Cipher extends RubyObject {
             NO_PADDING_BLOCK_MODES.add("CCM");
         }
 
+        // modes where a block cipher works as a stream cipher (except the AEAD ones)
+        static boolean isStreamMode(final String cryptoMode) {
+            return "CTR".equals(cryptoMode) || "OFB".equals(cryptoMode) || "CFB".equals(cryptoMode) || "CFB8".equals(cryptoMode);
+        }
+
         public String getBase() {
             return base;
         }
@@ -582,12 +587,10 @@ public class Cipher extends RubyObject {
         private static String getPaddingType(final String padding, final String cryptoMode) {
             final String defaultPadding = "PKCS5Padding";
 
-            if ( padding == null ) {
-                if ( NO_PADDING_BLOCK_MODES.contains(cryptoMode) ) {
-                    return "NoPadding";
-                }
-                return defaultPadding;
-            }
+            // OpenSSL ignores padding for these (block size 1)
+            if ( NO_PADDING_BLOCK_MODES.contains(cryptoMode) ) return "NoPadding";
+
+            if ( padding == null ) return defaultPadding;
             if ( padding.equalsIgnoreCase("PKCS5Padding") ) {
                 return "PKCS5Padding";
             }
@@ -923,6 +926,8 @@ public class Cipher extends RubyObject {
             // getBlockSize() returns 0 for stream cipher in JCE; OpenSSL returns 1 for RC4
             return runtime.newFixnum(1);
         }
+        // OpenSSL reports 1 for CTR, OFB, CFB, GCM and CCM (the underlying block size in JCE)
+        if ( Algorithm.NO_PADDING_BLOCK_MODES.contains(cryptoMode) ) return runtime.newFixnum(1);
         return runtime.newFixnum(cipher.getBlockSize());
     }
 
@@ -1107,41 +1112,9 @@ public class Cipher extends RubyObject {
             updateBuffer = null;
         }
         try {
-            // ECB mode is the only mode that does not require an IV
-            if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
-                cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE,
-                        new SimpleSecretKey(getCipherAlgorithm(), this.key)
-                );
-            }
-            else {
-                // if no IV yet, start out with all \0s
-                if ( realIV == null ) realIV = new byte[ivLength];
-
-                if ( "RC2".equalsIgnoreCase(cryptoBase) ) {
-                    cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE,
-                        new SimpleSecretKey("RC2", this.key),
-                        new RC2ParameterSpec(this.key.length * 8, this.realIV)
-                    );
-                }
-                else if ( "RC4".equalsIgnoreCase(cryptoBase) ) {
-                    cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE,
-                        new SimpleSecretKey("RC4", this.key)
-                    );
-                }
-                else {
-                    final AlgorithmParameterSpec ivSpec;
-                    if ( "GCM".equalsIgnoreCase(cryptoMode) || "CCM".equalsIgnoreCase(cryptoMode) ) { // e.g. 'aes-128-gcm'
-                        ivSpec = new GCMParameterSpec(getAuthTagLength() * 8, this.realIV);
-                    }
-                    else {
-                        ivSpec = new IvParameterSpec(this.realIV);
-                    }
-                    cipher.init(encryptMode ? ENCRYPT_MODE : DECRYPT_MODE,
-                        new SimpleSecretKey(getCipherAlgorithm(), this.key),
-                        ivSpec
-                    );
-                }
-            }
+            // if no IV yet, start out with all \0s (ECB mode is the only mode that does not require an IV)
+            if ( realIV == null && ! "ECB".equalsIgnoreCase(cryptoMode) ) realIV = new byte[ivLength];
+            initCipher(cipher, realIV);
         }
         catch (InvalidKeyException e) {
             throw newCipherError(runtime, e + "\n possibly you need to install Java Cryptography Extension (JCE) Unlimited Strength Jurisdiction Policy Files for your JRE");
@@ -1156,7 +1129,7 @@ public class Cipher extends RubyObject {
 
         cipherInited = true;
         processedDataBytes = 0;
-        outputDataBytes = 0;
+        streamMode = Algorithm.isStreamMode(cryptoMode) ? new StreamMode() : null;
 
         if ( switchToManualBlockUpdateBuffer() ) {
             // switch JCE cipher to NoPadding so it flushes complete blocks immediately; add PKCS7 padding in do_final
@@ -1180,13 +1153,149 @@ public class Cipher extends RubyObject {
         }
     }
 
+    private void initCipher(final javax.crypto.Cipher cipher, final byte[] iv) throws GeneralSecurityException {
+        final int opmode = encryptMode ? ENCRYPT_MODE : DECRYPT_MODE;
+        if ( "ECB".equalsIgnoreCase(cryptoMode) ) {
+            cipher.init(opmode, new SimpleSecretKey(getCipherAlgorithm(), this.key));
+        }
+        else if ( "RC2".equalsIgnoreCase(cryptoBase) ) {
+            cipher.init(opmode, new SimpleSecretKey("RC2", this.key), new RC2ParameterSpec(this.key.length * 8, iv));
+        }
+        else if ( "RC4".equalsIgnoreCase(cryptoBase) ) {
+            cipher.init(opmode, new SimpleSecretKey("RC4", this.key));
+        }
+        else {
+            final AlgorithmParameterSpec ivSpec;
+            if ( "GCM".equalsIgnoreCase(cryptoMode) || "CCM".equalsIgnoreCase(cryptoMode) ) { // e.g. 'aes-128-gcm'
+                ivSpec = new GCMParameterSpec(getAuthTagLength() * 8, iv);
+            }
+            else {
+                ivSpec = new IvParameterSpec(iv);
+            }
+            cipher.init(opmode, new SimpleSecretKey(getCipherAlgorithm(), this.key), ivSpec);
+        }
+    }
+
+    private transient StreamMode streamMode;
+
+    // OpenSSL outputs every CTR, OFB and CFB byte on update, a JCE provider might hold back a partial block (BC does):
+    // those bytes get computed by a second cipher, initialized at the block's IV (counter or feedback)
+    private final class StreamMode {
+
+        private final int unit; // bytes per IV update (CFB8: 1)
+        private final byte[] register; // IV of the block where the main cipher's output stopped
+        private final byte[] blockIn, blockOut; // that block's bytes already output (by the main cipher)
+        private int blockPos;
+        private byte[] pending = ByteList.NULL_ARRAY; // input the main cipher has not yet output
+        private javax.crypto.Cipher tailCipher;
+
+        StreamMode() {
+            this.unit = "CFB8".equals(cryptoMode) ? 1 : cipher.getBlockSize();
+            this.register = realIV.clone();
+            this.blockIn = new byte[unit];
+            this.blockOut = new byte[unit];
+        }
+
+        ByteList update(final byte[] in, final int off, final int len) throws GeneralSecurityException {
+            final byte[] out = cipher.update(in, off, len);
+            final int outLen = out == null ? 0 : out.length;
+
+            final int lag = pending.length;
+            final byte[] input; final int inputOff; // pending + in
+            if ( lag == 0 ) {
+                input = in; inputOff = off;
+            }
+            else {
+                input = new byte[lag + len]; inputOff = 0;
+                System.arraycopy(pending, 0, input, 0, lag);
+                System.arraycopy(in, off, input, lag, len);
+            }
+            advance(input, inputOff, out, outLen);
+
+            final byte[] result = new byte[len];
+            final int fromMain = Math.max(outLen - lag, 0); // main output starts with bytes we already returned
+            if ( fromMain > 0 ) System.arraycopy(out, lag, result, 0, fromMain);
+
+            final int newLag = lag + len - outLen;
+            if ( newLag > 0 ) {
+                final byte[] tail = new byte[blockPos + newLag];
+                System.arraycopy(blockIn, 0, tail, 0, blockPos);
+                System.arraycopy(input, inputOff + outLen, tail, blockPos, newLag);
+                if ( tailCipher == null ) tailCipher = getCipherInstance(realName, false);
+                initCipher(tailCipher, register);
+                final byte[] tailOut = tailCipher.doFinal(tail);
+                final int fromTail = len - fromMain;
+                System.arraycopy(tailOut, tailOut.length - fromTail, result, fromMain, fromTail);
+                pending = Arrays.copyOfRange(input, inputOff + outLen, inputOff + lag + len);
+            }
+            else {
+                pending = ByteList.NULL_ARRAY;
+            }
+            return new ByteList(result, false);
+        }
+
+        // move register (and block) past n bytes of the main cipher's output
+        private void advance(final byte[] in, int inOff, final byte[] out, int n) {
+            int outOff = 0;
+            if ( blockPos > 0 && n > 0 ) {
+                final int k = Math.min(unit - blockPos, n);
+                System.arraycopy(in, inOff, blockIn, blockPos, k);
+                System.arraycopy(out, outOff, blockOut, blockPos, k);
+                blockPos += k; inOff += k; outOff += k; n -= k;
+                if ( blockPos < unit ) return;
+                nextRegister(blockIn, 0, blockOut, 0, 1);
+                blockPos = 0;
+            }
+            final int blocks = n / unit;
+            if ( blocks > 0 ) {
+                nextRegister(in, inOff, out, outOff, blocks);
+                inOff += blocks * unit; outOff += blocks * unit; n -= blocks * unit;
+            }
+            if ( n > 0 ) {
+                System.arraycopy(in, inOff, blockIn, 0, n);
+                System.arraycopy(out, outOff, blockOut, 0, n);
+                blockPos = n;
+            }
+        }
+
+        private void nextRegister(final byte[] in, final int inOff, final byte[] out, final int outOff, final int blocks) {
+            final int len = blocks * unit;
+            if ( "CTR".equals(cryptoMode) ) { // big-endian counter over the whole IV (as OpenSSL)
+                long n = blocks;
+                for ( int i = register.length - 1; i >= 0 && n != 0; i-- ) {
+                    final long sum = (register[i] & 0xFF) + (n & 0xFF);
+                    register[i] = (byte) sum;
+                    n = (n >>> 8) + (sum >>> 8);
+                }
+            }
+            else if ( "OFB".equals(cryptoMode) ) { // last keystream block
+                final int last = len - unit;
+                for ( int i = 0; i < unit; i++ ) {
+                    register[i] = (byte) (in[inOff + last + i] ^ out[outOff + last + i]);
+                }
+            }
+            else { // CFB: ciphertext shifted in
+                final byte[] c = encryptMode ? out : in;
+                final int cOff = encryptMode ? outOff : inOff;
+                final int r = register.length;
+                if ( len >= r ) {
+                    System.arraycopy(c, cOff + len - r, register, 0, r);
+                }
+                else {
+                    System.arraycopy(register, len, register, 0, r - len);
+                    System.arraycopy(c, cOff, register, r - len, len);
+                }
+            }
+        }
+
+    }
+
     private String getCipherAlgorithm() {
         final int idx = realName.indexOf('/');
         return idx <= 0 ? realName : realName.substring(0, idx);
     }
 
     private int processedDataBytes = 0;
-    private int outputDataBytes = 0;
     private byte[] lastIV;
 
     @JRubyMethod
@@ -1222,10 +1331,12 @@ public class Cipher extends RubyObject {
                 // Feed only complete blocks to NoPadding cipher, buffer the rest
                 str = updateWithBuffer(in, offset, length);
             }
+            else if ( streamMode != null ) {
+                str = streamMode.update(in, offset, length);
+            }
             else {
                 final byte[] out = cipher.update(in, offset, length);
                 if ( out != null ) {
-                    outputDataBytes += out.length;
                     str = new ByteList(out, false);
                     if ( realIV != null ) {
                         if ( encryptMode ) setLastIVIfNeeded( out );
@@ -1318,12 +1429,8 @@ public class Cipher extends RubyObject {
         if ( ! cipherInited ) doInitCipher(runtime);
 
         if ( "RC4".equalsIgnoreCase(cryptoBase) ) return RubyString.newEmptyString(runtime);
-        // complete CTR and OFB blocks have nothing to flush (doFinal would reset the state)
-        if ( ( "CTR".equalsIgnoreCase(cryptoMode) || "OFB".equalsIgnoreCase(cryptoMode) ) &&
-             "NoPadding".equals(paddingType) &&
-             processedDataBytes == outputDataBytes && processedDataBytes % ivLength == 0 ) {
-            return RubyString.newEmptyString(runtime);
-        }
+        // update has output all bytes, the stream continues after final (doFinal would reset the state)
+        if ( streamMode != null ) return RubyString.newEmptyString(runtime);
 
         final ByteList str;
         try {

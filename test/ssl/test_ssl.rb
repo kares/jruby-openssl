@@ -496,6 +496,48 @@ class TestSSL < TestCase
     tcp_server&.close rescue nil
   end
 
+  def test_connect_reset_by_peer_raises_econnreset
+    tcp_server = TCPServer.new("127.0.0.1", 0)
+    server_thread = Thread.new do
+      sock = tcp_server.accept
+      sock.readpartial(5) # wait for ClientHello
+      sock.setsockopt(Socket::Option.linger(true, 0)) # close with RST
+      sock.close
+    end
+
+    sock = TCPSocket.new("127.0.0.1", tcp_server.addr[1])
+    ssl = OpenSSL::SSL::SSLSocket.new(sock)
+    assert_raise(Errno::ECONNRESET) { ssl.connect }
+  ensure
+    sock&.close rescue nil
+    server_thread&.join rescue nil
+    tcp_server&.close rescue nil
+  end
+
+  def test_accept_reset_by_peer_raises_econnreset
+    server_ctx = OpenSSL::SSL::SSLContext.new
+    server_ctx.cert = @svr_cert
+    server_ctx.key = @svr_key
+    tcp_server = TCPServer.new("127.0.0.1", 0)
+    ssl_server = OpenSSL::SSL::SSLServer.new(tcp_server, server_ctx)
+    ssl_server.start_immediately = false
+
+    client_thread = Thread.new do
+      sock = TCPSocket.new("127.0.0.1", tcp_server.addr[1])
+      sock.write("\x16\x03\x01\x00\xff") # handshake record header, body never sent
+      sleep 0.2
+      sock.setsockopt(Socket::Option.linger(true, 0)) # close with RST
+      sock.close
+    end
+
+    ssl = ssl_server.accept
+    assert_raise(Errno::ECONNRESET) { ssl.accept }
+  ensure
+    ssl&.io&.close rescue nil
+    client_thread&.join rescue nil
+    tcp_server&.close rescue nil
+  end
+
   def test_unexpected_eof_can_be_ignored_with_option
     server_ctx = OpenSSL::SSL::SSLContext.new
     server_ctx.cert = @svr_cert

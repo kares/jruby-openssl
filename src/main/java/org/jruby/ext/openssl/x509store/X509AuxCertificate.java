@@ -137,36 +137,13 @@ public class X509AuxCertificate extends X509Certificate implements Cloneable {
             flags |= X509Utils.EXFLAG_BCONS;
         }
 
+        // v3_purp.c: x509v3_cache_extensions
         if (getSubjectX500Principal().equals(getIssuerX500Principal())) {
             flags |= X509Utils.EXFLAG_SI; /* Cert is self-issued */
-
-            // TODO duplicate code from X509Utils.checkIfIssuedBy
-            if (getExtensionValue("2.5.29.35") != null) { //authorityKeyID
-                Object key = X509Utils.get(getExtensionValue("2.5.29.35"));
-                if (!(key instanceof ASN1Sequence)) key = X509Utils.get((DEROctetString) key);
-
-                final ASN1Sequence seq = (ASN1Sequence) key;
-                final AuthorityKeyIdentifier akid;
-                if (seq.size() == 1 && (seq.getObjectAt(0) instanceof ASN1OctetString)) {
-                    akid = AuthorityKeyIdentifier.getInstance(new DLSequence(new DERTaggedObject(0, seq.getObjectAt(0))));
-                } else {
-                    akid = AuthorityKeyIdentifier.getInstance(seq);
-                }
-
-                if (akid.getKeyIdentifier() != null) {
-                    if (getExtensionValue("2.5.29.14") != null) {
-                        DEROctetString der = (DEROctetString) X509Utils.get(getExtensionValue("2.5.29.14"));
-                        SubjectKeyIdentifier skid = SubjectKeyIdentifier.getInstance(X509Utils.get(der.getOctets()));
-                        if (skid.getKeyIdentifier() != null) {
-                            if (Arrays.equals(akid.getKeyIdentifier(), skid.getKeyIdentifier())) { /* SKID matches AKID */
-                                /* .. and the signature alg matches the PUBKEY alg: */
-                                if (getSigAlgName().equals(getPublicKey().getAlgorithm())) {
-                                    flags |= X509Utils.EXFLAG_SS; /* indicate self-signed */
-                                }
-                            }
-                        }
-                    }
-                }
+            if (X509Utils.checkAkid(this, this) == X509Utils.V_OK /* SKID matches AKID */
+                /* .. and the signature alg matches the PUBKEY alg: */
+                && X509Utils.checkSigAlgMatch(getPublicKey(), this) == X509Utils.V_OK) {
+                flags |= X509Utils.EXFLAG_SS; /* indicate self-signed */
             }
         }
 

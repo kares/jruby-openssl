@@ -152,11 +152,58 @@ public class StoreContext {
     }
 
     /*-
-     * Try to get issuer certificate from store. Due to limitations
-     * of the API this can only retrieve a single certificate matching
-     * a given subject name. However it will fill the cache with all
-     * matching certificates, so we can examine the cache for all
-     * matches.
+     * Find in |sk| an issuer cert of cert |x| accepted by |ctx->check_issued|.
+     * If no_dup, the issuer must not yet be in |ctx->chain|, yet allowing the
+     *     exception that |x| is self-issued and |ctx->chain| has just one element.
+     * Prefer the first match with suitable validity period or latest expiration.
+     *
+     * x509_vfy.c: static X509 *get0_best_issuer_sk(X509_STORE_CTX *ctx, int check_signing_allowed,
+     *                                              int no_dup, STACK_OF(X509) *sk, X509 *x)
+     */
+    private X509AuxCertificate get0_best_issuer_sk(
+        final boolean checkSigningAllowed,
+        final boolean noDup,
+        final List<X509AuxCertificate> sk,
+        final X509AuxCertificate x) throws Exception {
+
+        X509AuxCertificate issuer = null;
+        for (int i = 0; i < sk.size(); i++) {
+            final X509AuxCertificate candidate = sk.get(i);
+            if (noDup
+                && !((x.getExFlags() & EXFLAG_SI) != 0 && chain != null && chain.size() == 1)
+                && chain != null && chain.contains(candidate)) {
+                continue;
+            }
+            if (checkIssued.call(this, x, candidate) != 0) {
+                if (checkSigningAllowed && signingAllowed(candidate, x) != V_OK) {
+                    continue;
+                }
+                if (x509_check_cert_time(candidate, -1)) {
+                    return candidate;
+                }
+                /*
+                 * Leave in issuer the first match that has the latest expiration
+                 * date so we return nearest match if no certificate time is OK.
+                 */
+                if (issuer == null || compareNotAfter(candidate, issuer) > 0) {
+                    issuer = candidate;
+                }
+            }
+        }
+        return issuer;
+    }
+
+    private static int compareNotAfter(final X509AuxCertificate a, final X509AuxCertificate b) {
+        final Date aNotAfter = a.getNotAfter();
+        final Date bNotAfter = b.getNotAfter();
+        if (aNotAfter == null) return bNotAfter == null ? 0 : -1;
+        if (bNotAfter == null) return 1;
+        return aNotAfter.compareTo(bNotAfter);
+    }
+
+    /*-
+     * Try to get issuer cert from |ctx->store| accepted by |ctx->check_issued|.
+     * Prefer the first match with suitable validity period or latest expiration.
      *
      * Return values are:
      *  1 lookup successful.
@@ -166,11 +213,9 @@ public class StoreContext {
      * int X509_STORE_CTX_get1_issuer(X509 **issuer, X509_STORE_CTX *ctx, X509 *x)
      */
     int getFirstIssuer(final X509AuxCertificate[] _issuer, final X509AuxCertificate x) throws Exception {
-        int ok;
-        // _issuer[0] = null;
         final Name xn = new Name( x.getIssuerX500Principal() );
         final X509Object[] s_obj = new X509Object[1];
-        ok = store == null ? 0 : getBySubject(X509_LU_X509, xn, s_obj);
+        final int ok = store == null ? 0 : getBySubject(X509_LU_X509, xn, s_obj);
         if (ok != 1) {
             if ( ok == X509Utils.X509_LU_RETRY ) {
                 X509Error.addError(X509Utils.X509_R_SHOULD_RETRY);
@@ -181,44 +226,19 @@ public class StoreContext {
             }
             return 0;
         }
-        /* If certificate matches all OK */
-        X509Object obj = s_obj[0];
-        if ( checkIssued.call(this, x, ((Certificate) obj).cert) != 0 ) {
-            X509AuxCertificate issuer = ((Certificate) obj).cert;
-            if (x509_check_cert_time(issuer, -1)) {
-                _issuer[0] = issuer;
+        /* quick happy path: certificate matches and is currently valid */
+        final X509AuxCertificate candidate = ((Certificate) s_obj[0]).cert;
+        if ( checkIssued.call(this, x, candidate) != 0 ) {
+            if (x509_check_cert_time(candidate, -1)) {
+                _issuer[0] = candidate;
                 return 1;
             }
         }
 
-        List<X509Object> objects = store.getObjects();
-        int idx = X509Object.indexBySubject(objects, X509Utils.X509_LU_X509, xn);
-        if ( idx == -1 ) return 0;
-
-        int ret = 0;
-        /* Look through all matching certificates for a suitable issuer */
-        for ( int i = idx; i < objects.size(); i++ ) {
-            final X509Object pobj = objects.get(i);
-            if (pobj.type() != X509_LU_X509) {
-                continue;
-            }
-            final X509AuxCertificate x509 = ((Certificate) pobj).cert;
-            if ( ! xn.equalTo( x509.getSubjectX500Principal() ) ) {
-                // NOTE: unlike OpenSSL our store.objects aren't sorted by subject (insertion order)
-                continue; // same-DN certs may be separated by other entries - keep scanning
-            }
-            if ( checkIssued.call(this, x, x509) != 0 ) {
-                _issuer[0] = x509;
-                ret = 1;
-                /*
-                 * If times check, exit with match, otherwise keep looking.
-                 * Leave last match in issuer so we return nearest
-                 * match if no certificate time is OK.
-                 */
-                if (x509_check_cert_time(x509, -1)) break; // return 1;
-            }
-        }
-        return ret;
+        final List<X509AuxCertificate> certs = get1_certs(xn);
+        if (certs == null) return -1;
+        _issuer[0] = get0_best_issuer_sk(false, false, certs, x);
+        return _issuer[0] != null ? 1 : 0;
     }
 
     public static List<X509AuxCertificate> ensureAux(final Collection<X509Certificate> input) {
@@ -890,8 +910,20 @@ public class StoreContext {
                      * trusted matching issuer.  Otherwise, grow the chain.
                      */
                     if (ss == false) {
-                        chain.add(x = xtmp);
-                        ss = cert_self_signed(x);
+                        // NOTE: in C OpenSSL, get1_trusted_issuer temporarily sets ctx->chain = NULL ("without
+                        // duplicate suppression"), which lets a circular non-self-signed CA pair in the trust
+                        // store repeat until max_depth (depth + 1). Here, if xtmp is already in chain, we re-query
+                        // get0_best_issuer_sk with noDup=true to pick a non-duplicate issuer or stop early.
+                        if (chain.contains(xtmp)) {
+                            final List<X509AuxCertificate> certs = get1_certs(new Name(x.getIssuerX500Principal()));
+                            xtmp = certs != null ? get0_best_issuer_sk(false, true, certs, x) : null;
+                        }
+                        if (xtmp == null) {
+                            ok = 0;
+                        } else {
+                            chain.add(x = xtmp);
+                            ss = cert_self_signed(x);
+                        }
                     } else if (num == num_untrusted) {
                         /*
                          * We have a self-signed certificate that has the same
@@ -1041,20 +1073,9 @@ public class StoreContext {
      * Given a STACK_OF(X509) find the issuer of cert (if any)
      *
      * x509_vfy.c: static X509 *find_issuer(X509_STORE_CTX *ctx, STACK_OF(X509) *sk, X509 *x)
-     *
-     * NOTE: we omit C sk_X509_contains(ctx->chain, issuer) loop guard:
-     * build_chain removes each picked issuer from sktmp, so an issuer already in the chain can't be re-selected here
      */
     private X509AuxCertificate find_issuer(List<X509AuxCertificate> sk, X509AuxCertificate x) throws Exception {
-        X509AuxCertificate rv = null;
-
-        for (X509AuxCertificate issuer : sk) {
-            if (checkIssued.call(this, x, issuer) != 0) {
-                rv = issuer;
-                if (x509_check_cert_time(rv, -1)) break;
-            }
-        }
-        return rv;
+        return get0_best_issuer_sk(true, true, sk, x);
     }
 
     private static final String OID_NAME_CONSTRAINTS = "2.5.29.30";
@@ -1553,10 +1574,13 @@ public class StoreContext {
         return 1;
     }
 
-    /* Return 1 is a certificate is self signed */
+    /*
+     * Return 1 if a certificate is self signed
+     * x509_vfy.c: int X509_self_signed(X509 *cert, int verify_signature) (with verify_signature = 0)
+     */
     private boolean cert_self_signed(X509AuxCertificate x) throws IOException {
         // Purpose.checkPurpose(x, -1, 0);
-        if ((x.getExFlags() & EXFLAG_SI) != 0) { // TODO EXFLAG_SS
+        if ((x.getExFlags() & EXFLAG_SS) != 0) {
             return true;
         }
         return false;
@@ -1865,9 +1889,8 @@ public class StoreContext {
      * x509_vfy.c: static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
      */
     final static Store.CheckIssuedFunction check_issued = (ctx, x, issuer) -> {
-        // fast path: a cert is issued by itself only when self-signed (by name)
         if (x.equals(issuer)) return ctx.cert_self_signed(x) ? 1 : 0;
-        return checkIfIssuedBy(issuer, x) == V_OK ? 1 : 0; // x509_likely_issued
+        return likelyIssued(issuer, x) == V_OK ? 1 : 0; // ossl_x509_likely_issued
     };
 
     /*
@@ -1903,18 +1926,24 @@ public class StoreContext {
         while ( n >= 0 ) {
             if (!checkCertTime) {
                 /*
-                 * Skip signature check for self-signed certificates unless explicitly asked for;
-                 * if the issuer's public key is unusable, report the issuer certificate and its depth
-                 * (rather than the depth of the subject)
-                 *
-                 * NOTE: unlike C, we don't call x509_signing_allowed(xi, xs) here: the issuer keyCertSign requirement
-                 * is already enforced by check_issued (see X509Utils.checkIfIssuedBy) during build_chain,
-                 * so a non-CA issuer is rejected earlier (as UNABLE_TO_GET_ISSUER rather than KEYUSAGE_NO_CERTSIGN)
+                 * Do signature check for self-signed certificates only if explicitly
+                 * asked for because it does not add any security and just wastes time.
                  */
-                if (xs != xi || (getParam().flags & V_FLAG_CHECK_SS_SIGNATURE) != 0) {
+                if (xs != xi || ((getParam().flags & V_FLAG_CHECK_SS_SIGNATURE) != 0 && (xi.getExFlags() & EXFLAG_SS) != 0)) {
+                    /*
+                     * If the issuer's public key is not available or its key usage
+                     * does not support issuing the subject cert, report the issuer
+                     * cert and its depth (rather than n, the depth of the subject).
+                     */
+                    final int issuer_depth = n + (xs == xi ? 0 : 1);
+                    final int ret = xs == xi && (xi.getExFlags() & EXFLAG_CA) == 0
+                            ? V_OK : signingAllowed(xi, xs);
+                    if (ret != V_OK && verify_cb_cert(xi, issuer_depth, ret) == 0) {
+                        return 0;
+                    }
                     final PublicKey pkey = xi.getPublicKey();
                     if (pkey == null) {
-                        if (verify_cb_cert(xi, xi != xs ? n + 1 : n, V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY) == 0)
+                        if (verify_cb_cert(xi, issuer_depth, V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY) == 0)
                             return 0;
                     } else if (!X509_verify(xs, pkey)) {
                         if (verify_cb_cert(xs, n, V_ERR_CERT_SIGNATURE_FAILURE) == 0)

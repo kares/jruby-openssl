@@ -1622,6 +1622,64 @@ Ob8VZRzI9neWagqNdwvYkQsEjgfbKbYK7p2CNTUQ
     end
   end
 
+  def test_auto_chain_selects_matching_issuer_from_cert_store
+    now = Time.now
+    ca_exts = [
+      ["basicConstraints", "CA:TRUE", true],
+      ["keyUsage", "cRLSign,keyCertSign", true],
+      ["subjectKeyIdentifier", "hash", false],
+      ["authorityKeyIdentifier", "keyid:always", false]
+    ]
+    ee_exts = [
+      ["basicConstraints", "CA:FALSE", true],
+      ["keyUsage", "digitalSignature,keyEncipherment", true],
+      ["subjectKeyIdentifier", "hash", false],
+      ["authorityKeyIdentifier", "keyid:always", false]
+    ]
+
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    old_inter_key = OpenSSL::PKey::RSA.new(2048)
+    new_inter_key = OpenSSL::PKey::RSA.new(2048)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+
+    root_dn = OpenSSL::X509::Name.parse("/CN=Root-CA")
+    inter_dn = OpenSSL::X509::Name.parse("/CN=Intermediate-CA")
+    leaf_dn = OpenSSL::X509::Name.parse("/CN=localhost")
+
+    root_cert = issue_cert(root_dn, root_key, 1, ca_exts, nil, nil, not_before: now - 3600, not_after: now + 7200)
+    # Two intermediate CAs with the exact same Subject DN, but different keys/SKIDs;
+    # old_inter_cert is added to the store first, while leaf_cert is issued by new_inter_cert.
+    old_inter_cert = issue_cert(inter_dn, old_inter_key, 2, ca_exts, root_cert, root_key, not_before: now - 3600, not_after: now + 3600)
+    new_inter_cert = issue_cert(inter_dn, new_inter_key, 3, ca_exts, root_cert, root_key, not_before: now - 3600, not_after: now + 7200)
+    leaf_cert = issue_cert(leaf_dn, leaf_key, 4, ee_exts, new_inter_cert, new_inter_key, not_before: now - 3600, not_after: now + 3600)
+
+    server_store = OpenSSL::X509::Store.new
+    server_store.add_cert(old_inter_cert)
+    server_store.add_cert(new_inter_cert)
+    server_store.add_cert(root_cert)
+
+    ctx_proc = Proc.new do |ctx|
+      ctx.cert_store = server_store
+      ctx.cert = leaf_cert
+      ctx.key = leaf_key
+    end
+
+    client_store = OpenSSL::X509::Store.new
+    client_store.add_cert(root_cert)
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |server, port|
+      cctx = OpenSSL::SSL::SSLContext.new
+      cctx.cert_store = client_store
+      cctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      server_connect(port, cctx) do |ssl|
+        chain = ssl.peer_cert_chain
+        assert_equal [leaf_cert.serial, new_inter_cert.serial, root_cert.serial], chain.map(&:serial)
+        ssl.puts "hello"
+        assert_equal "hello\n", ssl.gets
+      end
+    end
+  end
+
   def test_sysread_syswrite_raise_before_handshake
     require 'socket'
     server = TCPServer.new("127.0.0.1", 0)

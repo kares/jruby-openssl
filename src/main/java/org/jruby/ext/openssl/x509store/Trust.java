@@ -202,17 +202,14 @@ public class Trust {
     }
 
     /**
-     * c: trust_compat
+     * x509_trs.c: static int trust_compat(const X509_TRUST *trust, X509 *x, int flags)
      */
     private static int trust_compat(X509AuxCertificate x, int flags)
         throws CertificateException, IOException {
         /* Call for side-effect of computing hash and caching extensions */
         if (Purpose.checkPurpose(x, -1, 0) != 1) // X509_check_purpose
             return X509_TRUST_UNTRUSTED;
-        // TODO flip to using EXFLAG_SS once legacy (verify) compatibility is dropped
-        //if ((flags & X509_TRUST_NO_SS_COMPAT) == 0 && (x.getExFlags() & EXFLAG_SS) != 0)
-        if ((flags & X509_TRUST_NO_SS_COMPAT) == 0 &&
-                x.getIssuerX500Principal().equals( x.getSubjectX500Principal() )) // self signed
+        if ((flags & X509_TRUST_NO_SS_COMPAT) == 0 && (x.getExFlags() & EXFLAG_SS) != 0)
             return X509_TRUST_TRUSTED;
         return X509_TRUST_UNTRUSTED;
     }

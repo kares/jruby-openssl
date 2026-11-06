@@ -222,68 +222,131 @@ public abstract class X509Utils {
     }
 
     /*
-     * c: X509_check_issued + x509_likely_issued + x509_signing_allowed
+     * v3_purp.c: int X509_check_akid(const X509 *issuer, const AUTHORITY_KEYID *akid)
      */
-    static int checkIfIssuedBy(final X509AuxCertificate issuer,
+    static int checkAkid(final X509AuxCertificate issuer,
+        final X509AuxCertificate subject) throws IOException {
+
+        final byte[] akidBytes = subject.getExtensionValue("2.5.29.35"); // authorityKeyID
+        if ( akidBytes == null ) {
+            return V_OK;
+        }
+
+        // I hate ASN1 and DER
+        Object key = get(akidBytes);
+        if ( ! (key instanceof ASN1Sequence) ) key = get( (DEROctetString) key );
+
+        final ASN1Sequence seq = (ASN1Sequence) key;
+        final AuthorityKeyIdentifier sakid;
+        if ( seq.size() == 1 && (seq.getObjectAt(0) instanceof ASN1OctetString) ) {
+            sakid = AuthorityKeyIdentifier.getInstance(new DLSequence(new DERTaggedObject(0, seq.getObjectAt(0))));
+        } else {
+            sakid = AuthorityKeyIdentifier.getInstance(seq);
+        }
+
+        if ( sakid.getKeyIdentifier() != null ) {
+            final byte[] skidBytes = issuer.getExtensionValue("2.5.29.14");
+            if ( skidBytes != null ) {
+                DEROctetString der = (DEROctetString) get(skidBytes);
+                SubjectKeyIdentifier iskid = SubjectKeyIdentifier.getInstance(get(der.getOctets()));
+                if ( iskid.getKeyIdentifier() != null ) {
+                    if ( ! Arrays.equals( sakid.getKeyIdentifier(), iskid.getKeyIdentifier() ) ) {
+                        return V_ERR_AKID_SKID_MISMATCH;
+                    }
+                }
+            }
+        }
+
+        final BigInteger serialNumber = sakid.getAuthorityCertSerialNumber();
+        if ( serialNumber != null && ! serialNumber.equals(issuer.getSerialNumber()) ) {
+            return V_ERR_AKID_ISSUER_SERIAL_MISMATCH;
+        }
+
+        if ( sakid.getAuthorityCertIssuer() != null ) {
+            GeneralName[] gens = sakid.getAuthorityCertIssuer().getNames();
+            X500Name x500Name = null;
+            for ( int i = 0; i < gens.length; i++ ) {
+                if ( gens[i].getTagNo() == GeneralName.directoryName ) {
+                    ASN1Encodable name = gens[i].getName();
+                    if ( name instanceof X500Name ) {
+                        x500Name = (X500Name) name;
+                    } else if ( name instanceof ASN1Sequence ) {
+                        x500Name = X500Name.getInstance((ASN1Sequence) name);
+                    } else {
+                        throw new RuntimeException("unknown name type: " + name);
+                    }
+                    break;
+                }
+            }
+            if ( x500Name != null ) {
+                if ( ! new Name(x500Name).equalTo( issuer.getIssuerX500Principal() ) ) {
+                    return V_ERR_AKID_ISSUER_SERIAL_MISMATCH;
+                }
+            }
+        }
+
+        return V_OK;
+    }
+
+    /*
+     * v3_purp.c: static int check_sig_alg_match(const EVP_PKEY *issuer_key, const X509 *subject)
+     *
+     * NOTE: approximates OpenSSL's OBJ_find_sigid_algs + EVP_PKEY_is_a (plus RSA-PSS / check_group_alg)
+     * using JCA PublicKey#getAlgorithm() and X509Certificate#getSigAlgName().
+     */
+    static int checkSigAlgMatch(final java.security.PublicKey issuerKey,
+        final X509AuxCertificate subject) {
+        if ( issuerKey == null ) {
+            return V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
+        }
+        final String keyAlg = issuerKey.getAlgorithm();
+        final String sigAlg = subject.getSigAlgName();
+        if ( keyAlg == null || sigAlg == null ) {
+            return V_OK;
+        }
+        final String keyAlgUpper = keyAlg.toUpperCase(java.util.Locale.ROOT);
+        final String sigAlgUpper = sigAlg.toUpperCase(java.util.Locale.ROOT);
+        if ( keyAlgUpper.equals(sigAlgUpper) ) {
+            return V_OK;
+        }
+        if ( keyAlgUpper.contains("RSA") ) {
+            return (sigAlgUpper.contains("RSA") || "1.2.840.113549.1.1.10".equals(sigAlgUpper)) ? V_OK : V_ERR_CERT_SIGNATURE_FAILURE;
+        }
+        if ( keyAlgUpper.equals("EC") || keyAlgUpper.contains("ECDSA") ) {
+            return sigAlgUpper.contains("ECDSA") ? V_OK : V_ERR_CERT_SIGNATURE_FAILURE;
+        }
+        if ( keyAlgUpper.equals("DSA") ) {
+            return (sigAlgUpper.endsWith("WITHDSA") || sigAlgUpper.startsWith("DSA")) ? V_OK : V_ERR_CERT_SIGNATURE_FAILURE;
+        }
+        if ( keyAlgUpper.startsWith("ED") ) {
+            return (sigAlgUpper.startsWith("ED") || "1.3.101.112".equals(sigAlgUpper) || "1.3.101.113".equals(sigAlgUpper)) ? V_OK : V_ERR_CERT_SIGNATURE_FAILURE;
+        }
+        return V_OK;
+    }
+
+    /*
+     * v3_purp.c: int ossl_x509_likely_issued(X509 *issuer, X509 *subject)
+     */
+    static int likelyIssued(final X509AuxCertificate issuer,
         final X509AuxCertificate subject) throws IOException {
 
         if ( ! issuer.getSubjectX500Principal().equals(subject.getIssuerX500Principal()) ) {
             return V_ERR_SUBJECT_ISSUER_MISMATCH;
         }
 
-        if ( subject.getExtensionValue("2.5.29.35") != null ) { //authorityKeyID
-            // I hate ASN1 and DER
-            Object key = get(subject.getExtensionValue("2.5.29.35"));
-            if ( ! (key instanceof ASN1Sequence) ) key = get( (DEROctetString) key );
-
-            final ASN1Sequence seq = (ASN1Sequence) key;
-            final AuthorityKeyIdentifier sakid;
-            if ( seq.size() == 1 && (seq.getObjectAt(0) instanceof ASN1OctetString) ) {
-                sakid = AuthorityKeyIdentifier.getInstance(new DLSequence(new DERTaggedObject(0, seq.getObjectAt(0))));
-            } else {
-                sakid = AuthorityKeyIdentifier.getInstance(seq);
-            }
-
-            if ( sakid.getKeyIdentifier() != null ) {
-                if ( issuer.getExtensionValue("2.5.29.14") != null ) {
-                    DEROctetString der = (DEROctetString) get(issuer.getExtensionValue("2.5.29.14"));
-                    SubjectKeyIdentifier iskid = SubjectKeyIdentifier.getInstance(get(der.getOctets()));
-                    if ( iskid.getKeyIdentifier() != null ) {
-                        if ( ! Arrays.equals( sakid.getKeyIdentifier(), iskid.getKeyIdentifier() ) ) {
-                            return V_ERR_AKID_SKID_MISMATCH;
-                        }
-                    }
-                }
-            }
-
-            final BigInteger serialNumber = sakid.getAuthorityCertSerialNumber();
-            if ( serialNumber != null && ! serialNumber.equals(issuer.getSerialNumber()) ) {
-                return V_ERR_AKID_ISSUER_SERIAL_MISMATCH;
-            }
-
-            if ( sakid.getAuthorityCertIssuer() != null ) {
-                GeneralName[] gens = sakid.getAuthorityCertIssuer().getNames();
-                X500Name x500Name = null;
-                for ( int i = 0; i < gens.length; i++ ) {
-                    if ( gens[i].getTagNo() == GeneralName.directoryName ) {
-                        ASN1Encodable name = gens[i].getName();
-                        if ( name instanceof X500Name ) {
-                            x500Name = (X500Name) name;
-                        } else if ( name instanceof ASN1Sequence ) {
-                            x500Name = X500Name.getInstance((ASN1Sequence) name);
-                        } else {
-                            throw new RuntimeException("unknown name type: " + name);
-                        }
-                        break;
-                    }
-                }
-                if ( x500Name != null ) {
-                    if ( ! new Name(x500Name).equalTo( issuer.getIssuerX500Principal() ) ) {
-                        return V_ERR_AKID_ISSUER_SERIAL_MISMATCH;
-                    }
-                }
-            }
+        int ret = checkAkid(issuer, subject);
+        if ( ret != V_OK ) {
+            return ret;
         }
+
+        return checkSigAlgMatch(issuer.getPublicKey(), subject);
+    }
+
+    /*
+     * v3_purp.c: int ossl_x509_signing_allowed(const X509 *issuer, const X509 *subject)
+     */
+    static int signingAllowed(final X509AuxCertificate issuer,
+        final X509AuxCertificate subject) {
 
         final boolean[] keyUsage = issuer.getKeyUsage();
         if ( subject.getExtensionValue("1.3.6.1.5.5.7.1.14") != null ) {
@@ -296,6 +359,19 @@ public abstract class X509Utils {
         }
 
         return V_OK;
+    }
+
+    /*
+     * v3_purp.c: int X509_check_issued(X509 *issuer, X509 *subject)
+     */
+    static int checkIfIssuedBy(final X509AuxCertificate issuer,
+        final X509AuxCertificate subject) throws IOException {
+
+        int ret = likelyIssued(issuer, subject);
+        if ( ret != V_OK ) {
+            return ret;
+        }
+        return signingAllowed(issuer, subject);
     }
 
     public static final String OPENSSLDIR;

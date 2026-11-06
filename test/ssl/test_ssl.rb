@@ -1585,6 +1585,101 @@ Ob8VZRzI9neWagqNdwvYkQsEjgfbKbYK7p2CNTUQ
     end
   end
 
+  def test_auto_chain_with_circular_cert_store
+    now = Time.now
+    ca_exts = [["basicConstraints", "CA:TRUE", true], ["keyUsage", "cRLSign,keyCertSign", true]]
+    key_a = OpenSSL::PKey::RSA.new(2048)
+    key_b = OpenSSL::PKey::RSA.new(2048)
+    dn_a = OpenSSL::X509::Name.parse("/CN=Cross-CA-A")
+    dn_b = OpenSSL::X509::Name.parse("/CN=Cross-CA-B")
+
+    # Cross-signed cycle: A issued by B, B issued by A
+    stub_b = OpenSSL::X509::Certificate.new
+    stub_b.subject = dn_b
+    cert_a = issue_cert(dn_a, key_a, 20, ca_exts, stub_b, key_b, not_before: now - 60, not_after: now + 3600)
+    cert_b = issue_cert(dn_b, key_b, 21, ca_exts, cert_a, key_a, not_before: now - 60, not_after: now + 3600)
+
+    store = OpenSSL::X509::Store.new
+    store.add_cert(cert_a)
+    store.add_cert(cert_b)
+
+    ctx_proc = Proc.new do |ctx|
+      ctx.cert_store = store
+      ctx.cert = cert_a
+      ctx.key = key_a
+    end
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |server, port|
+      cctx = OpenSSL::SSL::SSLContext.new
+      cctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      server_connect(port, cctx) do |ssl|
+        chain = ssl.peer_cert_chain
+        assert_equal ["/CN=Cross-CA-A", "/CN=Cross-CA-B"], chain.first(2).map { |c| c.subject.to_s }
+        assert_equal 2, chain.size if jruby?
+        ssl.puts "hello"
+        assert_equal "hello\n", ssl.gets
+      end
+    end
+  end
+
+  def test_auto_chain_selects_matching_issuer_from_cert_store
+    now = Time.now
+    ca_exts = [
+      ["basicConstraints", "CA:TRUE", true],
+      ["keyUsage", "cRLSign,keyCertSign", true],
+      ["subjectKeyIdentifier", "hash", false],
+      ["authorityKeyIdentifier", "keyid:always", false]
+    ]
+    ee_exts = [
+      ["basicConstraints", "CA:FALSE", true],
+      ["keyUsage", "digitalSignature,keyEncipherment", true],
+      ["subjectKeyIdentifier", "hash", false],
+      ["authorityKeyIdentifier", "keyid:always", false]
+    ]
+
+    root_key = OpenSSL::PKey::RSA.new(2048)
+    old_inter_key = OpenSSL::PKey::RSA.new(2048)
+    new_inter_key = OpenSSL::PKey::RSA.new(2048)
+    leaf_key = OpenSSL::PKey::RSA.new(2048)
+
+    root_dn = OpenSSL::X509::Name.parse("/CN=Root-CA")
+    inter_dn = OpenSSL::X509::Name.parse("/CN=Intermediate-CA")
+    leaf_dn = OpenSSL::X509::Name.parse("/CN=localhost")
+
+    root_cert = issue_cert(root_dn, root_key, 1, ca_exts, nil, nil, not_before: now - 3600, not_after: now + 7200)
+    # Two intermediate CAs with the exact same Subject DN, but different keys/SKIDs;
+    # old_inter_cert is added to the store first, while leaf_cert is issued by new_inter_cert.
+    old_inter_cert = issue_cert(inter_dn, old_inter_key, 2, ca_exts, root_cert, root_key, not_before: now - 3600, not_after: now + 3600)
+    new_inter_cert = issue_cert(inter_dn, new_inter_key, 3, ca_exts, root_cert, root_key, not_before: now - 3600, not_after: now + 7200)
+    leaf_cert = issue_cert(leaf_dn, leaf_key, 4, ee_exts, new_inter_cert, new_inter_key, not_before: now - 3600, not_after: now + 3600)
+
+    server_store = OpenSSL::X509::Store.new
+    server_store.add_cert(old_inter_cert)
+    server_store.add_cert(new_inter_cert)
+    server_store.add_cert(root_cert)
+
+    ctx_proc = Proc.new do |ctx|
+      ctx.cert_store = server_store
+      ctx.cert = leaf_cert
+      ctx.key = leaf_key
+    end
+
+    client_store = OpenSSL::X509::Store.new
+    client_store.add_cert(root_cert)
+
+    start_server(OpenSSL::SSL::VERIFY_NONE, true, ctx_proc: ctx_proc) do |server, port|
+      cctx = OpenSSL::SSL::SSLContext.new
+      cctx.cert_store = client_store
+      cctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      server_connect(port, cctx) do |ssl|
+        chain = ssl.peer_cert_chain
+        assert_equal [leaf_cert.serial, new_inter_cert.serial, root_cert.serial], chain.map(&:serial)
+        ssl.puts "hello"
+        assert_equal "hello\n", ssl.gets
+      end
+    end
+  end
+
   def test_sysread_syswrite_raise_before_handshake
     require 'socket'
     server = TCPServer.new("127.0.0.1", 0)

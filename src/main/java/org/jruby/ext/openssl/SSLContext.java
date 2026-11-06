@@ -82,12 +82,10 @@ import org.jruby.runtime.Visibility;
 import org.jruby.util.ByteList;
 import org.jruby.ext.openssl.log.Logger;
 
-import org.jruby.ext.openssl.x509store.Certificate;
-import org.jruby.ext.openssl.x509store.Name;
 import org.jruby.ext.openssl.x509store.Store;
 import org.jruby.ext.openssl.x509store.StoreContext;
 import org.jruby.ext.openssl.x509store.X509AuxCertificate;
-import org.jruby.ext.openssl.x509store.X509Object;
+import org.jruby.ext.openssl.x509store.X509Error;
 import org.jruby.ext.openssl.x509store.X509Utils;
 
 import org.jruby.runtime.callsite.FunctionalCachingCallSite;
@@ -1088,12 +1086,20 @@ public class SSLContext extends RubyObject {
 
     private List<Credential> buildCredentials(final X509Cert cert, final PKey key,
                                               final List<X509AuxCertificate> extraChainCert) {
-        if ( cert == null || key == null || key.getPrivateKey() == null || cert.getAuxCert() == null ) {
+        final boolean hasMain = cert != null && key != null && key.getPrivateKey() != null && cert.getAuxCert() != null;
+        if ( !hasMain && extraChainCert == null ) {
             return addedCredentials;
         }
-        final ArrayList<Credential> credentials = new ArrayList<>(addedCredentials.size() + 1);
-        credentials.add(new Credential("@cert", cert.getAuxCert(), key.getPrivateKey(), key.getKeyType(), extraChainCert));
-        credentials.addAll(addedCredentials);
+        final ArrayList<Credential> credentials = new ArrayList<>(addedCredentials.size() + (hasMain ? 1 : 0));
+        if ( hasMain ) {
+            credentials.add(new Credential("@cert", cert.getAuxCert(), key.getPrivateKey(), key.getKeyType(), extraChainCert));
+        }
+        for (int i = 0; i < addedCredentials.size(); i++) {
+            final Credential c = addedCredentials.get(i);
+            // c: ssl_add_cert_chain: if (cpk->chain != NULL) extra_certs = cpk->chain; else extra_certs = sctx->extra_certs;
+            credentials.add(c.chain == null && extraChainCert != null ?
+                new Credential(c.alias, c.leaf, c.privateKey, c.keyType, extraChainCert) : c);
+        }
         return credentials;
     }
 
@@ -1357,7 +1363,14 @@ public class SSLContext extends RubyObject {
             return null;
         }
 
-        @Override // c: ssl3_output_cert_chain
+        // c: ssl_add_cert_chain (ssl/statem/statem_lib.c)
+        // NOTE: approximates OpenSSL >= 1.1.0 / 3.x ssl_add_cert_chain (which replaced ssl3_output_cert_chain):
+        // when no explicit chain (cpk->chain / sctx->extra_certs) is configured, initializes a fresh
+        // X509_STORE_CTX(chain_store, leaf, NULL) without attaching SSL_CTX peer verify_callback / verify_depth,
+        // runs X509_verify_cert(xs_ctx) ignoring its return value, clears errors, and takes X509_STORE_CTX_get0_chain.
+        // Unlike C, SSL_MODE_NO_AUTO_CHAIN and a separate s->cert->chain_store are not exposed, and
+        // ssl_security_cert_chain checks are delegated to JSSE.
+        @Override
         public java.security.cert.X509Certificate[] getCertificateChain(String alias) {
             final Credential credential = credentialByAlias(alias);
             if ( credential == null || credential.leaf == null ) return new java.security.cert.X509Certificate[0];
@@ -1372,33 +1385,34 @@ public class SSLContext extends RubyObject {
                 return chain;
             }
 
-            final ArrayList<java.security.cert.X509Certificate> chain = new ArrayList<>(8);
-            StoreContext storeCtx = internalContext.createStoreContext(null);
-            X509AuxCertificate x = credential.leaf;
-            while (true) {
-
-                chain.add(x);
-
-                if ( x.getIssuerDN().equals(x.getSubjectDN()) ) break;
-
-                try {
-                    final Name name = new Name(x.getIssuerX500Principal());
-                    X509Object[] s_obj = new X509Object[1];
-                    if (storeCtx.getBySubject(X509Utils.X509_LU_X509, name, s_obj) <= 0) {
-                        break;
+            if ( internalContext.store != null ) {
+                final StoreContext storeCtx = new StoreContext(internalContext.store);
+                if ( storeCtx.init(credential.leaf, null) != 0 ) {
+                    try {
+                        // Deliberately ignore the error return: we're not verifying the cert,
+                        // just building as much of the chain as we can from the store.
+                        storeCtx.verifyCertificate();
                     }
-                    x = ((Certificate) s_obj[0]).cert;
-                }
-                catch (RuntimeException e) {
-                    LOG.debugStack(e);
-                    break;
-                }
-                catch (Exception e) {
-                    LOG.debug("KeyManagerImpl bySubject failed", e);
-                    break;
+                    catch (RuntimeException e) {
+                        LOG.debugStack(e);
+                    }
+                    catch (Exception e) {
+                        LOG.debug("KeyManagerImpl verifyCertificate failed", e);
+                    }
+                    finally {
+                        X509Error.clearErrors();
+                    }
+                    final List<X509AuxCertificate> builtChain = storeCtx.getChain();
+                    if ( builtChain != null && !builtChain.isEmpty() ) {
+                        final java.security.cert.X509Certificate[] chain =
+                            new java.security.cert.X509Certificate[builtChain.size()];
+                        chain[0] = credential.leaf; // preserve leaf wrapper (e.g. translateEdDSAKeys)
+                        for (int i = 1; i < builtChain.size(); i++) chain[i] = builtChain.get(i);
+                        return chain;
+                    }
                 }
             }
-            return chain.toArray( new java.security.cert.X509Certificate[chain.size()] );
+            return new java.security.cert.X509Certificate[] { credential.leaf };
         }
 
         @Override
